@@ -1,0 +1,71 @@
+
+requests
+tqdm
+psutil
+pyyaml
+
+#numpy
+numpy==1.26.4
+
+# scipy
+scipy
+
+# speechbrain
+speechbrain
+
+# torch
+--extra-index-url https://download.pytorch.org/whl/cu124
+nvidia-cudnn-cu11
+nvidia-pyindex
+torch
+torchvision
+torchaudio
+
+# langchain
+langchain
+langchain-openai
+
+# token count estimation
+tiktoken
+
+# pyannote
+pyannote.audio
+
+# diarizer
+nemo-toolkit[asr]
+pydub
+rttm-manager
+pydantic
+huggingface-hub
+
+# deepmultilingualpunctuation
+deepmultilingualpunctuation
+
+# whisper
+faster-whisper
+whisperx
+
+# spacy
+spacy
+spacy-transformers
+spacy_download
+langdetect
+python-Levenshtein
+
+# gliner
+gliner
+
+# roman
+roman
+
+# web
+beautifulsoup4
+
+# ebooks
+EbookLib
+
+# scikit
+scikit-learn
+
+# excel
+XlsxWriter

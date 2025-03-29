@@ -24,6 +24,8 @@ with open("requirements.txt", "r", encoding="utf-8") as fr:
     requirements = []
     extra_dependency_links = []
     for line in (x.strip() for x in fr.readlines() if len(x.strip()) > 0):
+        if line.startswith("#"):
+            continue
         if line.startswith("--extra-index-url"):
             extra_dependency_links.append(line[len("--extra-index-url"):].strip())
         else:
@@ -63,7 +65,7 @@ setuptools.setup(
         ],
     },
     packages=setuptools.find_packages(include=['MAT', 'MAT.*']),
-    python_requires=">=3.12",
+    python_requires=">=3.9",
     install_requires=requirements,
     dependency_links=extra_dependency_links + ['https://pypi.example.org/pypi/somedep/'],
     include_package_data=True,
