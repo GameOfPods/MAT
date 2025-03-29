@@ -8,14 +8,14 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
+import logging
 import os.path
 from collections import defaultdict
 from typing import Dict, Optional, Tuple, List
-import logging
 from uuid import uuid4
 
-from MAT.utils.config import ConfigElement, Config
 from MAT.tools.diarizators import DiarizationTool, DiarizerInput, DiarizationResult
+from MAT.utils.config import ConfigElement, Config
 
 
 class DiarizerNEMO(DiarizationTool):
@@ -57,6 +57,7 @@ class DiarizerNEMO(DiarizationTool):
         from nemo.collections.asr.models import SortformerEncLabelModel
         from math import ceil
         from pydub import AudioSegment
+        import torch
 
         cfg = config.get_config(key=self)
 
@@ -71,7 +72,8 @@ class DiarizerNEMO(DiarizationTool):
                                                                                                   format="wav")
             mono_files.append(audio_file_mono)
 
-        diar_model = SortformerEncLabelModel.from_pretrained(cfg["model"], map_location=cfg["device"])
+        diar_model: SortformerEncLabelModel = SortformerEncLabelModel.from_pretrained(cfg["model"],
+                                                                                      map_location=cfg["device"])
         diar_model.eval()
 
         predicted_segments, predicted_probs = diar_model.diarize(
@@ -79,8 +81,7 @@ class DiarizerNEMO(DiarizationTool):
         )
 
         del diar_model
-        if cfg["device"] == "cuda":
-            import torch
+        if cfg["device"] == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         clean_segments: List[Dict[str, List[Tuple[float, float]]]] = []

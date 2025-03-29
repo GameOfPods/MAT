@@ -10,18 +10,16 @@
 #  GNU General Public License for more details.
 import os.path
 from dataclasses import dataclass, asdict as dataclass_as_dict
-from typing import List, Dict, Any, Iterable, Callable
-import logging
+from typing import List, Dict, Iterable, Callable
 
-from MAT.pipelines import Pipeline, PipelineResult, ToolResult, T_out, PipelineStepInput, PipelineStepResult
-from MAT.utils.config import ConfigElement, Config
-
+from MAT.pipelines import Pipeline, PipelineResult, PipelineStepInput, PipelineStepResult
 from MAT.tools import (
     TransciptorWhisper, TranscriptionInput, TranscriptionResult, WordTupleSpeaker,
     DiarizerNEMO, DiarizerInput, DiarizationResult,
     SpeakerIdetificationPyannote,
     SummaryLLM, SummaryInput, SummaryResult
 )
+from MAT.utils.config import ConfigElement
 from MAT.utils.diarization import (
     align_diarization_with_transcription, squish_word_speaker, word_speaker_to_transcript
 )
@@ -170,7 +168,7 @@ class PodcastPipeline(Pipeline):
         diarization = _try_get("Diarization")
         diarization_matched = _try_get("Speaker Matching")
         transcripts = _try_get("Finalizing transcript")
-        word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcription
+        word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcripts
         summary = _try_get("Summarize transcript")
         media_info = _try_get("Media Info")
 

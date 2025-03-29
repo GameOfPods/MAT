@@ -8,15 +8,11 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-import os.path
-from collections import defaultdict
-from typing import Dict, Optional, Tuple, List
 import logging
-from uuid import uuid4
-from dataclasses import dataclass
+from typing import Dict, Optional, List
 
-from MAT.utils.config import ConfigElement, Config
 from MAT.tools.transcriptors import TranscriptionInput, TransciptionTool, TranscriptionResult, WordTuple
+from MAT.utils.config import ConfigElement, Config
 
 
 class TransciptorWhisper(TransciptionTool):
@@ -29,6 +25,7 @@ class TransciptorWhisper(TransciptionTool):
     @classmethod
     def config_keys(cls) -> Dict[str, ConfigElement]:
         import torch
+        from os import cpu_count
         return {
             "device": ConfigElement(
                 default_value="cuda" if torch.cuda.is_available() else "cpu",
@@ -43,6 +40,24 @@ class TransciptorWhisper(TransciptionTool):
                     "help": "Model to use for whisper model. Default: %(default)s", "type": str,
                 }
             ),
+            "cpu-count": ConfigElement(
+                default_value=cpu_count(),
+                argparse_kwargs={
+                    "help": "Amount of cpu cores to use. Default: %(default)s", "type": int,
+                }
+            ),
+            "compute-type": ConfigElement(
+                default_value="int8",
+                argparse_kwargs={
+                    "help": "Compute type. Default: %(default)s", "type": str,
+                }
+            ),
+            "beam-size": ConfigElement(
+                default_value=5,
+                argparse_kwargs={
+                    "help": "Beam size for Whisper transcription. Default: %(default)s", "type": int,
+                }
+            )
         }
 
     def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscriptionResult]:
@@ -52,8 +67,9 @@ class TransciptorWhisper(TransciptionTool):
         import tqdm
 
         cfg = config.get_config(key=self)
-        model = WhisperModel(cfg["model"], device=cfg["device"], compute_type="int8")
-        segments, info = model.transcribe(origin_data.input_file, beam_size=5, vad_filter=True, )
+        model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=cfg["compute-type"],
+                             cpu_threads=cfg["cpu-count"])
+        segments, info = model.transcribe(origin_data.input_file, beam_size=cfg["beam-size"], vad_filter=True, )
 
         segments_as_dict = []
         for segment in tqdm.tqdm(segments, unit="segment", leave=False, desc="Transcribing"):

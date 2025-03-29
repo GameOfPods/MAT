@@ -8,8 +8,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from typing import Iterable, Optional, Dict, List, Tuple
 import logging
+from typing import Optional, Dict, List, Tuple
 
 from MAT.tools.ner import NERTool, NERResult, NERInput
 from MAT.utils.config import ConfigElement, Config
@@ -60,5 +60,7 @@ class NERGliner(NERTool):
                 result = model.predict_entities(txt, [label])
                 for r in result:
                     ret[-1][label].append((r["text"], r["start"], r["end"]))
+
+        del model
 
         return NERResult(*ret)

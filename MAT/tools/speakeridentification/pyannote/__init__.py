@@ -15,9 +15,9 @@ import numpy as np
 import pydub
 from torch import Tensor
 
-from MAT.utils.config import Config
 from MAT.tools.speakeridentification import SpeakerIdentificationTool, SpeakerIdentificationInput, \
     SpeakerIdentificationResult
+from MAT.utils.config import Config
 from MAT.utils.config import ConfigElement
 
 
@@ -168,5 +168,10 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                 ret.append(similarity_scores[0][0])
             else:
                 ret.append(None)
+
+        del classifier
+        del pyannote_model
+        if device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return ret
