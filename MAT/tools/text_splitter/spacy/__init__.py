@@ -8,8 +8,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from typing import Dict, Optional
 import logging
+from typing import Dict, Optional
 
 from MAT.tools.text_splitter import SplitterInput, SplitterResult, SplitterTool
 from MAT.utils.config import ConfigElement, Config
@@ -43,6 +43,7 @@ class SplitterSpacy(SplitterTool):
     def process(self, origin_data: SplitterInput, config: Config) -> Optional[SplitterResult]:
         from pprint import pformat
         from collections import Counter
+        import torch
         cfg = config.get_config(self)
         model = cfg["model"]
         if model is None:
@@ -64,7 +65,13 @@ class SplitterSpacy(SplitterTool):
 
         doc = nlp(origin_data.text)
 
-        return SplitterResult(
+        ret = SplitterResult(
             sentences=[x.text for x in doc.sents],
             words=[Counter(e.lemma_ for e in s if not any([e.is_space, e.is_punct, e.is_stop])) for s in doc.sents]
         )
+
+        del doc
+        if cfg["device"] == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return ret
