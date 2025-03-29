@@ -29,3 +29,6 @@ del os
 del logging
 del sys
 __all__ = ['__version__', "__author__"]
+
+from MAT.tools import *
+from MAT.pipelines import *

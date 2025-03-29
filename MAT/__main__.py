@@ -8,10 +8,12 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
+import shutil
 import sys
-from typing import Sequence
+import uuid
+from typing import Sequence, Dict, List, Tuple
 
-from MAT import __version__
+from MAT import __version__, PodcastPipeline
 
 
 def main(args: Sequence[str] = None):
@@ -19,8 +21,12 @@ def main(args: Sequence[str] = None):
     import os
     import glob
     import logging
-
+    import json
+    logging.getLogger("pytorch_lightning.utilities.migration.utils").setLevel(logging.WARN)
     _LOGGER = logging.getLogger("MAT")
+
+    from MAT.utils.config import Config
+    config = Config()
 
     parser = ArgumentParser(description=f'MAT-{__version__}', prog='MAT', epilog=f'Thanks for using MAT-{__version__}')
     parser.add_argument('-v', '--version', action='version', version=__version__)
@@ -32,6 +38,15 @@ def main(args: Sequence[str] = None):
                         help='Folder to store output files to. Will be created if it does not exist.')
     parser.add_argument('--output-zip', action="store_true", dest="output_zip",
                         help="Create zip archive of output files instead of folder")
+    parser.add_argument("-wd", "--work-dir", type=str, dest="work_dir", metavar="WORKDIR", default=os.getcwd(),
+                        help="Set working directory to work in. Will create temporary folder that will be deleted in the end. Default %(default)s")
+
+    parser.add_argument("-c", "--config", type=str, required=False, default=None, dest="config", metavar="CONFIG",
+                        help="Path to config file for MAT tool")
+    parser.add_argument("--export-config", action="store_true", dest="export_config",
+                        help="If set will export the config used for this run as config.json un the export folder.")
+
+    config.create_argparse(argparse=parser)
 
     args = parser.parse_args(args=args)
 
@@ -43,6 +58,8 @@ def main(args: Sequence[str] = None):
         sys.exit(1)
     os.makedirs(args.output, exist_ok=True)
 
+    _LOGGER.info(f"Export folder set to {args.output}")
+
     input_files = set()
     for filename in args.input:
         input_files = input_files.union(os.path.abspath(x) for x in glob.glob(filename, recursive=args.input_recursive))
@@ -50,6 +67,38 @@ def main(args: Sequence[str] = None):
 
     _LOGGER.info(f"Found {len(input_files)} files to process")
 
+    if args.config is not None and len(args.config) > 0 and os.path.isfile(args.config):
+        try:
+            with open(args.config, "r") as f:
+                config.parse_config(config=json.load(f))
+        finally:
+            pass
+
+    config.parse_argparse(namespace=args)
+
+    config.set_work_directory(os.path.join(os.path.abspath(args.work_dir), f".MAT.{uuid.uuid4()}"))
+    while os.path.exists(config.work_directory):
+        config.set_work_directory(os.path.join(os.path.abspath(args.work_dir), f".MAT.{uuid.uuid4()}"))
+    os.makedirs(config.work_directory, exist_ok=False)
+    _LOGGER.info(f"Working directory set to {config.work_directory}")
+
+    from MAT.pipelines import Pipeline
+    from MAT.writer import Writer
+    writer = Writer()
+
+    for file in sorted(input_files):
+        try:
+            res = []
+            for pipe_class in Pipeline.get_pipelines(f=file):
+                pipe = pipe_class()
+                res.append(pipe.process(file=file, config=config))
+            writer.store(file=file, output=args.output, pipeline_results=res)
+        except Exception as e:
+            _LOGGER.exception(f"Got error during execution for file {file}", exc_info=e)
+            with open(os.path.join(args.output, f"{os.path.basename(file)}.error.txt"), "w") as f:
+                f.write(f"{e.__class__.__name__}:\n{str(e)}")
+
+    shutil.rmtree(config.work_directory)
 
 if __name__ == "__main__":
     main()
