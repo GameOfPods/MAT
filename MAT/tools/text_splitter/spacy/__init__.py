@@ -70,5 +70,7 @@ class SplitterSpacy(SplitterTool):
         )
 
         del doc
+        import gc
+        gc.collect()
 
         return ret
