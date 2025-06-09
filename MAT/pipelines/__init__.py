@@ -8,14 +8,14 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from dataclasses import dataclass, asdict as dataclass_as_dict
-from typing import TypeVar, Generic, Iterable, List, Callable, Dict, Any, Tuple, Type
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, asdict as dataclass_as_dict
+from typing import TypeVar, Generic, Iterable, Callable, Dict, Any, Type
 
-from MAT.utils.config import Config, ConfigClass
 from MAT.tools import ToolResult
 from MAT.utils import get_all_concrete_subclasses
+from MAT.utils.config import Config, ConfigClass
 
 
 @dataclass
@@ -42,6 +42,10 @@ T_out = TypeVar("T_out", bound=PipelineResult)
 
 class Pipeline(Generic[T_out], ConfigClass, ABC):
     _LOGGER = logging.getLogger(__name__)
+
+    @classmethod
+    def name(cls):
+        return cls.__name__
 
     @classmethod
     @abstractmethod
