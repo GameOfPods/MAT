@@ -43,6 +43,7 @@ class SplitterSpacy(SplitterTool):
     def process(self, origin_data: SplitterInput, config: Config) -> Optional[SplitterResult]:
         from pprint import pformat
         from collections import Counter
+        import gc
         cfg = config.get_config(self)
         model = cfg["model"]
         if model is None:
@@ -70,5 +71,6 @@ class SplitterSpacy(SplitterTool):
         )
 
         del doc
+        gc.collect()
 
         return ret
