@@ -28,7 +28,7 @@ class Writer:
     def register_writer(self, t: Type[PipelineResult], f: Callable[[PipelineResult, str], None]):
         self._storage_functions[t] = f
 
-    def store(self, file: str, output: str, pipeline_results: List[PipelineResult]):
+    def store(self, file: str, output: str, pipeline_results: List[PipelineResult]) -> str:
         now = datetime.now()
         folder = os.path.join(output, f"{pathlib.Path(file).stem}_{now.strftime('%Y-%m-%d_%H-%M-%S')}")
         os.makedirs(folder, exist_ok=False)
@@ -54,6 +54,7 @@ class Writer:
                 raise e
         with open(os.path.join(folder, "meta.json"), "w") as f:
             json.dump(meta, f)
+        return os.path.abspath(folder)
 
     @staticmethod
     def store_book_output(output: BookOutput, folder: str):

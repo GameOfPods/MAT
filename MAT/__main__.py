@@ -11,12 +11,12 @@
 import shutil
 import sys
 import uuid
-from typing import Sequence
+from typing import Sequence, List
 
 from MAT import __version__
 
 
-def main(args: Sequence[str] = None):
+def main(args: Sequence[str] = None) -> List[str]:
     from argparse import ArgumentParser
     import os
     import glob
@@ -76,11 +76,6 @@ def main(args: Sequence[str] = None):
 
     config.parse_argparse(namespace=args)
 
-    if args.export_config:
-        with open(os.path.join(args.output, "config.json"), "w") as f:
-            json.dump(config.config, f)
-            _LOGGER.info(f'Saved config to "{os.path.join(args.output, "config.json")}"')
-
     config.set_work_directory(os.path.join(os.path.abspath(args.work_dir), f".MAT.{uuid.uuid4()}"))
     while os.path.exists(config.work_directory):
         config.set_work_directory(os.path.join(os.path.abspath(args.work_dir), f".MAT.{uuid.uuid4()}"))
@@ -91,6 +86,7 @@ def main(args: Sequence[str] = None):
     from MAT.writer import Writer
     from MAT.utils.progress import Progress
     writer = Writer()
+    r = []
 
     with Progress(name="Processing files", desc="", total=len(input_files)) as pb:
         for file in sorted(input_files):
@@ -101,13 +97,19 @@ def main(args: Sequence[str] = None):
                 for pipe_class in Pipeline.get_pipelines(f=file):
                     pipe = pipe_class()
                     res.append(pipe.process(file=file, config=config))
-                writer.store(file=file, output=args.output, pipeline_results=res)
+                written_folder = writer.store(file=file, output=args.output, pipeline_results=res)
+                r.append(written_folder)
+                if args.export_config:
+                    with open(os.path.join(written_folder, "config.json"), "w") as f:
+                        json.dump(config.config, f)
+                        _LOGGER.info(f'Saved config to "{os.path.join(args.output, "config.json")}"')
             except Exception as e:
                 _LOGGER.exception(f"Got error during execution for file {file}", exc_info=e)
                 with open(os.path.join(args.output, f"{os.path.basename(file)}.error.txt"), "w") as f:
                     f.write(f"{e.__class__.__name__}:\n{str(e)}")
 
     shutil.rmtree(config.work_directory)
+    return r
 
 if __name__ == "__main__":
     main()
