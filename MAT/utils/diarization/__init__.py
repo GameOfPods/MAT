@@ -130,7 +130,7 @@ def word_speaker_to_transcript(word_speaker: List[WordTupleSpeaker]) -> List[str
     lines = []
 
     for line in word_speaker:
-        speaker = " & ".join(sorted(line.speaker)) if len(line.speaker) > 0 else "<Unknown>"
+        speaker = " & ".join(sorted("<Unknown>" if x is None else x for x in line.speaker)) if len(line.speaker) > 0 else "<Unknown>"
         timeing = f"{line.word.start} - {line.word.end}"
         lines.append(f"{speaker} [{timeing}]: {line.word.word}")
 

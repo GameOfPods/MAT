@@ -54,6 +54,7 @@ class DiarizerNEMO(DiarizationTool):
         }
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:
+        from MAT.utils import timeout_retry
         from nemo.collections.asr.models import SortformerEncLabelModel
         from math import ceil
         from pydub import AudioSegment
@@ -72,8 +73,13 @@ class DiarizerNEMO(DiarizationTool):
                                                                                                   format="wav")
             mono_files.append(audio_file_mono)
 
-        diar_model: SortformerEncLabelModel = SortformerEncLabelModel.from_pretrained(cfg["model"],
-                                                                                      map_location=cfg["device"])
+        diar_model: SortformerEncLabelModel = timeout_retry(
+            func=SortformerEncLabelModel.from_pretrained,
+            func_args=(cfg["model"],),
+            func_kwargs={"map_location": cfg["device"]},
+            time_out=60,
+            retries=5,
+        )
         diar_model.eval()
 
         predicted_segments, predicted_probs = diar_model.diarize(
