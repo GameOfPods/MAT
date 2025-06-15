@@ -8,6 +8,7 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
+from typing import Callable, Dict, Any, Optional
 
 
 def get_all_concrete_subclasses(cls):
@@ -17,6 +18,24 @@ def get_all_concrete_subclasses(cls):
             concrete_subclasses.append(subclass)
         concrete_subclasses.extend(get_all_concrete_subclasses(subclass))
     return concrete_subclasses
+
+
+def timeout_retry(func: Callable, func_args: tuple, func_kwargs: Dict[str, Any], time_out: int = 60, retries: int = 5):
+    retries = max(0, retries)
+    time_out = max(0, time_out)
+    last_e: Optional[BaseException] = None
+    while retries >= 0:
+        try:
+            return func(*func_args, **func_kwargs)
+        except Exception as e:
+            last_e = e
+        retries -= 1
+        from time import sleep
+        sleep(time_out)
+    if last_e is not None:
+        raise last_e
+    return None
+
 
 
 __all__ = ["get_all_concrete_subclasses"]

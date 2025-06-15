@@ -67,14 +67,14 @@ def main(args: Sequence[str] = None) -> List[str]:
 
     _LOGGER.info(f"Found {len(input_files)} files to process")
 
+    config.parse_argparse(namespace=args)
+
     if args.config is not None and len(args.config) > 0 and os.path.isfile(args.config):
         try:
             with open(args.config, "r") as f:
                 config.parse_config(config=json.load(f))
         finally:
             pass
-
-    config.parse_argparse(namespace=args)
 
     config.set_work_directory(os.path.join(os.path.abspath(args.work_dir), f".MAT.{uuid.uuid4()}"))
     while os.path.exists(config.work_directory):
@@ -104,9 +104,14 @@ def main(args: Sequence[str] = None) -> List[str]:
                         json.dump(config.config, f)
                         _LOGGER.info(f'Saved config to "{os.path.join(args.output, "config.json")}"')
             except Exception as e:
+                import traceback
                 _LOGGER.exception(f"Got error during execution for file {file}", exc_info=e)
                 with open(os.path.join(args.output, f"{os.path.basename(file)}.error.txt"), "w") as f:
-                    f.write(f"{e.__class__.__name__}:\n{str(e)}")
+                    f.write(f"{e.__class__.__name__}:\n{str(e)}\n")
+                    f.write(f"{'=' * 20}")
+                    f.write("Full Error:\n")
+                    f.write(''.join(traceback.format_exception(type(e), e, e.__traceback__)))
+
 
     shutil.rmtree(config.work_directory)
     return r
