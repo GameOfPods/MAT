@@ -159,7 +159,14 @@ class SummaryLLM(SummaryTool):
                 output_key="output_text",
             )
 
-            summary = chain.invoke({"input_documents": split_doc}, config={"max_concurrency": 1})
+            additional_metadata = "\n".join(
+                f"{k}: {v}" for k, v in origin_data.additional_metadata.items()
+            ) if len(origin_data.additional_metadata) > 0 else ""
+
+            summary = chain.invoke({
+                "input_documents": split_doc,
+                "additional_metadata": additional_metadata,
+            }, config={"max_concurrency": 1})
             return_summaries.append(summary["output_text"])
 
         return SummaryResult(*return_summaries)

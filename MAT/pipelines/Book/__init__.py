@@ -76,6 +76,7 @@ class BookPipeline(Pipeline):
         }
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
+        from MAT.utils import get_hash_pipeline
         from ebooklib import epub, ITEM_DOCUMENT, ITEM_NAVIGATION
         def parse_book(step_input: PipelineStepInput) -> PipelineStepResult:
             book: epub.EpubBook = epub.read_epub(step_input.file, options={"ignore_ncx": True})

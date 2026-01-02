@@ -33,11 +33,17 @@ def main(args: Sequence[str] = None) -> List[str]:
     parser.add_argument('-i', '--input', type=str, required=True, nargs="+", dest="input", metavar="INPUT",
                         help='Input file description. Uses glob wildcards to search for files.')
     parser.add_argument('--verbose', action="store_true", dest="verbose")
+    parser.add_argument("--log-file", type=str, dest="log_file", metavar="LOGFILE", required=False, default=None,
+                        help="Set file to save logging output to")
+    parser.add_argument("--log-file-append", action="store_true", dest="log_file_append",
+                        help="If set will append to the logfile instead of overwriting it")
     parser.add_argument('--input-recursive', action="store_true", dest="input_recursive")
     parser.add_argument('-o', '--output', type=str, required=True, dest="output", metavar="OUTPUT",
                         help='Folder to store output files to. Will be created if it does not exist.')
     parser.add_argument('--output-zip', action="store_true", dest="output_zip",
-                        help="Create zip archive of output files instead of folder")
+                        help="If set will compress the output folder to a zip file after writing is done.")
+    parser.add_argument('--keep-uncompressed', action="store_true", dest="keep_uncompressed",
+                        help="If set keep the uncompressed folder, even if --output-zip is set. Default is to delete.")
     parser.add_argument("-wd", "--work-dir", type=str, dest="work_dir", metavar="WORKDIR", default=os.getcwd(),
                         help="Set working directory to work in. Will create temporary folder that will be deleted in the end. Default %(default)s")
 
@@ -53,6 +59,11 @@ def main(args: Sequence[str] = None) -> List[str]:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    if args.log_file:
+        logging.getLogger().addHandler(
+            logging.FileHandler(args.log_file, mode="a" if args.log_file_append else "w", encoding="utf-8")
+        )
+
     if os.path.exists(args.output) and os.path.isfile(args.output):
         sys.stderr.write(f"Output \"{args.output}\" already exists and is a file. Please specify a different output.")
         sys.exit(1)
@@ -63,9 +74,31 @@ def main(args: Sequence[str] = None) -> List[str]:
     input_files = set()
     for filename in args.input:
         input_files = input_files.union(os.path.abspath(x) for x in glob.glob(filename, recursive=args.input_recursive))
-    input_files = set(x for x in input_files if os.path.exists(x) and os.path.isfile(x))
+    input_files = sorted(
+        set(x for x in input_files if os.path.exists(x) and os.path.isfile(x)),
+        key=lambda x: (os.path.basename(x), x)
+    )
 
     _LOGGER.info(f"Found {len(input_files)} files to process")
+
+    options = {k: tuple(_.lower() for _ in v) for k, v in {
+        True: ("y", "yes", "j", "t", "1"),
+        False: ("n", "no", "f", "0"),
+        "list": ("l", "list")
+    }.items()}
+
+    while True:
+        res = input(f"Found {len(input_files)} files to process. Continue? [{'/'.join(x[0] for x in options.values())}] ")
+        if res.lower() in options[True]:
+            break
+        elif res.lower() in options[False]:
+            _LOGGER.error("Please check your input and try again.")
+            exit(1)
+        elif res.lower() in options["list"]:
+            _LOGGER.info(f"Files to process:\n{os.linesep.join(input_files)}")
+        else:
+            from itertools import chain
+            _LOGGER.error(f"Did not recognize {res.lower()}. Accepted options: {'/'.join(chain(*options.values()))})")
 
     config.parse_argparse(namespace=args)
 
@@ -89,7 +122,7 @@ def main(args: Sequence[str] = None) -> List[str]:
     r = []
 
     with Progress(name="Processing files", desc="", total=len(input_files)) as pb:
-        for file in sorted(input_files):
+        for file in input_files:
             pb.description = f"{file}"
             pb.increment(n=1)
             try:
@@ -98,11 +131,16 @@ def main(args: Sequence[str] = None) -> List[str]:
                     pipe = pipe_class()
                     res.append(pipe.process(file=file, config=config))
                 written_folder = writer.store(file=file, output=args.output, pipeline_results=res)
-                r.append(written_folder)
                 if args.export_config:
                     with open(os.path.join(written_folder, "config.json"), "w") as f:
                         json.dump(config.config, f)
                         _LOGGER.info(f'Saved config to "{os.path.join(args.output, "config.json")}"')
+                if args.output_zip:
+                    zipped_folder = shutil.make_archive(written_folder, "zip", written_folder)
+                    if not args.keep_uncompressed:
+                        shutil.rmtree(written_folder)
+                    written_folder = zipped_folder
+                r.append(written_folder)
             except Exception as e:
                 import traceback
                 _LOGGER.exception(f"Got error during execution for file {file}", exc_info=e)
@@ -111,7 +149,6 @@ def main(args: Sequence[str] = None) -> List[str]:
                     f.write(f"{'=' * 20}")
                     f.write("Full Error:\n")
                     f.write(''.join(traceback.format_exception(type(e), e, e.__traceback__)))
-
 
     shutil.rmtree(config.work_directory)
     return r

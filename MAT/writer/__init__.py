@@ -29,12 +29,16 @@ class Writer:
         self._storage_functions[t] = f
 
     def store(self, file: str, output: str, pipeline_results: List[PipelineResult]) -> str:
+        from MAT.utils import get_hash_file
+        from MAT import __version__
         now = datetime.now()
         folder = os.path.join(output, f"{pathlib.Path(file).stem}_{now.strftime('%Y-%m-%d_%H-%M-%S')}")
         os.makedirs(folder, exist_ok=False)
         meta = {
             "version": self.__api_version__,
+            "MAT_version": __version__,
             "file_name": os.path.basename(file),
+            "file_hash": get_hash_file(file_path=os.path.abspath(file)),
             "file_name_wo_extension": pathlib.Path(file).stem,
             "full_file": os.path.abspath(file),
             "creation_time": now.isoformat(),
