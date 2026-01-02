@@ -61,19 +61,39 @@ class TransciptorWhisper(TransciptionTool):
         }
 
     def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscriptionResult]:
+        import sys
+        from time import perf_counter
+        from datetime import timedelta
         from faster_whisper import WhisperModel
         import whisperx
         from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF, DEFAULT_ALIGN_MODELS_TORCH
         import tqdm
+        import math
 
         cfg = config.get_config(key=self)
         model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=cfg["compute-type"],
                              cpu_threads=cfg["cpu-count"])
         segments, info = model.transcribe(origin_data.input_file, beam_size=cfg["beam-size"], vad_filter=True, )
 
+        segment_lengths = []
         segments_as_dict = []
-        for segment in tqdm.tqdm(segments, unit="segment", leave=False, desc="Transcribing"):
-            segments_as_dict.append(segment.__dict__)
+
+        t1 = perf_counter()
+        with tqdm.tqdm(segments, unit="segment", leave=False, desc="Transcribing") as pb:
+            for segment in pb:
+                segment_lengths.append(segment.end - segment.start)
+                avg_length = sum(segment_lengths) / len(segment_lengths)
+                pb.total = math.ceil(info.duration / avg_length)
+                pb.set_description(f"Transcribing {avg_length:.1f}s segments")
+                segments_as_dict.append(segment.__dict__)
+        t2 = perf_counter()
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+        self._LOGGER.info(f"Finished transcription of {len(segment_lengths)} segments in {timedelta(seconds=t2-t1)}")
+        self._LOGGER.info(f"Transcribed {len(segment_lengths)} segments, "
+                          f"that total to {timedelta(seconds=sum(segment_lengths))} of audio. "
+                          f"Audio file has a length of {timedelta(seconds=info.duration)}")
 
         if info.language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys()):
             align_model, meta = whisperx.load_align_model(language_code=info.language, device=cfg["device"])

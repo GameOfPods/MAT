@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple, Dict
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
@@ -26,12 +26,18 @@ class SummaryResult(ToolResult):
 
 class SummaryInput(ToolInput):
 
-    def __init__(self, *text: str):
+    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None):
         self._text = text
+        self._additional_metadata = {} if additional_metadata is None else additional_metadata
 
     @property
     def text(self):
         yield from self._text
+
+    @property
+    def additional_metadata(self) -> Dict[str, str]:
+        from copy import deepcopy
+        return deepcopy(self._additional_metadata)
 
 
 class SummaryTool(Tool[SummaryInput, SummaryResult], ABC):

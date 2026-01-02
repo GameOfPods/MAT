@@ -11,6 +11,22 @@
 from typing import Callable, Dict, Any, Optional
 
 
+def get_hash(obj) -> str:
+    import hashlib
+    return hashlib.sha1(obj).hexdigest()
+
+def get_hash_file(file_path: str) -> str:
+    with open(file_path, "rb") as file_handle:
+        return get_hash(file_handle.read())
+
+def get_hash_pipeline(step_input: "PipelineStepInput") -> "PipelineStepResult":
+    from MAT.pipelines import PipelineStepInput, PipelineStepResult
+    return PipelineStepResult(
+        name="Hash",
+        data=get_hash(step_input.file)
+    )
+
+
 def get_all_concrete_subclasses(cls):
     concrete_subclasses = []
     for subclass in cls.__subclasses__():

@@ -76,6 +76,7 @@ class PodcastPipeline(Pipeline):
         return False
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
+        from MAT.utils import get_hash_pipeline
         import pydub
         def transcribe(step_input: PipelineStepInput) -> PipelineStepResult:
             d = TransciptorWhisper().process(origin_data=TranscriptionInput(step_input.file), config=step_input.config)
@@ -123,13 +124,20 @@ class PodcastPipeline(Pipeline):
             )
 
         def summarize_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
+            from os.path import basename
             try:
                 full_transcript: str = step_input.previous_results["Finalizing transcript"].data[2]
                 if full_transcript is None:
                     raise AttributeError()
             except (IndexError, KeyError, ValueError, TypeError, AttributeError):
                 return PipelineStepResult(name="Summarize transcript", data=None)
-            summary = SummaryLLM().process(origin_data=SummaryInput(full_transcript), config=step_input.config)
+            additional_metadata={
+                "filename": basename(step_input.file)
+            }
+            summary = SummaryLLM().process(
+                origin_data=SummaryInput(full_transcript, additional_metadata=additional_metadata),
+                config=step_input.config
+            )
             return PipelineStepResult(
                 name="Summarize transcript",
                 data=summary
