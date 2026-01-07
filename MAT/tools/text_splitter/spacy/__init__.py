@@ -46,7 +46,7 @@ class SplitterSpacy(SplitterTool):
         cfg = config.get_config(self)
         model = cfg["model"]
         if model is None:
-            self.__class__._LOGGER.debug("No model specified. Using default model")
+            self.__class__._LOGGER.debug("No model specified. Guessing best model by language")
             try:
                 from langdetect import detect
                 lang = detect(origin_data.text)

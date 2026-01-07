@@ -9,8 +9,10 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 
-
-from langchain.chains.summarize.refine_prompts import PROMPT, REFINE_PROMPT
+try:
+    from langchain.chains.summarize.refine_prompts import PROMPT, REFINE_PROMPT
+except ImportError as e:
+    from langchain_classic.chains.summarize.refine_prompts import PROMPT, REFINE_PROMPT
 
 PROMPT = PROMPT.template
 REFINE_PROMPT = REFINE_PROMPT.template
