@@ -81,7 +81,7 @@ class BookPipeline(Pipeline):
         def parse_book(step_input: PipelineStepInput) -> PipelineStepResult:
             book: epub.EpubBook = epub.read_epub(step_input.file, options={"ignore_ncx": True})
             return PipelineStepResult(
-                name="Book",
+                name="Read Book",
                 data=book
             )
 
@@ -90,7 +90,7 @@ class BookPipeline(Pipeline):
             import re
             from collections import Counter
             try:
-                book: epub.EpubBook = step_input.previous_results["Book"].data
+                book: epub.EpubBook = step_input.previous_results["Read Book"].data
                 if book is None:
                     raise AttributeError()
             except (IndexError, KeyError, ValueError, TypeError, AttributeError):
@@ -198,7 +198,7 @@ class BookPipeline(Pipeline):
             except (IndexError, KeyError, ValueError, TypeError, AttributeError):
                 return None
 
-        book = _try_get("Book")
+        book = _try_get("Read Book")
         chapters = _try_get("Chapters")
         language = _try_get("Language")
 

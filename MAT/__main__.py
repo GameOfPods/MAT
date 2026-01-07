@@ -12,6 +12,8 @@ import shutil
 import sys
 import uuid
 from typing import Sequence, List
+from time import perf_counter
+from datetime import timedelta
 
 from MAT import __version__
 
@@ -121,15 +123,20 @@ def main(args: Sequence[str] = None) -> List[str]:
     writer = Writer()
     r = []
 
+    t_whole_start = perf_counter()
     with Progress(name="Processing files", desc="", total=len(input_files)) as pb:
         for file in input_files:
+            t_file_start = perf_counter()
             pb.description = f"{file}"
             pb.increment(n=1)
             try:
                 res = []
                 for pipe_class in Pipeline.get_pipelines(f=file):
+                    t_start_pipeline = perf_counter()
                     pipe = pipe_class()
                     res.append(pipe.process(file=file, config=config))
+                    t_end_pipeline = perf_counter()
+                    _LOGGER.info(f"{pipe.name()} took {timedelta(seconds=t_end_pipeline - t_start_pipeline)} on {file}")
                 written_folder = writer.store(file=file, output=args.output, pipeline_results=res)
                 if args.export_config:
                     with open(os.path.join(written_folder, "config.json"), "w") as f:
@@ -149,6 +156,10 @@ def main(args: Sequence[str] = None) -> List[str]:
                     f.write(f"{'=' * 20}")
                     f.write("Full Error:\n")
                     f.write(''.join(traceback.format_exception(type(e), e, e.__traceback__)))
+            t_file_end = perf_counter()
+            _LOGGER.info(f"File {file} took {timedelta(seconds=t_file_end - t_file_start)}")
+    t_whole_end = perf_counter()
+    _LOGGER.info(f"Whole Process took {timedelta(seconds=t_whole_end - t_whole_start)} for {len(input_files)} files")
 
     shutil.rmtree(config.work_directory)
     return r

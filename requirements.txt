@@ -14,7 +14,7 @@ scipy
 speechbrain
 
 # torch
---extra-index-url https://download.pytorch.org/whl/cu124
+--extra-index-url https://download.pytorch.org/whl/cu126
 nvidia-cudnn-cu11
 nvidia-pyindex
 torch
@@ -23,6 +23,7 @@ torchaudio
 
 # langchain
 langchain
+langchain-classic
 langchain-openai
 
 # token count estimation
@@ -46,7 +47,7 @@ faster-whisper
 whisperx
 
 # spacy
-spacy
+spacy>=3.7.5
 spacy-transformers
 spacy_download
 langdetect

@@ -121,12 +121,17 @@ class SummaryLLM(SummaryTool):
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: SummaryInput, config: Config) -> Optional[SummaryResult]:
-        from langchain.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
+        try:
+            from langchain.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
+            from langchain.chains.mapreduce import MapReduceChain
+            from langchain.chains.summarize import load_summarize_chain
+        except ImportError as e:
+            from langchain_classic.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
+            from langchain_classic.chains.mapreduce import MapReduceChain
+            from langchain_classic.chains.summarize import load_summarize_chain
         from langchain.prompts import PromptTemplate
         from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-        from langchain.chains.mapreduce import MapReduceChain
         from langchain.docstore.document import Document
-        from langchain.chains.summarize import load_summarize_chain
 
         cfg = config.get_config(key=self)
         return_summaries: List[str] = []
