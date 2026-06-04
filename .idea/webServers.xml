@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="b8984271-6a64-4f07-a8eb-6a45de924430" name="NED-VM">
+        <fileTransfer accessType="SFTP" host="192.168.2.71" port="22" sshConfigId="9763944a-a6f4-4f23-9b18-cb00e2334f42" sshConfig="ned@192.168.2.71:22 key" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
