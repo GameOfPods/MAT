@@ -91,7 +91,7 @@ class NERGliner(NERTool):
                 return None
 
         labels = cfg["labels"]
-        self.__class__._LOGGER.info(f"Running GliNER{cfg['version']}-{cfg['model']} with labels: {', '.join(labels)}")
+        self.__class__._LOGGER.debug(f"Running GliNER{cfg['version']}-{cfg['model']} with labels: {', '.join(labels)}")
 
         ret: List[Dict[str, List[Tuple[str, int, int]]]] = []
         for txt in tqdm.tqdm(origin_data.text, leave=False, desc="NER on sentence", unit="sentences"):

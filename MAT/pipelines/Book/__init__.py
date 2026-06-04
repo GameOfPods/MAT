@@ -112,9 +112,12 @@ class BookPipeline(Pipeline):
             valid_chapters = set(
                 k for k, v in heading_c.items() if self._chapter_valid(k, heading_c, book_valid_chapters))
             invalid_chapters = set(heading_c.keys()) - valid_chapters
-            self.__class__._LOGGER.info(f"Valid chapters  : {' '.join(f'<<{x}>>' for x in sorted(valid_chapters))}")
-            self.__class__._LOGGER.info(f"Invalid chapters: {' '.join(f'<<{x}>>' for x in sorted(invalid_chapters))}")
+            self.__class__._LOGGER.info(f"Valid chapters   ({len(valid_chapters)}): "
+                                        f"{' '.join(f'<<{x}>>' for x in sorted(valid_chapters))}")
+            self.__class__._LOGGER.info(f"Invalid chapters ({len(invalid_chapters)}): "
+                                        f"{' '.join(f'<<{x}>>' for x in sorted(invalid_chapters))}")
             chapters = [Chapter(heading=x, content=y) for x, y in chapters if x in valid_chapters]
+            self.__class__._LOGGER.info(f"Going forward with {len(chapters)} chapters")
             return PipelineStepResult(name="Chapters", data=chapters)
 
         def beautify_chapters(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -149,6 +152,7 @@ class BookPipeline(Pipeline):
                 return PipelineStepResult(name="Language", data=None)
             full_text = "\n".join("\n".join(x.content) for x in chapters)
             lang = detect(full_text)
+            self.__class__._LOGGER.info(f"Detected language: {lang}")
             return PipelineStepResult(name="Language", data=lang)
 
         def splitting_task(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -170,6 +174,7 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="Word Counter", data=chapters)
 
         def ner_task(step_input: PipelineStepInput) -> PipelineStepResult:
+            from tqdm import tqdm
             try:
                 _prev_res = step_input.previous_results
                 chapters: List[Chapter] = _prev_res["Word Counter"].data
@@ -180,7 +185,8 @@ class BookPipeline(Pipeline):
 
             from MAT.tools.ner.ner_gliner import NERGliner, NERInput
             ner_gliner = NERGliner()
-            for c in chapters:
+            self.__class__._LOGGER.info(f"Using {ner_gliner.__class__.__name__} for {len(chapters)} chapters")
+            for c in tqdm(chapters, leave=False, desc="NER on chapters", unit="chapter"):
                 if c.sentences is None or len(c.sentences) <= 0:
                     continue
                 res = ner_gliner.process(origin_data=NERInput(*c.sentences), config=step_input.config)

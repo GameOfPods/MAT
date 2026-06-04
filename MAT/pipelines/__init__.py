@@ -12,6 +12,8 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict as dataclass_as_dict
 from typing import TypeVar, Generic, Iterable, Callable, Dict, Any, Type
+from time import perf_counter_ns
+from datetime import timedelta
 
 from MAT.tools import ToolResult
 from MAT.utils import get_all_concrete_subclasses
@@ -57,9 +59,12 @@ class Pipeline(Generic[T_out], ConfigClass, ABC):
         self.__class__._LOGGER.info(f"Running pipeline {self.__class__.__name__} on {file}")
         all_steps = list(self._get_steps())
         for i, step in enumerate(all_steps):
+            t1 = perf_counter_ns() / 1e+6
             res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
             step_results[res.name] = res
-            self.__class__._LOGGER.info(f"Step {i + 1}/{len(all_steps)} done: {res.name}")
+            t2 = perf_counter_ns() / 1e+6
+            self.__class__._LOGGER.info(f"Step {i + 1}/{len(all_steps)} done: {res.name} in "
+                                        f"{f'{t2 - t1:.3f}ms' if t2 - t1 < 1000 else str(timedelta(milliseconds=int(t2 - t1)))}")
         return self._finalize_result(step_results=step_results)
 
     @abstractmethod

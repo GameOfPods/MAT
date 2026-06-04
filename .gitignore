@@ -256,3 +256,5 @@ fabric.properties
 
 # MAT-Folder
 **/.MAT.*
+
+.idea/

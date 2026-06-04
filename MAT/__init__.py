@@ -13,8 +13,7 @@ import os
 import sys
 
 __author__ = 'RedRem95'
-with open(os.path.join(os.path.dirname(__file__), 'version.txt'), 'r') as version_file:
-    __version__ = version_file.read().strip()
+from MAT.__version__ import __version__
 
 logging.basicConfig(
     format="{asctime} - {levelname:^8} - {name}: {message}",
@@ -28,7 +27,9 @@ logging.basicConfig(
 del os
 del logging
 del sys
-__all__ = ['__version__', "__author__"]
 
 from MAT.tools import *
 from MAT.pipelines import *
+from MAT.reader import *
+
+__all__ = ['__version__', "__author__", "MATResult", "ResultTypes"]
