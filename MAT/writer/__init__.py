@@ -32,7 +32,12 @@ class Writer:
         from MAT.utils import get_hash_file
         from MAT import __version__
         now = datetime.now()
-        folder = os.path.join(output, f"{pathlib.Path(file).stem}_{now.strftime('%Y-%m-%d_%H-%M-%S')}")
+        base_folder = os.path.join(output, f"{pathlib.Path(file).stem}_{now.strftime('%Y-%m-%d_%H-%M-%S')}")
+        # two inputs with the same name finishing in the same second would collide otherwise
+        folder, i = base_folder, 1
+        while os.path.exists(folder):
+            folder = f"{base_folder}_{i}"
+            i += 1
         os.makedirs(folder, exist_ok=False)
         meta = {
             "version": self.__api_version__,

@@ -53,7 +53,11 @@ from MAT.tools.text_splitter import *
 from MAT.tools.text_splitter import __all__ as splitter_all
 
 __all__ = ["Tool", "ToolInput", "ToolResult"]
-__all__ += ner_all + summary_all + speakeridentification_all + transcription_all + splitter_all
+__all__ += ner_all + summary_all + diarizators_all + speakeridentification_all + transcription_all + splitter_all
 
 del ner_all
 del summary_all
+del diarizators_all
+del speakeridentification_all
+del transcription_all
+del splitter_all

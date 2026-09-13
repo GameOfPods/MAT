@@ -35,11 +35,6 @@ class SpeakerIdentificationInput(ToolInput):
         return self._audio_files
 
 
-@property
-def in_file(self) -> str:
-    return self._in_file
-
-
 class SpeakerIdentificationTool(Tool[SpeakerIdentificationInput, SpeakerIdentificationResult], ABC):
     @abstractmethod
     def process(self, origin_data: SpeakerIdentificationInput, config: Config) -> Optional[SpeakerIdentificationResult]:

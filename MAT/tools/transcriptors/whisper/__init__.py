@@ -85,7 +85,11 @@ class TransciptorWhisper(TransciptionTool):
                 avg_length = sum(segment_lengths) / len(segment_lengths)
                 pb.total = math.ceil(info.duration / avg_length)
                 pb.set_description(f"Transcribing {avg_length:.1f}s segments")
-                segments_as_dict.append(segment.__dict__)
+                # Segment is a dataclass in newer faster-whisper versions and a NamedTuple in older ones
+                try:
+                    segments_as_dict.append(segment.__dict__)
+                except AttributeError:
+                    segments_as_dict.append(segment._asdict())
         t2 = perf_counter()
 
         sys.stdout.flush()
@@ -94,6 +98,11 @@ class TransciptorWhisper(TransciptionTool):
         self._LOGGER.info(f"Transcribed {len(segment_lengths)} segments, "
                           f"that total to {timedelta(seconds=sum(segment_lengths))} of audio. "
                           f"Audio file has a length of {timedelta(seconds=info.duration)}")
+
+        if len(segments_as_dict) == 0:
+            self._LOGGER.warning(f"No speech found in {origin_data.input_file}")
+            return TranscriptionResult(word_timings=[], language=info.language, duration=info.duration,
+                                       duration_after_vad=info.duration_after_vad)
 
         if info.language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys()):
             align_model, meta = whisperx.load_align_model(language_code=info.language, device=cfg["device"])
@@ -116,13 +125,30 @@ class TransciptorWhisper(TransciptionTool):
             )
 
         else:
-            word_timestamps = []
-            for s in segments_as_dict:
-                for w in s["words"]:
-                    word_timestamps.append(WordTuple(start=w[0], end=w[1], word=w[2]))
+            self._LOGGER.warning(f"No alignment model for language {info.language}. Using segment level timings")
+            word_timestamps = TransciptorWhisper._words_from_segments(segments=segments_as_dict)
 
         return TranscriptionResult(word_timings=word_timestamps, language=info.language, duration=info.duration,
                                    duration_after_vad=info.duration_after_vad)
+
+    @staticmethod
+    def _words_from_segments(segments: List[dict]) -> List[WordTuple]:
+        # We don't ask faster-whisper for word timestamps, so "words" is usually None here.
+        # In that case every segment becomes one entry with the segment timings.
+        ret = []
+        for s in segments:
+            words = s.get("words") or []
+            if len(words) == 0:
+                ret.append(WordTuple(start=s.get("start"), end=s.get("end"), word=(s.get("text") or "").strip()))
+                continue
+            for w in words:
+                if isinstance(w, dict):
+                    ret.append(WordTuple(start=w.get("start"), end=w.get("end"), word=w.get("word")))
+                elif hasattr(w, "start"):
+                    ret.append(WordTuple(start=w.start, end=w.end, word=w.word))
+                else:
+                    ret.append(WordTuple(start=w[0], end=w[1], word=w[2]))
+        return ret
 
     @staticmethod
     def _merge_words(words: List[WordTuple], fin: float, idx: int = 0) -> Optional[float]:
