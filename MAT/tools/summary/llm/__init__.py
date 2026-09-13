@@ -129,9 +129,14 @@ class SummaryLLM(SummaryTool):
             from langchain_classic.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
             from langchain_classic.chains.mapreduce import MapReduceChain
             from langchain_classic.chains.summarize import load_summarize_chain
-        from langchain.prompts import PromptTemplate
-        from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-        from langchain.docstore.document import Document
+        try:
+            from langchain.prompts import PromptTemplate
+            from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+            from langchain.docstore.document import Document
+        except ImportError:
+            from langchain_core.prompts import PromptTemplate
+            from langchain_core.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+            from langchain_core.documents import Document
 
         cfg = config.get_config(key=self)
         return_summaries: List[str] = []
@@ -157,8 +162,12 @@ class SummaryLLM(SummaryTool):
             chain = load_summarize_chain(
                 llm,
                 chain_type="refine",
-                question_prompt=PromptTemplate.from_template(f"{cfg['system-message']}\n\n{cfg['prompt']}"),
-                refine_prompt=PromptTemplate.from_template(f"{cfg['system-message']}\n\n{cfg['prompt-refine']}"),
+                question_prompt=PromptTemplate.from_template(
+                    self._build_template(cfg['system-message'], cfg['prompt'])
+                ),
+                refine_prompt=PromptTemplate.from_template(
+                    self._build_template(cfg['system-message'], cfg['prompt-refine'])
+                ),
                 return_intermediate_steps=True,
                 input_key="input_documents",
                 output_key="output_text",
@@ -175,6 +184,14 @@ class SummaryLLM(SummaryTool):
             return_summaries.append(summary["output_text"])
 
         return SummaryResult(*return_summaries)
+
+    @staticmethod
+    def _build_template(system_message: str, prompt: str) -> str:
+        # The default langchain prompts only know {text} (and {existing_answer}), so the metadata we pass into the
+        # chain was silently dropped. Add it unless the prompt already uses it.
+        if "{additional_metadata}" in system_message or "{additional_metadata}" in prompt:
+            return f"{system_message}\n\n{prompt}"
+        return f"{system_message}\n\nAdditional information about the source:\n{{additional_metadata}}\n\n{prompt}"
 
     @classmethod
     def _get_len_fun(cls):
@@ -198,7 +215,10 @@ class SummaryLLM(SummaryTool):
     @classmethod
     def _get_splitter(cls, chunk_size: int, len_fun):
 
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        try:
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
+        except ImportError:
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
         splitter = RecursiveCharacterTextSplitter(
             separators=["\n\n",
                         "\n",

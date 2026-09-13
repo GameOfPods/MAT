@@ -56,17 +56,18 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                     "required": False, "type": gold_label_folder,
                 }
             ),
+            # Used to be store_false with default True, so passing the flag turned the token ON
             "no-hf-token": ConfigElement(
-                default_value=True,
+                default_value=False,
                 argparse_kwargs={
-                    "help": "Whether to not use a Hugging Face token",
-                    "action": "store_false",
+                    "help": "Don't send your Hugging Face token when loading the model",
+                    "action": "store_true",
                 }
             ),
             "device": ConfigElement(
                 default_value="cuda" if torch.cuda.is_available() else "cpu",
                 argparse_kwargs={
-                    "help": "Model to run the model on. Default: %(default)s",
+                    "help": "Device to run the model on. Default: %(default)s",
                     "type": str,
                 }
             ),

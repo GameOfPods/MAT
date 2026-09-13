@@ -68,7 +68,7 @@ class NERGliner(NERTool):
                 model = GLiNER.from_pretrained(cfg["model"])
 
                 def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
-                    _result = model.predict_entities(txt, [label])
+                    _result = model.predict_entities(_txt, _labels)
                     _ret = []
                     for _r in _result:
                         _ret.append(GLiNERResult(text=_r["text"], start=_r["start"], end=_r["end"], label=_r["label"]))
@@ -80,7 +80,7 @@ class NERGliner(NERTool):
                 model = GLiNER2.from_pretrained(cfg["model"])
 
                 def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
-                    _result = model.extract_entities(txt, [label], include_spans=True)
+                    _result = model.extract_entities(_txt, _labels, include_spans=True)
                     _ret = []
                     for _label, _entities in _result["entities"].items():
                         for _e in _entities:

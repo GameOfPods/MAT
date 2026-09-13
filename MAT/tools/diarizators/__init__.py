@@ -40,7 +40,7 @@ class DiarizationResult(ToolResult):
 
     def speaker_matching(self, identifier: SpeakerIdentificationTool, config: Config,
                          audio: pydub.AudioSegment) -> "DiarizationResult":
-        final_speaker = {}
+        final_speaker: Dict[str, List[Tuple[float, float]]] = {}
         for speaker in self.speaker:
             a_t = pydub.AudioSegment.empty()
             for fr, to in self.get_diarization(speaker=speaker):
@@ -48,7 +48,11 @@ class DiarizationResult(ToolResult):
             m = identifier.process(origin_data=SpeakerIdentificationInput((a_t, a_t.frame_rate)), config=config)
             if len(m.get_speaker()) != 1:
                 raise Exception(f"Diarization failed for {speaker}")
-            final_speaker[m.get_speaker()[0]] = [x for x in self.get_diarization(speaker=speaker)]
+            # None means no match (or no gold labels given). Keep the diarizer label then, otherwise all
+            # unmatched speakers end up under the same None key and overwrite each other.
+            # If two diarizer speakers match the same gold speaker their segments get merged.
+            name = speaker if m.get_speaker()[0] is None else m.get_speaker()[0]
+            final_speaker.setdefault(name, []).extend(self.get_diarization(speaker=speaker))
         return DiarizationResult(diarization=final_speaker)
 
     def to_dict(self):

@@ -45,6 +45,8 @@ These change how MAT behaves, so each one needs a decision first.
 - [ ] GPU install: torch is pinned `<2.6`, but the `pytorch-cu126` index only has torch 2.6+. Pick a matching CUDA index (cu124 for 2.5) and document how to switch.
 - [ ] Find out why torch is pinned below 2.6 and write it down (or lift the pin)
 - [ ] Default summary model is `gpt-4`. Pick a current default.
+- [ ] GLiNER is asked about one label at a time, so it tends to find something for every label. In a test run `Bob` and `Paris` also came back as `ORGANIZATION`. Passing all labels in one call should let the model choose.
+- [ ] spaCy sentences keep their trailing newline (`"Alice met Bob.\n"`). Strip them before storing.
 - [ ] `Config` calls `sys.exit(1)` on duplicate config names. Raise instead.
 
 ## Stage 3: speed

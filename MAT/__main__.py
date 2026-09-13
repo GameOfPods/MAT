@@ -141,7 +141,7 @@ def main(args: Sequence[str] = None) -> List[str]:
                 if args.export_config:
                     with open(os.path.join(written_folder, "config.json"), "w") as f:
                         json.dump(config.config, f)
-                        _LOGGER.info(f'Saved config to "{os.path.join(args.output, "config.json")}"')
+                        _LOGGER.info(f'Saved config to "{os.path.join(written_folder, "config.json")}"')
                 if args.output_zip:
                     zipped_folder = shutil.make_archive(written_folder, "zip", written_folder)
                     if not args.keep_uncompressed:

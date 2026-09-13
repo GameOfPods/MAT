@@ -33,14 +33,14 @@ class DiarizerNEMO(DiarizationTool):
             "model": ConfigElement(
                 default_value="nvidia/diar_sortformer_4spk-v1",
                 argparse_kwargs={
-                    "help": "Model for whisper diarizer. Default: %(default)s",
+                    "help": "NeMo diarization model. Default: %(default)s",
                     "type": str,
                 }
             ),
             "device": ConfigElement(
                 default_value="cuda" if torch.cuda.is_available() else "cpu",
                 argparse_kwargs={
-                    "help": "Model to run the model on. Default: %(default)s",
+                    "help": "Device to run the model on. Default: %(default)s",
                     "type": str,
                 }
             ),

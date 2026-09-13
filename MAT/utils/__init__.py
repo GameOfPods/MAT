@@ -40,14 +40,16 @@ def timeout_retry(func: Callable, func_args: tuple, func_kwargs: Dict[str, Any],
     retries = max(0, retries)
     time_out = max(0, time_out)
     last_e: Optional[BaseException] = None
+    from time import sleep
     while retries >= 0:
         try:
             return func(*func_args, **func_kwargs)
         except Exception as e:
             last_e = e
         retries -= 1
-        from time import sleep
-        sleep(time_out)
+        # no point in waiting after the last attempt
+        if retries >= 0:
+            sleep(time_out)
     if last_e is not None:
         raise last_e
     return None

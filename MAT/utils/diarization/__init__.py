@@ -8,7 +8,6 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from collections import defaultdict
 from typing import List
 
 from MAT.tools.transcriptors import TranscriptionResult, WordTupleSpeaker, WordTuple
@@ -27,51 +26,10 @@ def word_speaker_match(word: WordTuple, speach_from, speach_to) -> float:
 
 def align_diarization_with_transcription(diarization: DiarizationResult, transcript: TranscriptionResult) -> List[
     WordTupleSpeaker]:
-    aligned_transcript = []
-
-    # First, prepare a timeline of all speaker segments
-    speaker_timeline = []
-    for speaker in diarization.speaker:
-        for f, t in diarization.get_diarization(speaker=speaker):
-            speaker_timeline.append({"speaker": speaker, "time": f, "type": "start"})
-            speaker_timeline.append({"speaker": speaker, "time": t, "type": "end"})
-
-    speaker_timeline.sort(key=lambda x: x["time"])
-
-    # Track active speakers at any point in time
-    active_speakers = defaultdict(lambda: 0)
-    speaker_intervals = []
-
-    for event in speaker_timeline:
-        if event["type"] == "start":
-            active_speakers[event["speaker"]] += 1
-        else:
-            active_speakers[event["speaker"]] -= 1
-
-        # Record the set of active speakers for this time point
-        speaker_intervals.append({
-            "time": event["time"],
-            "speakers": set([k for k, v in active_speakers.items() if v > 0])
-        })
-
     word_speaker: List[WordTupleSpeaker] = []
 
-    # Assign words to speakers
-    for word in transcript.word_timings:
-        word_compare_time = (word.start + word.end) / 2
-        word_compare_time = word.start
-
-        # Find the speaker interval this word belongs to
-        active_speakers_for_word = set()
-        for i in range(len(speaker_intervals) - 1):
-            if speaker_intervals[i]["time"] <= word_compare_time < speaker_intervals[i + 1]["time"]:
-                active_speakers_for_word = speaker_intervals[i]["speakers"]
-                break
-
-        word_speaker.append(WordTupleSpeaker(word=word, speaker=active_speakers_for_word))
-
-    word_speaker: List[WordTupleSpeaker] = []
-
+    # For every word take the speakers with the biggest time overlap. Start at full overlap and lower the bar
+    # in 0.1 steps until at least one speaker matches.
     for word in transcript.word_timings:
         speaker_matching = [
             (s, max(word_speaker_match(word, f, t) for f, t in diarization.get_diarization(speaker=s))) for s in

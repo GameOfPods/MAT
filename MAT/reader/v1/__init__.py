@@ -97,12 +97,15 @@ class ParsedBookResult(ParsedResult):
     def chapters(self) -> List["ParsedBookResult.Chapter"]:
         ret = []
         for chapter in self._content["chapters"]:
-            if len(chapter["sentence_words"]) != len(chapter["sentences"]) or len(chapter["sentences"]) != len(chapter["ner"]):
-                self.parent.get_logger().error("The sentence data was not recorded correctly")
-                exit(1)
+            # The writer only stores sentences, sentence_words and ner if those steps produced data
+            chapter_sentences = chapter.get("sentences", [])
+            chapter_words = chapter.get("sentence_words", [{} for _ in chapter_sentences])
+            chapter_ner = chapter.get("ner", [{} for _ in chapter_sentences])
+            if len(chapter_words) != len(chapter_sentences) or len(chapter_ner) != len(chapter_sentences):
+                raise ValueError(f"Sentence data of chapter \"{chapter.get('heading_raw')}\" was not recorded correctly")
 
             sentences = []
-            for sentence, sentence_words, ner in zip(chapter["sentences"], chapter["sentence_words"], chapter["ner"]):
+            for sentence, sentence_words, ner in zip(chapter_sentences, chapter_words, chapter_ner):
                 sentences.append(ParsedBookResult.Sentence(
                     sentence=sentence, words=sentence_words,
                     ner={k: [x["ent"] for x in v] for k, v in ner.items()}

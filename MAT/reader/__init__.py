@@ -46,17 +46,18 @@ class MATResult(ABC):
             except Exception as e:
                 self.get_logger().exception(f"Error reading MAT-result file {path}: {e}", exc_info=e)
         elif self._path.is_dir():
-            from os import pathsep, listdir
+            # os.sep is the directory separator. os.pathsep is the PATH separator (":" on linux) and was used here by mistake
+            from os import sep, listdir
             from os.path import isfile
             try:
-                self._path_seperator = pathsep
+                self._path_seperator = sep
 
                 def custom_walk(_path: str):
-                    if isfile(str(self._path.absolute()) + pathsep + _path):
+                    if isfile(str(self._path.absolute()) + sep + _path):
                         self._files.add(_path)
                         return
-                    for _element in listdir(str(self._path.absolute()) + pathsep + _path):
-                        custom_walk(_path + (pathsep if len(_path) > 0 else "") + _element)
+                    for _element in listdir(str(self._path.absolute()) + sep + _path):
+                        custom_walk(_path + (sep if len(_path) > 0 else "") + _element)
 
                 custom_walk("")
 
@@ -65,7 +66,7 @@ class MATResult(ABC):
                     if len(files) <= 0:
                         return ret
                     for _file in files:
-                        with open(str(self._path.absolute()) + pathsep + _file, "rb") as _file_handle:
+                        with open(str(self._path.absolute()) + sep + _file, "rb") as _file_handle:
                             ret[_file] = _file_handle.read()
                     return ret
                 self._get_content = get_content_folder
@@ -109,8 +110,7 @@ class MATResult(ABC):
             if inspect.isclass(base):
                 if not inspect.isabstract(base):
                     if base.supported_version() in readers:
-                        cls.get_logger().error(f"Two or more readers for version {base.supported_version()} defined")
-                        exit(1)
+                        raise RuntimeError(f"Two or more readers for version {base.supported_version()} defined")
                     readers[str(base.supported_version())] = base
                 for sub_base in base.__subclasses__():
                     collect_readers(sub_base)
