@@ -134,10 +134,17 @@ class PodcastPipeline(Pipeline):
             additional_metadata={
                 "filename": basename(step_input.file)
             }
-            summary = SummaryLLM().process(
-                origin_data=SummaryInput(full_transcript, additional_metadata=additional_metadata),
-                config=step_input.config
-            )
+            # A failing summary (API down, provider queue timeout, no key) must not throw away the transcript and
+            # diarization we already have, so log it and write the episode without a summary.
+            try:
+                summary = SummaryLLM().process(
+                    origin_data=SummaryInput(full_transcript, additional_metadata=additional_metadata),
+                    config=step_input.config
+                )
+            except Exception as e:
+                self.__class__._LOGGER.exception(f"Summary failed for {basename(step_input.file)}, "
+                                                 f"writing the results without a summary", exc_info=e)
+                summary = None
             return PipelineStepResult(
                 name="Summarize transcript",
                 data=summary
