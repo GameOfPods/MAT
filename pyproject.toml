@@ -16,32 +16,21 @@ classifiers = [
     'Programming Language :: Python :: 3.12',
 ]
 requires-python = ">=3.12,<3.14"
+# Only what MAT itself needs. Backends come as extras, see [project.optional-dependencies].
 dependencies = [
     "beautifulsoup4",
     "deepmultilingualpunctuation",
     "ebooklib",
-    "faster-whisper>=1.2",
-    "gliner",
-    # 2.0 moved torch/transformers/peft into the "local" extra
-    "gliner2[local]>=2",
     "huggingface-hub",
-    "langchain>=1",
-    "langchain-classic>=1",
-    "langchain-core>=1",
-    "langchain-openai>=1",
-    "langchain-text-splitters>=1",
     "langdetect>=1.0.9",
     "linkify-it-py",
     "markdown",
     "markdown-it-py",
     "mdformat",
     "mdutils",
-    "nemo-toolkit[asr]>=3",
     "numpy>=2",
-    "pip",
     "psutil",
-    "pyannote-audio>=4",
-    "pydantic",
+    "pydantic>=2",
     "pydub",
     "python-levenshtein",
     "pyyaml",
@@ -51,11 +40,6 @@ dependencies = [
     "rttm-manager",
     "scikit-learn",
     "scipy",
-    "spacy",
-    "spacy-download",
-    "spacy-transformers",
-    "speechbrain",
-    "tiktoken",
     # 2.15 stops publishing CUDA 12.6 wheels, the last ones with Pascal (GTX 10xx) kernels
     "torch>=2.8,<2.15",
     "torchaudio>=2.8,<2.15",
@@ -64,17 +48,39 @@ dependencies = [
     "torchcodec>=0.7,<0.8",
     "torchvision",
     "tqdm",
-    "whisperx>=3.8",
     "xlsxwriter",
 ]
+
+[project.optional-dependencies]
+# One extra per backend. A backend whose extra is missing is skipped, `MAT backends` shows which.
+whisper = ["faster-whisper>=1.2", "whisperx>=3.8"]
+# pyannote links the speakers between the audio pieces Sortformer sees
+sortformer = ["nemo-toolkit[asr]>=3", "pyannote-audio>=4"]
+pyannote = ["pyannote-audio>=4"]
+llm = [
+    "langchain>=1",
+    "langchain-classic>=1",
+    "langchain-core>=1",
+    "langchain-openai>=1",
+    "langchain-text-splitters>=1",
+    "tiktoken",
+]
+# spacy-download installs missing models with pip
+spacy = ["spacy", "spacy-download", "spacy-transformers", "pip"]
+# 2.0 moved torch/transformers/peft into the "local" extra
+gliner = ["gliner", "gliner2[local]>=2"]
+all = ["mat[whisper,sortformer,pyannote,llm,spacy,gliner]"]
 
 [dependency-groups]
 dev = [
     "pandas-stubs>=2.3.3.251219",
     "pytest>=9.1.1",
 ]
+# All backends. A default group, so a plain `uv sync` installs everything.
+# For a smaller install: uv sync --no-default-groups --group cu126 --extra whisper --extra pyannote
+backends = ["mat[all]"]
 # Torch build. cu126 is the default and also runs on CPU.
-# CPU-only machines can use the smaller build: uv sync --no-default-groups --group dev --group cpu
+# CPU-only machines can use the smaller build: uv sync --no-default-groups --group dev --group cpu --group backends
 cu126 = [
     "torch>=2.8,<2.15",
     "torchaudio>=2.8,<2.15",
@@ -91,7 +97,7 @@ Homepage = "https://github.com/GameOfPods/MAT"
 "Bug Tracker"= "https://github.com/GameOfPods/MAT/issues"
 
 [project.scripts]
-MAT = "MAT.__main__:main"
+MAT = "MAT.__main__:entrypoint"
 
 [build-system]
 requires = ["hatchling"]
@@ -106,9 +112,9 @@ exclude = [
 path = "MAT/__version__.py"
 
 [tool.uv]
-# uv has no default extras, so the torch build is picked with groups.
-# Without a default, a plain `uv run` would install the PyPI build, which doesn't run on GTX 10xx cards.
-default-groups = ["dev", "cu126"]
+# uv has no default extras, so the torch build and the backends are picked with groups.
+# Without a default, a plain `uv run` would install the PyPI torch build, which doesn't run on GTX 10xx cards.
+default-groups = ["dev", "cu126", "backends"]
 conflicts = [
     [
         { group = "cpu" },

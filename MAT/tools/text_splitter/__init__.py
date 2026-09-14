@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Optional, Iterable, Dict, List
+from typing import Optional, Iterable, Dict
 from dataclasses import dataclass
 
 from MAT.utils.config import Config
@@ -33,7 +33,8 @@ class SplitterTool(Tool[SplitterInput, SplitterResult], ABC):
         pass
 
 
-from MAT.tools.text_splitter.spacy import SplitterSpacy
+from MAT.registry import load_optional
 
-__all__ = ["SplitterResult", "SplitterInput", "SplitterTool", "SplitterSpacy"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.text_splitter.spacy", slot="splitter", name="spacy", extra="spacy")
+
+__all__ = ["SplitterResult", "SplitterInput", "SplitterTool"]

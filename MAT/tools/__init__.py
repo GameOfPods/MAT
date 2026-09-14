@@ -10,9 +10,10 @@
 #  GNU General Public License for more details.
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Iterable, Optional
+from importlib import metadata
+from typing import Any, ClassVar, Dict, Generic, Optional, Tuple, TypeVar
 
-from MAT.utils.config import ConfigClass, Config
+from MAT.utils.config import Config, Configurable
 
 
 class ToolResult(ABC):
@@ -27,11 +28,30 @@ T_out = TypeVar("T_out", bound=ToolResult)
 T_in = TypeVar("T_in", bound=ToolInput)
 
 
-class Tool(Generic[T_in, T_out], ConfigClass, ABC):
+class Tool(Generic[T_in, T_out], Configurable, ABC):
+    slot: ClassVar[str] = ""
+    backend_name: ClassVar[str] = ""
+    # distribution names, their versions go into the result so you can tell what produced it
+    packages: ClassVar[Tuple[str, ...]] = ()
 
     @abstractmethod
     def process(self, origin_data: T_in, config: Config) -> Optional[T_out]:
         pass
+
+    def describe(self, config: Config) -> Dict[str, Any]:
+        info: Dict[str, Any] = {"backend": self.backend_name}
+        model = getattr(config.options(self), "model", None)
+        if model is not None:
+            info["model"] = model
+        versions = {}
+        for package in self.packages:
+            try:
+                versions[package] = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                pass
+        if versions:
+            info["packages"] = versions
+        return info
 
 
 from MAT.tools.ner import *

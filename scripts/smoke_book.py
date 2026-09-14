@@ -56,9 +56,8 @@ def main():
 
     assert BookPipeline in Pipeline.get_pipelines(f=str(book_path)), "BookPipeline did not accept the epub"
 
-    config = Config()
-    config.set_work_directory(str(out))
-    config.parse_config({"SpaCy": {"model": args.spacy_model}})
+    config = Config({"spacy": {"model": args.spacy_model}}, work_directory=str(out))
+    config.validate()
 
     start = perf_counter()
     result = BookPipeline().process(file=str(book_path), config=config)

@@ -10,11 +10,14 @@
 #  GNU General Public License for more details.
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Dict, List, Set
+from typing import Optional, List, Set, TYPE_CHECKING
 from dataclasses import dataclass
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
+
+if TYPE_CHECKING:
+    from MAT.tools.diarizators import DiarizationResult
 
 
 @dataclass
@@ -70,8 +73,30 @@ class TransciptionTool(Tool[TranscriptionInput, TranscriptionResult], ABC):
         pass
 
 
-from MAT.tools.transcriptors.whisper import TransciptorWhisper
+class TranscribeDiarizeResult(TranscriptionResult):
+    def __init__(self, diarization: "DiarizationResult" = None, **kwargs):
+        super().__init__(**kwargs)
+        self._diarization = diarization
 
-__all__ = ["TranscriptionResult", "TranscriptionInput", "TransciptionTool", "TransciptorWhisper", "WordTuple",
-           "WordTupleSpeaker"]
-__all__.extend(["__all__"])
+    @property
+    def diarization(self) -> Optional["DiarizationResult"]:
+        return self._diarization
+
+
+class TranscribeDiarizeTool(TransciptionTool, ABC):
+    """
+    A model that transcribes and diarizes in one pass. Registered in the transcriber slot, the podcast pipeline then
+    takes the diarization from it and doesn't run the diarizer.
+    """
+
+    @abstractmethod
+    def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscribeDiarizeResult]:
+        pass
+
+
+from MAT.registry import load_optional
+
+load_optional("MAT.tools.transcriptors.whisper", slot="transcriber", name="whisper", extra="whisper")
+
+__all__ = ["TranscriptionResult", "TranscriptionInput", "TransciptionTool", "TranscribeDiarizeResult",
+           "TranscribeDiarizeTool", "WordTuple", "WordTupleSpeaker"]

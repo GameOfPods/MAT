@@ -8,14 +8,20 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from typing import Dict, Optional, List
-import json
+from typing import Any, Dict, Optional, List
 import os
 from enum import Enum, auto as enum_auto
 import logging
 
-from MAT.utils.config import ConfigElement, Config
-from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult
+from pydantic import Field, field_validator
+
+from MAT.registry import register, require
+
+require("langchain_classic", "langchain_core", "langchain_openai", "langchain_text_splitters", "tiktoken", extra="llm")
+
+from MAT.utils.config import Config, Options  # noqa: E402
+from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult  # noqa: E402
+from MAT.tools.summary.llm.prompts import SYSTEM_MESSAGE, PROMPT, REFINE_PROMPT  # noqa: E402
 
 
 class LLM(Enum):
@@ -62,169 +68,79 @@ class LLM(Enum):
         raise ValueError(f"LLM of type {name} not defined")
 
 
+class LLMOptions(Options):
+    service: str = Field("OpenAI", description="LLM provider. OpenAI works with every OpenAI compatible API, point "
+                                               "OPENAI_API_BASE at it.")
+    model: str = Field("gpt-5.6-terra", description="Model name at the provider.")
+    temperature: Optional[float] = Field(None, description="Sampling temperature. Not sent by default, reasoning "
+                                                           "models reject it.")
+    max_tokens: int = Field(16384, ge=1, description="Maximum tokens per answer. For reasoning models this includes "
+                                                     "the thinking tokens.")
+    chunk_size: int = Field(32000, ge=1, description="The transcript is split into chunks of this many tokens. The "
+                                                     "first chunk is summarized, the summary is then refined with "
+                                                     "each following chunk.")
+    chunk_overlap: Optional[int] = Field(None, ge=0, description="Tokens shared by neighboring chunks. Not set: 10% "
+                                                                 "of the chunk size, at most 200.")
+    reasoning_effort: Optional[str] = Field("low", description='How much a reasoning model may think. low, medium '
+                                                               'and high work with OpenAI and DeepSeek. "unset" '
+                                                               'doesn\'t send the parameter.')
+    extra_body: Optional[Dict[str, Any]] = Field(None, description='Extra JSON fields for the request, for provider '
+                                                                   'specific switches. DeepSeek thinking off: '
+                                                                   '{"thinking": {"type": "disabled"}}')
+    first_token_timeout: float = Field(900.0, gt=0, description="Seconds to wait for the first streamed token. "
+                                                                "Covers queueing at the provider and prompt "
+                                                                "processing.")
+    idle_timeout: float = Field(120.0, gt=0, description="Seconds to wait between two streamed tokens.")
+    max_retries: int = Field(2, ge=0, description="Retries after timeouts, connection problems or a busy provider.")
+    system_message: str = Field(SYSTEM_MESSAGE, description="Instructions put in front of every prompt.")
+    prompt: str = Field(PROMPT, description="Prompt for the first chunk, has to contain {text}.")
+    prompt_refine: str = Field(REFINE_PROMPT, description="Prompt for the following chunks, has to contain "
+                                                          "{existing_answer} and {text}.")
+
+    @field_validator("service")
+    @classmethod
+    def _known_service(cls, value: str) -> str:
+        names = [x.name for x in LLM]
+        if value not in names:
+            raise ValueError(f"unknown service {value}, choose from {', '.join(names)}")
+        return value
+
+
+@register("summarizer", "llm", description="LangChain refine summary with an OpenAI compatible model")
 class SummaryLLM(SummaryTool):
+    Options = LLMOptions
+    packages = ("langchain-classic", "langchain-openai")
     _LOGGER = logging.getLogger(__name__)
 
-    @classmethod
-    def config_name(cls) -> str:
-        return "LLM-Summarizer"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        from MAT.tools.summary.llm.prompts import SYSTEM_MESSAGE, PROMPT, REFINE_PROMPT
-        return {
-            "service": ConfigElement(
-                default_value=list(LLM)[0].name,
-                argparse_kwargs={
-                    "help": "LLM Service to use. Choose one of the available. Available: %(choices)s. Default: %(default)s",
-                    "choices": [x.name for x in LLM],
-                    "type": str,
-                }
-            ),
-            "model": ConfigElement(
-                default_value="gpt-5.6-terra",
-                argparse_kwargs={
-                    "help": "model name for your selected LLM-provider. Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "temperature": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "temperature for your llm model",
-                    "type": float,
-                }
-            ),
-            "max-tokens": ConfigElement(
-                # reasoning models (gpt-5 and newer) count their thinking tokens here too, 4096 could cut them off
-                default_value=16384,
-                argparse_kwargs={
-                    "help": "Maximum number of tokens the model may generate per call. For reasoning models this "
-                            "includes the thinking tokens. Default: %(default)s",
-                    "type": int,
-                }
-            ),
-            "chunk-size": ConfigElement(
-                default_value=32000,
-                argparse_kwargs={
-                    "help": "Chunk size for summarization. "
-                            "Original text will be split into chunks of this size and then the summarization will be "
-                            "run on the first and refined with the following chunks. Default: %(default)s",
-                    "type": int,
-                }
-            ),
-            "chunk-overlap": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "How many tokens neighboring chunks share. Must be smaller than the chunk size. "
-                            "Default: 10%% of the chunk size, at most 200",
-                    "type": int,
-                }
-            ),
-            "reasoning-effort": ConfigElement(
-                default_value="low",
-                argparse_kwargs={
-                    "help": "How much a reasoning model may think before answering. low, medium and high work with "
-                            "OpenAI and DeepSeek, OpenAI also knows none, DeepSeek also max. Use \"unset\" to not "
-                            "send the parameter at all (for servers that reject it). Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "extra-body": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "Extra JSON fields for the request body, for provider specific switches. "
-                            "Example to turn DeepSeek thinking off: '{\"thinking\": {\"type\": \"disabled\"}}'",
-                    "type": json.loads,
-                }
-            ),
-            "first-token-timeout": ConfigElement(
-                default_value=900.0,
-                argparse_kwargs={
-                    "help": "Seconds to wait for the first streamed token of an answer. Covers queueing at the "
-                            "provider and prompt processing. Default: %(default)s",
-                    "type": float,
-                }
-            ),
-            "idle-timeout": ConfigElement(
-                default_value=120.0,
-                argparse_kwargs={
-                    "help": "Seconds to wait between two streamed tokens. Every token resets it. "
-                            "Default: %(default)s",
-                    "type": float,
-                }
-            ),
-            "max-retries": ConfigElement(
-                default_value=2,
-                argparse_kwargs={
-                    "help": "How often a call is tried again after a timeout, connection problem or a busy "
-                            "provider. Default: %(default)s",
-                    "type": int,
-                }
-            ),
-            "system-message": ConfigElement(
-                default_value=SYSTEM_MESSAGE,
-                argparse_kwargs={
-                    "help": "Message to be passed to the model as system message. "
-                            "Dont touch if you dont know what you are doing.",
-                    "type": str,
-                }
-            ),
-            "prompt": ConfigElement(
-                default_value=PROMPT,
-                argparse_kwargs={
-                    "help": "Default summary prompt message for llm. "
-                            "Dont touch if you don't know what you are doing.",
-                    "type": str,
-                }
-            ),
-            "prompt-refine": ConfigElement(
-                default_value=REFINE_PROMPT,
-                argparse_kwargs={
-                    "help": "Prompt that is passed to model to refine summary with chunked text. "
-                            "Dont touch if you dont know what you are doing.",
-                    "type": str,
-                }
-            )
-        }
-
-    _LOGGER = logging.getLogger(__name__)
+    def describe(self, config: Config) -> Dict[str, Any]:
+        info = super().describe(config)
+        info["service"] = config.options(self).service
+        if "OPENAI_API_BASE" in os.environ:
+            info["api_base"] = os.environ["OPENAI_API_BASE"]
+        return info
 
     def process(self, origin_data: SummaryInput, config: Config) -> Optional[SummaryResult]:
-        try:
-            from langchain.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
-            from langchain.chains.mapreduce import MapReduceChain
-            from langchain.chains.summarize import load_summarize_chain
-        except ImportError as e:
-            from langchain_classic.chains.prompt_selector import ConditionalPromptSelector, is_chat_model
-            from langchain_classic.chains.mapreduce import MapReduceChain
-            from langchain_classic.chains.summarize import load_summarize_chain
-        try:
-            from langchain.prompts import PromptTemplate
-            from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-            from langchain.docstore.document import Document
-        except ImportError:
-            from langchain_core.prompts import PromptTemplate
-            from langchain_core.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-            from langchain_core.documents import Document
+        from langchain_classic.chains.summarize import load_summarize_chain
+        from langchain_core.prompts import PromptTemplate
+        from langchain_core.documents import Document
 
-        cfg = config.get_config(key=self)
+        options = config.options(self)
         return_summaries: List[str] = []
 
-        llm = LLM.parse_str(name=cfg["service"]).get_llm(
-            model=cfg["model"],
-            max_tokens=cfg["max-tokens"],
-            temperature=cfg["temperature"],
-            reasoning_effort=cfg["reasoning-effort"],
-            extra_body=cfg["extra-body"],
-            first_token_timeout=cfg["first-token-timeout"],
-            idle_timeout=cfg["idle-timeout"],
-            max_retries=cfg["max-retries"],
+        llm = LLM.parse_str(name=options.service).get_llm(
+            model=options.model,
+            max_tokens=options.max_tokens,
+            temperature=options.temperature,
+            reasoning_effort=options.reasoning_effort,
+            extra_body=options.extra_body,
+            first_token_timeout=options.first_token_timeout,
+            idle_timeout=options.idle_timeout,
+            max_retries=options.max_retries,
         )
-        self.__class__._LOGGER.info(f'Loaded {cfg["service"]} as summarization LLM with model {cfg["model"]}')
+        self.__class__._LOGGER.info(f'Loaded {options.service} as summarization LLM with model {options.model}')
 
         len_fun = self._get_len_fun()
-        splitter = self._get_splitter(cfg["chunk-size"], len_fun=len_fun, chunk_overlap=cfg["chunk-overlap"])
+        splitter = self._get_splitter(options.chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
 
         for text in origin_data.text:
             doc = Document(text)
@@ -232,16 +148,16 @@ class SummaryLLM(SummaryTool):
             self.__class__._LOGGER.info(
                 f"Split text into {len(split_doc)} documents. "
                 f"Original text length: {len_fun(doc.page_content)}. "
-                f"Chunk size: {cfg['chunk-size']}"
+                f"Chunk size: {options.chunk_size}"
             )
             chain = load_summarize_chain(
                 llm,
                 chain_type="refine",
                 question_prompt=PromptTemplate.from_template(
-                    self._build_template(cfg['system-message'], cfg['prompt'])
+                    self._build_template(options.system_message, options.prompt)
                 ),
                 refine_prompt=PromptTemplate.from_template(
-                    self._build_template(cfg['system-message'], cfg['prompt-refine'])
+                    self._build_template(options.system_message, options.prompt_refine)
                 ),
                 return_intermediate_steps=True,
                 input_key="input_documents",
@@ -270,30 +186,19 @@ class SummaryLLM(SummaryTool):
 
     @classmethod
     def _get_len_fun(cls):
-        try:
-            import tiktoken
+        import tiktoken
 
-            enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken.get_encoding("cl100k_base")
 
-            def _len_fun(_txt: str) -> int:
-                return len(enc.encode(_txt, ))
+        def _len_fun(_txt: str) -> int:
+            return len(enc.encode(_txt, ))
 
-            return _len_fun
-        except ImportError:
-            cls._LOGGER.error("Could not import tiktoken. Will use python length for text length estimation")
-
-            def _len_fun(_txt: str) -> int:
-                return len(_txt)
-
-            return _len_fun
+        return _len_fun
 
     @classmethod
     def _get_splitter(cls, chunk_size: int, len_fun, chunk_overlap: Optional[int] = None):
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-        try:
-            from langchain.text_splitter import RecursiveCharacterTextSplitter
-        except ImportError:
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
         # The splitter's own default overlap is 200, which crashed for chunk sizes below 200
         if chunk_overlap is None:
             chunk_overlap = min(200, chunk_size // 10)
@@ -305,11 +210,11 @@ class SummaryLLM(SummaryTool):
                         ".",
                         ",",
                         " ",
-                        "\u200b",
-                        "\uff0c",
-                        "\u3001",
-                        "\uff0e",
-                        "\u3002",
+                        "​",
+                        "，",
+                        "、",
+                        "．",
+                        "。",
                         "",
                         ],
             chunk_size=chunk_size,

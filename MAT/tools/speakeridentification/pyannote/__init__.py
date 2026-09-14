@@ -9,97 +9,60 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
+import os
 from typing import Dict, Any, Tuple, List, Union, Optional
 
 import numpy as np
 import pydub
+from pydantic import Field, field_validator
 from torch import Tensor
 
+from MAT.registry import register, require
+
+require("pyannote.audio", "scipy", extra="pyannote")
+
 from MAT.tools.speakeridentification import SpeakerIdentificationTool, SpeakerIdentificationInput, \
-    SpeakerIdentificationResult
-from MAT.utils.config import Config
-from MAT.utils.config import ConfigElement
+    SpeakerIdentificationResult  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
+class PyannoteOptions(Options):
+    gold_labels: Optional[str] = Field(None, description="Folder with one audio clip per speaker, named after the "
+                                                         "speaker (alice.mp3). Without it the diarizer labels are "
+                                                         "kept.")
+    no_hf_token: bool = Field(False, description="Don't send your Hugging Face token when loading the model.")
+    device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
+    model: str = Field("pyannote/embedding", description="pyannote speaker embedding model.")
+    similarity_threshold: float = Field(0.3, description="Minimum cosine similarity to a gold label clip for a match.")
+
+    @field_validator("gold_labels")
+    @classmethod
+    def _gold_labels_is_folder(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and not os.path.isdir(value):
+            raise ValueError(f"{value} is not a folder")
+        return value
+
+
+@register("identifier", "pyannote", description="pyannote speaker embeddings compared to gold label clips")
 class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
+    Options = PyannoteOptions
+    packages = ("pyannote-audio",)
     _LOGGER = logging.getLogger(__name__)
 
-    @classmethod
-    def config_name(cls) -> str:
-        return "Pyannote-Identification"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        import torch
-        def gold_label_folder(_folder: str) -> str:
-            from argparse import ArgumentTypeError
-            from pydub import AudioSegment
-            import os
-            if not os.path.exists(_folder):
-                raise ArgumentTypeError("Provided gold folder has to exist")
-            if not os.path.isdir(_folder):
-                raise ArgumentTypeError("Provided gold folder has to be a folder")
-            for file in os.listdir(_folder):
-                # noinspection PyBroadException
-                try:
-                    AudioSegment.from_file(os.path.join(_folder, file))
-                    return _folder
-                except Exception:
-                    pass
-            raise ArgumentTypeError("There has to be at least one gold audio file in the folder")
-
-        return {
-            "gold-labels": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "Folder containing audio files to be used as speaker gold labels. Will use the file name without the extension as speaker name. If not provided, skip speaker matching.",
-                    "required": False, "type": gold_label_folder,
-                }
-            ),
-            # Used to be store_false with default True, so passing the flag turned the token ON
-            "no-hf-token": ConfigElement(
-                default_value=False,
-                argparse_kwargs={
-                    "help": "Don't send your Hugging Face token when loading the model",
-                    "action": "store_true",
-                }
-            ),
-            "device": ConfigElement(
-                default_value="cuda" if torch.cuda.is_available() else "cpu",
-                argparse_kwargs={
-                    "help": "Device to run the model on. Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "model": ConfigElement(
-                default_value="pyannote/embedding",
-                argparse_kwargs={
-                    "help": "Model to use for pyannote embedding. Default: %(default)s", "type": str,
-                }
-            ),
-            "similarity-threshold": ConfigElement(
-                default_value=0.3,
-                argparse_kwargs={
-                    "help": "Threshold for similarity comparison. Default: %(default)s", "type": float,
-                }
-            )
-        }
-
     def process(self, origin_data: SpeakerIdentificationInput, config: Config) -> Optional[SpeakerIdentificationResult]:
-        import os
         import pathlib
+        from MAT.utils.device import resolve_device
 
-        cfg = config.get_config(key=self)
-        gold_folder = cfg["gold-labels"]
-        if gold_folder is None:
+        options = config.options(self)
+        if options.gold_labels is None:
             return SpeakerIdentificationResult(*[None for _ in origin_data.get_audio_files()])
 
-        gold = {pathlib.Path(x).stem: os.path.join(gold_folder, x) for x in os.listdir(gold_folder)}
+        gold = {pathlib.Path(x).stem: os.path.join(options.gold_labels, x) for x in os.listdir(options.gold_labels)}
         self.__class__._LOGGER.info(f"Found gold labels for {len(gold)} speakers: {', '.join(sorted(gold.keys()))}")
 
         identification = self.identify(
-            device=cfg["device"], use_hf_token=not cfg["no-hf-token"], similarity_threshold=cfg["similarity-threshold"],
-            model=cfg["model"],
+            device=resolve_device(options.device), use_hf_token=not options.no_hf_token,
+            similarity_threshold=options.similarity_threshold, model=options.model,
             gold={k: (pydub.AudioSegment.from_file(v), -1) for k, v in gold.items()},
             audios=origin_data.get_audio_files()
         )
@@ -133,7 +96,6 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                 wave = torch.from_numpy(wave)
             if wave.shape[0] > 1:
                 wave = wave.mean(dim=0, keepdim=True)
-                pass
             if sample != 16000:
                 wave = torchaudio.transforms.Resample(orig_freq=sample, new_freq=16000)(wave)
             with torch.no_grad():
@@ -143,11 +105,10 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                     try:
                         embedding = classifier({"waveform": wave, "sample_rate": 16000})
                         break
-                    except Exception as e:
+                    except Exception:
                         retries -= 1
                         if retries <= 0:
                             return None
-                # embedding = np.mean(embedding, axis=0)
                 return embedding
 
         gold_embeddings = {}
@@ -173,7 +134,7 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
 
         del classifier
         del pyannote_model
-        if device == "cuda" and torch.cuda.is_available():
+        if device.startswith("cuda") and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         return ret

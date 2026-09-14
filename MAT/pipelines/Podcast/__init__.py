@@ -9,17 +9,18 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import os.path
-from dataclasses import dataclass, asdict as dataclass_as_dict
-from typing import List, Dict, Iterable, Callable
+from dataclasses import dataclass, field, asdict as dataclass_as_dict
+from typing import Any, List, Dict, Iterable, Callable
 
-from MAT.pipelines import Pipeline, PipelineResult, PipelineStepInput, PipelineStepResult
+from pydantic import Field
+
+from MAT.pipelines import Pipeline, PipelineResult, PipelineStepInput, PipelineStepResult, Slot
 from MAT.tools import (
-    TransciptorWhisper, TranscriptionInput, TranscriptionResult, WordTupleSpeaker,
-    DiarizerNEMO, DiarizerInput, DiarizationResult,
-    SpeakerIdetificationPyannote,
-    SummaryLLM, SummaryInput, SummaryResult
+    TranscriptionInput, TranscriptionResult, TranscribeDiarizeTool, WordTupleSpeaker,
+    DiarizerInput, DiarizationResult,
+    SummaryInput, SummaryResult
 )
-from MAT.utils.config import ConfigElement
+from MAT.utils.config import Options
 from MAT.utils.diarization import (
     align_diarization_with_transcription, squish_word_speaker, word_speaker_to_transcript
 )
@@ -49,20 +50,27 @@ class PodcastOutput(PipelineResult):
     squished_speaker: List[WordTupleSpeaker]
     full_transcript: str
     summary: SummaryResult
+    models: Dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self):
         return dataclass_as_dict(self)
 
 
+class PodcastOptions(Options):
+    transcriber: str = Field("whisper", description="Speech to text backend.")
+    diarizer: str = Field("sortformer", description="Diarization backend. Not used when the transcriber also "
+                                                    "does the diarization.")
+    identifier: str = Field("pyannote", description='Matches speakers to gold label clips. "none" keeps the '
+                                                    'diarizer labels.')
+    summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
+
+
 class PodcastPipeline(Pipeline):
-
-    @classmethod
-    def config_name(cls) -> str:
-        return "Podcast"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {}
+    section = "podcast"
+    description = "Transcript, speakers and summary for audio files (anything ffmpeg can decode)."
+    Options = PodcastOptions
+    slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
+             "summarizer": Slot(optional=True)}
 
     @classmethod
     def accept(cls, f: str) -> bool:
@@ -71,93 +79,76 @@ class PodcastPipeline(Pipeline):
         try:
             AudioSegment.from_file(f)
             return True
-        except:
-            pass
-        return False
+        except Exception:
+            return False
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
-        from MAT.utils import get_hash_pipeline
         import pydub
+        used = {}
+
         def transcribe(step_input: PipelineStepInput) -> PipelineStepResult:
-            d = TransciptorWhisper().process(origin_data=TranscriptionInput(step_input.file), config=step_input.config)
-            return PipelineStepResult(
-                name="Transcription",
-                data=d
-            )
+            transcriber = self.backend("transcriber", step_input.config)
+            used["transcriber"] = transcriber
+            d = transcriber.process(origin_data=TranscriptionInput(step_input.file), config=step_input.config)
+            return PipelineStepResult(name="Transcription", data=d)
 
         def diarize(step_input: PipelineStepInput) -> PipelineStepResult:
-            d = DiarizerNEMO().process(origin_data=DiarizerInput(in_file=step_input.file), config=step_input.config)
-            return PipelineStepResult(
-                name="Diarization",
-                data=d
-            )
+            if isinstance(used.get("transcriber"), TranscribeDiarizeTool):
+                self._LOGGER.info("The transcriber also diarizes, not running the diarizer")
+                transcription = step_input.data("Transcription")
+                return PipelineStepResult(name="Diarization", data=getattr(transcription, "diarization", None))
+            diarizer = self.backend("diarizer", step_input.config)
+            d = diarizer.process(origin_data=DiarizerInput(in_file=step_input.file), config=step_input.config)
+            return PipelineStepResult(name="Diarization", data=d)
 
         def speaker_matching(step_input: PipelineStepInput) -> PipelineStepResult:
-            try:
-                diarization_result: DiarizationResult = step_input.previous_results["Diarization"].data
-                if diarization_result is None:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            diarization_result: DiarizationResult = step_input.data("Diarization")
+            if diarization_result is None:
                 return PipelineStepResult(name="Speaker Matching", data=None)
-            sm = SpeakerIdetificationPyannote()
+            identifier = self.backend("identifier", step_input.config)
+            if identifier is None:
+                return PipelineStepResult(name="Speaker Matching", data=diarization_result)
             a = pydub.AudioSegment.from_file(step_input.file)
-            matched_speaker = diarization_result.speaker_matching(identifier=sm, audio=a, config=step_input.config)
-            return PipelineStepResult(
-                name="Speaker Matching",
-                data=matched_speaker
-            )
+            matched_speaker = diarization_result.speaker_matching(identifier=identifier, audio=a,
+                                                                  config=step_input.config)
+            return PipelineStepResult(name="Speaker Matching", data=matched_speaker)
 
         def creating_speaker_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
-            try:
-                matched_speaker: DiarizationResult = step_input.previous_results["Speaker Matching"].data
-                transcription: TranscriptionResult = step_input.previous_results["Transcription"].data
-                if matched_speaker is None or transcription is None:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            matched_speaker: DiarizationResult = step_input.data("Speaker Matching")
+            transcription: TranscriptionResult = step_input.data("Transcription")
+            if matched_speaker is None or transcription is None:
                 return PipelineStepResult(name="Finalizing transcript", data=None)
             word_speaker = align_diarization_with_transcription(diarization=matched_speaker, transcript=transcription)
             squished_speaker = squish_word_speaker(word_speaker=word_speaker)
             full_transcript = "\n".join(word_speaker_to_transcript(word_speaker=squished_speaker))
-            return PipelineStepResult(
-                name="Finalizing transcript",
-                data=(word_speaker, squished_speaker, full_transcript)
-            )
+            return PipelineStepResult(name="Finalizing transcript", data=(word_speaker, squished_speaker, full_transcript))
 
         def summarize_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
             from os.path import basename
-            try:
-                full_transcript: str = step_input.previous_results["Finalizing transcript"].data[2]
-                if full_transcript is None:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            transcripts = step_input.data("Finalizing transcript")
+            full_transcript = transcripts[2] if transcripts is not None else None
+            if full_transcript is None:
                 return PipelineStepResult(name="Summarize transcript", data=None)
-            additional_metadata={
-                "filename": basename(step_input.file)
-            }
+            summarizer = self.backend("summarizer", step_input.config)
+            if summarizer is None:
+                return PipelineStepResult(name="Summarize transcript", data=None)
             # A failing summary (API down, provider queue timeout, no key) must not throw away the transcript and
             # diarization we already have, so log it and write the episode without a summary.
             try:
-                summary = SummaryLLM().process(
-                    origin_data=SummaryInput(full_transcript, additional_metadata=additional_metadata),
+                summary = summarizer.process(
+                    origin_data=SummaryInput(full_transcript, additional_metadata={"filename": basename(step_input.file)}),
                     config=step_input.config
                 )
             except Exception as e:
                 self.__class__._LOGGER.exception(f"Summary failed for {basename(step_input.file)}, "
                                                  f"writing the results without a summary", exc_info=e)
                 summary = None
-            return PipelineStepResult(
-                name="Summarize transcript",
-                data=summary
-            )
+            return PipelineStepResult(name="Summarize transcript", data=summary)
 
         def media_infos(step_input: PipelineStepInput) -> PipelineStepResult:
-            try:
-                transcription: TranscriptionResult = step_input.previous_results["Transcription"].data
-                lang = transcription.language
-                duration_av = transcription.duration_after_vad
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
-                lang = None
-                duration_av = None
+            transcription: TranscriptionResult = step_input.data("Transcription")
+            lang = getattr(transcription, "language", None)
+            duration_av = getattr(transcription, "duration_after_vad", None)
             a = pydub.AudioSegment.from_file(step_input.file)
             return PipelineStepResult(
                 name="Media Info",
@@ -174,27 +165,20 @@ class PodcastPipeline(Pipeline):
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
         def _try_get(k: str):
-            try:
-                return step_results[k].data
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
-                return None
+            result = step_results.get(k)
+            return None if result is None else result.data
 
-        transcription = _try_get("Transcription")
-        diarization = _try_get("Diarization")
-        diarization_matched = _try_get("Speaker Matching")
         transcripts = _try_get("Finalizing transcript")
         word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcripts
-        summary = _try_get("Summarize transcript")
-        media_info = _try_get("Media Info")
 
         return PodcastOutput(
-            media_info=media_info,
-            transcription=transcription,
-            diarization=diarization, diarization_matched=diarization_matched,
+            media_info=_try_get("Media Info"),
+            transcription=_try_get("Transcription"),
+            diarization=_try_get("Diarization"), diarization_matched=_try_get("Speaker Matching"),
             word_speaker=word_speaker, squished_speaker=squished_speaker, full_transcript=full_transcript,
-            summary=summary,
+            summary=_try_get("Summarize transcript"),
+            models=dict(self.models),
         )
 
 
-__all__ = ["PodcastOutput", "PodcastPipeline"]
-__all__ += ["__all__"]
+__all__ = ["PodcastOutput", "PodcastPipeline", "MediaInfo"]

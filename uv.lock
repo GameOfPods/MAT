@@ -593,7 +593,7 @@ name = "cuda-bindings"
 version = "13.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder" },
+    { name = "cuda-pathfinder", marker = "sys_platform != 'darwin' or extra != 'group-3-mat-cpu' or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/d0/76d0e45d98bf4933bf48eac6bbeb17464684540f69edec41fc37c7a422b0/cuda_bindings-13.4.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:84ee88862e2e6ac39a5434c061f7f4389fbefbc418487d0670c86601d517d038", size = 6479976, upload-time = "2026-09-10T01:16:54.622Z" },
@@ -1209,19 +1209,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6d/8e/07e42bc434a847154083b315779b0a81d567154504624e181caf2c71cd98/hydra-core-1.3.2.tar.gz", hash = "sha256:8a878ed67216997c3e9d88a8e72e7b4767e81af37afb4ea3334b269a4390a824", size = 3263494, upload-time = "2023-02-23T18:33:43.03Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/50/e0edd38dcd63fb26a8547f13d28f7a008bc4a3fd4eb4ff030673f22ad41a/hydra_core-1.3.2-py3-none-any.whl", hash = "sha256:fa0238a9e31df3373b35b0bfb672c34cc92718d21f81311d8996a16de1141d8b", size = 154547, upload-time = "2023-02-23T18:33:40.801Z" },
-]
-
-[[package]]
-name = "hyperpyyaml"
-version = "1.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyyaml" },
-    { name = "ruamel-yaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/cf/000268ec653f354d464e6101505672365e8cecdcb216034a4bb0dbf9dca0/hyperpyyaml-1.2.3.tar.gz", hash = "sha256:4b135800ae13b846ae90aeb1c25e65e4d7a0138bd4935d3222734828d9f218f6", size = 17355, upload-time = "2026-01-01T20:01:49.427Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/a5/98e20cc4365e293dfc1382e2f8dbf44b1cb14d75658ab5147cb0d6d8718e/hyperpyyaml-1.2.3-py3-none-any.whl", hash = "sha256:0088c8ce97dc7c7d3460112b6ccc92dca46fade4d0320bc39f58b1fdda60f7f1", size = 16456, upload-time = "2026-01-01T20:01:48.462Z" },
 ]
 
 [[package]]
@@ -1888,26 +1875,15 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "deepmultilingualpunctuation" },
     { name = "ebooklib" },
-    { name = "faster-whisper" },
-    { name = "gliner" },
-    { name = "gliner2", extra = ["local"] },
     { name = "huggingface-hub" },
-    { name = "langchain" },
-    { name = "langchain-classic" },
-    { name = "langchain-core" },
-    { name = "langchain-openai" },
-    { name = "langchain-text-splitters" },
     { name = "langdetect" },
     { name = "linkify-it-py" },
     { name = "markdown" },
     { name = "markdown-it-py" },
     { name = "mdformat" },
     { name = "mdutils" },
-    { name = "nemo-toolkit", extra = ["asr"] },
     { name = "numpy" },
-    { name = "pip" },
     { name = "psutil" },
-    { name = "pyannote-audio" },
     { name = "pydantic" },
     { name = "pydub" },
     { name = "python-levenshtein" },
@@ -1918,11 +1894,6 @@ dependencies = [
     { name = "rttm-manager" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "spacy" },
-    { name = "spacy-download" },
-    { name = "spacy-transformers" },
-    { name = "speechbrain" },
-    { name = "tiktoken" },
     { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (extra != 'group-3-mat-cpu' and extra != 'group-3-mat-cu126')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
@@ -1937,11 +1908,62 @@ dependencies = [
     { name = "torchvision", version = "0.23.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'group-3-mat-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-3-mat-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-3-mat-cpu') or (sys_platform == 'darwin' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'linux' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
     { name = "torchvision", version = "0.23.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "extra == 'group-3-mat-cu126'" },
     { name = "tqdm" },
-    { name = "whisperx" },
     { name = "xlsxwriter" },
 ]
 
+[package.optional-dependencies]
+all = [
+    { name = "faster-whisper" },
+    { name = "gliner" },
+    { name = "gliner2", extra = ["local"] },
+    { name = "langchain" },
+    { name = "langchain-classic" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langchain-text-splitters" },
+    { name = "nemo-toolkit", extra = ["asr"] },
+    { name = "pip" },
+    { name = "pyannote-audio" },
+    { name = "spacy" },
+    { name = "spacy-download" },
+    { name = "spacy-transformers" },
+    { name = "tiktoken" },
+    { name = "whisperx" },
+]
+gliner = [
+    { name = "gliner" },
+    { name = "gliner2", extra = ["local"] },
+]
+llm = [
+    { name = "langchain" },
+    { name = "langchain-classic" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langchain-text-splitters" },
+    { name = "tiktoken" },
+]
+pyannote = [
+    { name = "pyannote-audio" },
+]
+sortformer = [
+    { name = "nemo-toolkit", extra = ["asr"] },
+    { name = "pyannote-audio" },
+]
+spacy = [
+    { name = "pip" },
+    { name = "spacy" },
+    { name = "spacy-download" },
+    { name = "spacy-transformers" },
+]
+whisper = [
+    { name = "faster-whisper" },
+    { name = "whisperx" },
+]
+
 [package.dev-dependencies]
+backends = [
+    { name = "mat", extra = ["all"] },
+]
 cpu = [
     { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
@@ -1965,27 +1987,39 @@ requires-dist = [
     { name = "beautifulsoup4" },
     { name = "deepmultilingualpunctuation" },
     { name = "ebooklib" },
-    { name = "faster-whisper", specifier = ">=1.2" },
-    { name = "gliner" },
-    { name = "gliner2", extras = ["local"], specifier = ">=2" },
+    { name = "faster-whisper", marker = "extra == 'all'", specifier = ">=1.2" },
+    { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.2" },
+    { name = "gliner", marker = "extra == 'all'" },
+    { name = "gliner", marker = "extra == 'gliner'" },
+    { name = "gliner2", extras = ["local"], marker = "extra == 'all'", specifier = ">=2" },
+    { name = "gliner2", extras = ["local"], marker = "extra == 'gliner'", specifier = ">=2" },
     { name = "huggingface-hub" },
-    { name = "langchain", specifier = ">=1" },
-    { name = "langchain-classic", specifier = ">=1" },
-    { name = "langchain-core", specifier = ">=1" },
-    { name = "langchain-openai", specifier = ">=1" },
-    { name = "langchain-text-splitters", specifier = ">=1" },
+    { name = "langchain", marker = "extra == 'all'", specifier = ">=1" },
+    { name = "langchain", marker = "extra == 'llm'", specifier = ">=1" },
+    { name = "langchain-classic", marker = "extra == 'all'", specifier = ">=1" },
+    { name = "langchain-classic", marker = "extra == 'llm'", specifier = ">=1" },
+    { name = "langchain-core", marker = "extra == 'all'", specifier = ">=1" },
+    { name = "langchain-core", marker = "extra == 'llm'", specifier = ">=1" },
+    { name = "langchain-openai", marker = "extra == 'all'", specifier = ">=1" },
+    { name = "langchain-openai", marker = "extra == 'llm'", specifier = ">=1" },
+    { name = "langchain-text-splitters", marker = "extra == 'all'", specifier = ">=1" },
+    { name = "langchain-text-splitters", marker = "extra == 'llm'", specifier = ">=1" },
     { name = "langdetect", specifier = ">=1.0.9" },
     { name = "linkify-it-py" },
     { name = "markdown" },
     { name = "markdown-it-py" },
     { name = "mdformat" },
     { name = "mdutils" },
-    { name = "nemo-toolkit", extras = ["asr"], specifier = ">=3" },
+    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'all'", specifier = ">=3" },
+    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'sortformer'", specifier = ">=3" },
     { name = "numpy", specifier = ">=2" },
-    { name = "pip" },
+    { name = "pip", marker = "extra == 'all'" },
+    { name = "pip", marker = "extra == 'spacy'" },
     { name = "psutil" },
-    { name = "pyannote-audio", specifier = ">=4" },
-    { name = "pydantic" },
+    { name = "pyannote-audio", marker = "extra == 'all'", specifier = ">=4" },
+    { name = "pyannote-audio", marker = "extra == 'pyannote'", specifier = ">=4" },
+    { name = "pyannote-audio", marker = "extra == 'sortformer'", specifier = ">=4" },
+    { name = "pydantic", specifier = ">=2" },
     { name = "pydub" },
     { name = "python-levenshtein" },
     { name = "pyyaml" },
@@ -1995,21 +2029,27 @@ requires-dist = [
     { name = "rttm-manager" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "spacy" },
-    { name = "spacy-download" },
-    { name = "spacy-transformers" },
-    { name = "speechbrain" },
-    { name = "tiktoken" },
+    { name = "spacy", marker = "extra == 'all'" },
+    { name = "spacy", marker = "extra == 'spacy'" },
+    { name = "spacy-download", marker = "extra == 'all'" },
+    { name = "spacy-download", marker = "extra == 'spacy'" },
+    { name = "spacy-transformers", marker = "extra == 'all'" },
+    { name = "spacy-transformers", marker = "extra == 'spacy'" },
+    { name = "tiktoken", marker = "extra == 'all'" },
+    { name = "tiktoken", marker = "extra == 'llm'" },
     { name = "torch", specifier = ">=2.8,<2.15" },
     { name = "torchaudio", specifier = ">=2.8,<2.15" },
     { name = "torchcodec", specifier = ">=0.7,<0.8" },
     { name = "torchvision" },
     { name = "tqdm" },
-    { name = "whisperx", specifier = ">=3.8" },
+    { name = "whisperx", marker = "extra == 'all'", specifier = ">=3.8" },
+    { name = "whisperx", marker = "extra == 'whisper'", specifier = ">=3.8" },
     { name = "xlsxwriter" },
 ]
+provides-extras = ["all", "gliner", "llm", "pyannote", "sortformer", "spacy", "whisper"]
 
 [package.metadata.requires-dev]
+backends = [{ name = "mat", extras = ["all"] }]
 cpu = [
     { name = "torch", specifier = ">=2.8,<2.15", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mat", group = "cpu" } },
     { name = "torchaudio", specifier = ">=2.8,<2.15", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mat", group = "cpu" } },
@@ -2516,7 +2556,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "extra == 'group-3-mat-cu126'" },
+    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/41/e79269ce215c857c935fd86bcfe91a451a584dfc27f1e068f568b9ad1ab7/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:c9132cc3f8958447b4910a1720036d9eff5928cc3179b0a51fb6d167c6cc87d8", size = 705026878, upload-time = "2025-06-06T21:52:51.348Z" },
@@ -2529,7 +2569,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'group-3-mat-cu126'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1f/37/c50d2b2f2c07e146776389e3080f4faf70bcc4fa6e19d65bb54ca174ebc3/nvidia_cufft_cu12-11.3.0.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d16079550df460376455cba121db6564089176d9bac9e4f360493ca4741b22a6", size = 200164144, upload-time = "2024-11-20T17:40:58.288Z" },
@@ -2565,9 +2605,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "extra == 'group-3-mat-cu126'" },
-    { name = "nvidia-cusparse-cu12", marker = "extra == 'group-3-mat-cu126'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'group-3-mat-cu126'" },
+    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
+    { name = "nvidia-cusparse-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/17/dbe1aa865e4fdc7b6d4d0dd308fdd5aaab60f939abfc0ea1954eac4fb113/nvidia_cusolver_cu12-11.7.1.2-py3-none-manylinux2014_aarch64.whl", hash = "sha256:0ce237ef60acde1efc457335a2ddadfd7610b892d94efee7b776c64bb1cac9e0", size = 157833628, upload-time = "2024-10-01T17:05:05.591Z" },
@@ -2582,7 +2622,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "extra == 'group-3-mat-cu126'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'group-3-mat-cu126') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/eb/6681efd0aa7df96b4f8067b3ce7246833dd36830bb4cec8896182773db7d/nvidia_cusparse_cu12-12.5.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d25b62fb18751758fe3c93a4a08eff08effedfe4edf1c6bb5afd0890fe88f887", size = 216451147, upload-time = "2024-11-20T17:44:18.055Z" },
@@ -3682,46 +3722,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ruamel-yaml"
-version = "0.18.17"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ruamel-yaml-clib", marker = "platform_python_implementation == 'CPython' or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/2b/7a1f1ebcd6b3f14febdc003e658778d81e76b40df2267904ee6b13f0c5c6/ruamel_yaml-0.18.17.tar.gz", hash = "sha256:9091cd6e2d93a3a4b157ddb8fabf348c3de7f1fb1381346d985b6b247dcd8d3c", size = 149602, upload-time = "2025-12-17T20:02:55.757Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/fe/b6045c782f1fd1ae317d2a6ca1884857ce5c20f59befe6ab25a8603c43a7/ruamel_yaml-0.18.17-py3-none-any.whl", hash = "sha256:9c8ba9eb3e793efdf924b60d521820869d5bf0cb9c6f1b82d82de8295e290b9d", size = 121594, upload-time = "2025-12-17T20:02:07.657Z" },
-]
-
-[[package]]
-name = "ruamel-yaml-clib"
-version = "0.2.15"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ea/97/60fda20e2fb54b83a61ae14648b0817c8f5d84a3821e40bfbdae1437026a/ruamel_yaml_clib-0.2.15.tar.gz", hash = "sha256:46e4cc8c43ef6a94885f72512094e482114a8a706d3c555a34ed4b0d20200600", size = 225794, upload-time = "2025-11-16T16:12:59.761Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/4b/5fde11a0722d676e469d3d6f78c6a17591b9c7e0072ca359801c4bd17eee/ruamel_yaml_clib-0.2.15-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:cb15a2e2a90c8475df45c0949793af1ff413acfb0a716b8b94e488ea95ce7cff", size = 149088, upload-time = "2025-11-16T16:13:22.836Z" },
-    { url = "https://files.pythonhosted.org/packages/85/82/4d08ac65ecf0ef3b046421985e66301a242804eb9a62c93ca3437dc94ee0/ruamel_yaml_clib-0.2.15-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:64da03cbe93c1e91af133f5bec37fd24d0d4ba2418eaf970d7166b0a26a148a2", size = 134553, upload-time = "2025-11-16T16:13:24.151Z" },
-    { url = "https://files.pythonhosted.org/packages/b9/cb/22366d68b280e281a932403b76da7a988108287adff2bfa5ce881200107a/ruamel_yaml_clib-0.2.15-cp312-cp312-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:f6d3655e95a80325b84c4e14c080b2470fe4f33b6846f288379ce36154993fb1", size = 737468, upload-time = "2025-11-16T20:22:47.335Z" },
-    { url = "https://files.pythonhosted.org/packages/71/73/81230babf8c9e33770d43ed9056f603f6f5f9665aea4177a2c30ae48e3f3/ruamel_yaml_clib-0.2.15-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:71845d377c7a47afc6592aacfea738cc8a7e876d586dfba814501d8c53c1ba60", size = 753349, upload-time = "2025-11-16T16:13:26.269Z" },
-    { url = "https://files.pythonhosted.org/packages/61/62/150c841f24cda9e30f588ef396ed83f64cfdc13b92d2f925bb96df337ba9/ruamel_yaml_clib-0.2.15-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:11e5499db1ccbc7f4b41f0565e4f799d863ea720e01d3e99fa0b7b5fcd7802c9", size = 788211, upload-time = "2025-11-16T16:13:27.441Z" },
-    { url = "https://files.pythonhosted.org/packages/30/93/e79bd9cbecc3267499d9ead919bd61f7ddf55d793fb5ef2b1d7d92444f35/ruamel_yaml_clib-0.2.15-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:4b293a37dc97e2b1e8a1aec62792d1e52027087c8eea4fc7b5abd2bdafdd6642", size = 743203, upload-time = "2025-11-16T16:13:28.671Z" },
-    { url = "https://files.pythonhosted.org/packages/8d/06/1eb640065c3a27ce92d76157f8efddb184bd484ed2639b712396a20d6dce/ruamel_yaml_clib-0.2.15-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:512571ad41bba04eac7268fe33f7f4742210ca26a81fe0c75357fa682636c690", size = 747292, upload-time = "2025-11-16T20:22:48.584Z" },
-    { url = "https://files.pythonhosted.org/packages/a5/21/ee353e882350beab65fcc47a91b6bdc512cace4358ee327af2962892ff16/ruamel_yaml_clib-0.2.15-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:e5e9f630c73a490b758bf14d859a39f375e6999aea5ddd2e2e9da89b9953486a", size = 771624, upload-time = "2025-11-16T16:13:29.853Z" },
-    { url = "https://files.pythonhosted.org/packages/57/34/cc1b94057aa867c963ecf9ea92ac59198ec2ee3a8d22a126af0b4d4be712/ruamel_yaml_clib-0.2.15-cp312-cp312-win32.whl", hash = "sha256:f4421ab780c37210a07d138e56dd4b51f8642187cdfb433eb687fe8c11de0144", size = 100342, upload-time = "2025-11-16T16:13:31.067Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/e5/8925a4208f131b218f9a7e459c0d6fcac8324ae35da269cb437894576366/ruamel_yaml_clib-0.2.15-cp312-cp312-win_amd64.whl", hash = "sha256:2b216904750889133d9222b7b873c199d48ecbb12912aca78970f84a5aa1a4bc", size = 119013, upload-time = "2025-11-16T16:13:32.164Z" },
-    { url = "https://files.pythonhosted.org/packages/17/5e/2f970ce4c573dc30c2f95825f2691c96d55560268ddc67603dc6ea2dd08e/ruamel_yaml_clib-0.2.15-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:4dcec721fddbb62e60c2801ba08c87010bd6b700054a09998c4d09c08147b8fb", size = 147450, upload-time = "2025-11-16T16:13:33.542Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/03/a1baa5b94f71383913f21b96172fb3a2eb5576a4637729adbf7cd9f797f8/ruamel_yaml_clib-0.2.15-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:65f48245279f9bb301d1276f9679b82e4c080a1ae25e679f682ac62446fac471", size = 133139, upload-time = "2025-11-16T16:13:34.587Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/19/40d676802390f85784235a05788fd28940923382e3f8b943d25febbb98b7/ruamel_yaml_clib-0.2.15-cp313-cp313-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:46895c17ead5e22bea5e576f1db7e41cb273e8d062c04a6a49013d9f60996c25", size = 731474, upload-time = "2025-11-16T20:22:49.934Z" },
-    { url = "https://files.pythonhosted.org/packages/ce/bb/6ef5abfa43b48dd55c30d53e997f8f978722f02add61efba31380d73e42e/ruamel_yaml_clib-0.2.15-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3eb199178b08956e5be6288ee0b05b2fb0b5c1f309725ad25d9c6ea7e27f962a", size = 748047, upload-time = "2025-11-16T16:13:35.633Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/5d/e4f84c9c448613e12bd62e90b23aa127ea4c46b697f3d760acc32cb94f25/ruamel_yaml_clib-0.2.15-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4d1032919280ebc04a80e4fb1e93f7a738129857eaec9448310e638c8bccefcf", size = 782129, upload-time = "2025-11-16T16:13:36.781Z" },
-    { url = "https://files.pythonhosted.org/packages/de/4b/e98086e88f76c00c88a6bcf15eae27a1454f661a9eb72b111e6bbb69024d/ruamel_yaml_clib-0.2.15-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:ab0df0648d86a7ecbd9c632e8f8d6b21bb21b5fc9d9e095c796cacf32a728d2d", size = 736848, upload-time = "2025-11-16T16:13:37.952Z" },
-    { url = "https://files.pythonhosted.org/packages/0c/5c/5964fcd1fd9acc53b7a3a5d9a05ea4f95ead9495d980003a557deb9769c7/ruamel_yaml_clib-0.2.15-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:331fb180858dd8534f0e61aa243b944f25e73a4dae9962bd44c46d1761126bbf", size = 741630, upload-time = "2025-11-16T20:22:51.718Z" },
-    { url = "https://files.pythonhosted.org/packages/07/1e/99660f5a30fceb58494598e7d15df883a07292346ef5696f0c0ae5dee8c6/ruamel_yaml_clib-0.2.15-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:fd4c928ddf6bce586285daa6d90680b9c291cfd045fc40aad34e445d57b1bf51", size = 766619, upload-time = "2025-11-16T16:13:39.178Z" },
-    { url = "https://files.pythonhosted.org/packages/36/2f/fa0344a9327b58b54970e56a27b32416ffbcfe4dcc0700605516708579b2/ruamel_yaml_clib-0.2.15-cp313-cp313-win32.whl", hash = "sha256:bf0846d629e160223805db9fe8cc7aec16aaa11a07310c50c8c7164efa440aec", size = 100171, upload-time = "2025-11-16T16:13:40.456Z" },
-    { url = "https://files.pythonhosted.org/packages/06/c4/c124fbcef0684fcf3c9b72374c2a8c35c94464d8694c50f37eef27f5a145/ruamel_yaml_clib-0.2.15-cp313-cp313-win_amd64.whl", hash = "sha256:45702dfbea1420ba3450bb3dd9a80b33f0badd57539c6aac09f42584303e0db6", size = 118845, upload-time = "2025-11-16T16:13:41.481Z" },
-]
-
-[[package]]
 name = "sacrebleu"
 version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4083,35 +4083,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/70/d7/48f544fc678265a2893222406f74fa55a9192e0038d68a2f1084aa60de76/spacy_transformers-1.4.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:946280dbd28e9eae0d908105a08029d03e4cfde11c3fcb978b0712203be8a4d2", size = 1755560, upload-time = "2026-03-17T12:44:05.482Z" },
     { url = "https://files.pythonhosted.org/packages/8c/ad/b0c336895deedf0d53474d8df682a4b71ba8e557a04be587f9606745feae/spacy_transformers-1.4.0-cp313-cp313-win_amd64.whl", hash = "sha256:5af0932e2f342e91f1b54af3cf97d889382b2f6e567e8b56fffb492901913a9b", size = 349112, upload-time = "2026-03-17T12:44:06.76Z" },
     { url = "https://files.pythonhosted.org/packages/d0/22/868aa0c08a9214c2e9509c5e00df3f97d3641c2c43c06507f145818d7ba4/spacy_transformers-1.4.0-cp313-cp313-win_arm64.whl", hash = "sha256:0cd6e385e4968ece7cd779e8f9b95502a705a3e32f059db03d12b09048fcd6ca", size = 333020, upload-time = "2026-03-17T12:44:08.08Z" },
-]
-
-[[package]]
-name = "speechbrain"
-version = "1.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "hyperpyyaml" },
-    { name = "joblib" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "requests" },
-    { name = "scipy" },
-    { name = "sentencepiece" },
-    { name = "soundfile" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (extra != 'group-3-mat-cpu' and extra != 'group-3-mat-cu126')" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'group-3-mat-cpu') or (extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
-    { name = "torch", version = "2.8.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "extra == 'group-3-mat-cu126'" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'group-3-mat-cpu') or (platform_machine != 'aarch64' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (platform_python_implementation != 'CPython' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'darwin' and extra == 'group-3-mat-cpu') or (sys_platform != 'linux' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
-    { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (extra != 'group-3-mat-cpu' and extra != 'group-3-mat-cu126')" },
-    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'group-3-mat-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-3-mat-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-3-mat-cpu') or (sys_platform == 'darwin' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'linux' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
-    { name = "torchaudio", version = "2.8.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "extra == 'group-3-mat-cu126'" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/51/7f/4c136fb35f09d9bc93601c0b35a41980d2ab2af9033c1f711926b67635e1/speechbrain-1.1.1.tar.gz", hash = "sha256:3b69d9341662478b3c564837613f7a87bfcfd40d88cd54b4d19d2cca31e3dd3d", size = 1748087, upload-time = "2026-08-27T13:53:10.724Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/08/bd/cb7befa5c2a6bc97b2d260a3481a7b2360c47db0f56ea2d1d2e2816bc3d5/speechbrain-1.1.1-py3-none-any.whl", hash = "sha256:de4f78d3564d40443e11e01648b00b4c47a6f942558c7ab08b5c350264ffcd7c", size = 2313069, upload-time = "2026-08-27T13:53:08.616Z" },
 ]
 
 [[package]]
@@ -4892,7 +4863,7 @@ name = "triton"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "setuptools", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux') or (sys_platform == 'darwin' and extra == 'group-3-mat-cu126') or (sys_platform == 'darwin' and extra != 'group-3-mat-cpu') or (sys_platform == 'linux' and extra != 'group-3-mat-cpu') or (sys_platform == 'linux' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
+    { name = "setuptools", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'group-3-mat-cu126') or (sys_platform == 'darwin' and extra != 'group-3-mat-cpu') or (sys_platform == 'linux' and extra != 'group-3-mat-cpu') or (sys_platform == 'emscripten' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'win32' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126') or (sys_platform == 'linux' and extra == 'group-3-mat-cpu' and extra == 'group-3-mat-cu126')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/66/b1eb52839f563623d185f0927eb3530ee4d5ffe9d377cdaf5346b306689e/triton-3.4.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:31c1d84a5c0ec2c0f8e8a072d7fd150cab84a9c239eaddc6706c081bfae4eb04", size = 155560068, upload-time = "2025-07-30T19:58:37.081Z" },

@@ -14,69 +14,58 @@ from collections import defaultdict
 from typing import Dict, Optional, Tuple, List
 from uuid import uuid4
 
-from MAT.tools.diarizators import DiarizationTool, DiarizerInput, DiarizationResult
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+# pyannote links the speakers of neighboring audio pieces
+require("nemo", "pyannote.audio", extra="sortformer")
+
+from MAT.tools.diarizators import DiarizationTool, DiarizerInput, DiarizationResult  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
+class SortformerOptions(Options):
+    model: str = Field("nvidia/diar_sortformer_4spk-v1", description="NeMo Sortformer model.")
+    device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
+    segment_length: int = Field(5 * 60, ge=30, description="Longest piece of audio in seconds the model sees at "
+                                                           "once. Longer audio is cut into pieces and the speakers "
+                                                           "are linked between pieces. Lower it if the GPU runs out "
+                                                           "of memory.")
+
+
+@register("diarizer", "sortformer", description="NVIDIA NeMo Sortformer, up to 4 speakers per audio piece")
 class DiarizerNEMO(DiarizationTool):
-    from pydub import AudioSegment
+    Options = SortformerOptions
+    packages = ("nemo-toolkit", "pyannote-audio")
     _LOGGER = logging.getLogger(__name__)
-
-    @classmethod
-    def config_name(cls) -> str:
-        return "NeMo"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        import torch
-        return {
-            "model": ConfigElement(
-                default_value="nvidia/diar_sortformer_4spk-v1",
-                argparse_kwargs={
-                    "help": "NeMo diarization model. Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "device": ConfigElement(
-                default_value="cuda" if torch.cuda.is_available() else "cpu",
-                argparse_kwargs={
-                    "help": "Device to run the model on. Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "segment-length": ConfigElement(
-                default_value=5 * 60,
-                argparse_kwargs={
-                    "help": "Length of audio segments in seconds. Needed to save VRAM. Default: %(default)s",
-                    "type": int,
-                }
-            )
-        }
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:
         from MAT.utils import timeout_retry
+        from MAT.utils.device import resolve_device
         from nemo.collections.asr.models import SortformerEncLabelModel
         from math import ceil
         from pydub import AudioSegment
         import torch
 
-        cfg = config.get_config(key=self)
+        options = config.options(self)
+        device = resolve_device(options.device)
+        segment_length = options.segment_length
 
         nemo_dir = os.path.join(config.work_directory, f"nemo.{uuid4()}")
         os.makedirs(nemo_dir, exist_ok=True)
 
         sound = AudioSegment.from_file(origin_data.in_file).set_channels(1)
         mono_files = []
-        for i in range(ceil(sound.duration_seconds / cfg["segment-length"])):
+        for i in range(ceil(sound.duration_seconds / segment_length)):
             audio_file_mono = os.path.join(nemo_dir, f"mono.{uuid4()}.{i}.wav")
-            sound[i * cfg["segment-length"] * 1000:(i + 1) * cfg["segment-length"] * 1000].export(audio_file_mono,
-                                                                                                  format="wav")
+            sound[i * segment_length * 1000:(i + 1) * segment_length * 1000].export(audio_file_mono, format="wav")
             mono_files.append(audio_file_mono)
 
         diar_model: SortformerEncLabelModel = timeout_retry(
             func=SortformerEncLabelModel.from_pretrained,
-            func_args=(cfg["model"],),
-            func_kwargs={"map_location": cfg["device"]},
+            func_args=(options.model,),
+            func_kwargs={"map_location": device},
             time_out=60,
             retries=5,
         )
@@ -87,7 +76,7 @@ class DiarizerNEMO(DiarizationTool):
         )
 
         del diar_model
-        if cfg["device"] == "cuda" and torch.cuda.is_available():
+        if device.startswith("cuda") and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         clean_segments: List[Dict[str, List[Tuple[float, float]]]] = []
@@ -120,10 +109,10 @@ class DiarizerNEMO(DiarizationTool):
                         gold[k] += v
                 from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Identifier
                 identification = Identifier().identify(
-                    model="pyannote/embedding",  # "speechbrain/spkrec-ecapa-voxceleb",
+                    model="pyannote/embedding",
                     gold={k: (v, v.frame_rate) for k, v in gold.items()},
                     audios=[(x, x.frame_rate) for _, x in combination],
-                    device=cfg["device"],
+                    device=device,
                 )
             combinations[i] = {}
             clean_segments[i] = {}
@@ -135,7 +124,7 @@ class DiarizerNEMO(DiarizationTool):
 
         ret = DiarizationResult()
         for i, clean_segment in enumerate(clean_segments):
-            offset = i * cfg["segment-length"]
+            offset = i * segment_length
             for k, v in clean_segment.items():
                 for f, t in v:
                     ret.add_diarization(speaker=k, f=float(f) + offset, t=float(t) + offset)
@@ -143,7 +132,7 @@ class DiarizerNEMO(DiarizationTool):
         return ret
 
     @staticmethod
-    def combine(segments: Dict[str, List[Tuple[float, float]]], mono_file) -> Dict[str, AudioSegment]:
+    def combine(segments: Dict[str, List[Tuple[float, float]]], mono_file) -> Dict[str, "AudioSegment"]:
         from pydub import AudioSegment
         combined = {}
         orig = AudioSegment.from_file(mono_file)
@@ -152,51 +141,3 @@ class DiarizerNEMO(DiarizationTool):
             for f, t in times:
                 combined[speaker] += orig[f * 1000:t * 1000]
         return combined
-
-    @classmethod
-    def _create_config(cls, audio_file: str, domain: str, out_dir: str) -> Tuple["OmegaConf", str]:
-        import os
-        import io
-        from uuid import uuid4
-        import json
-        from omegaconf import OmegaConf
-        import requests
-
-        config_io = io.StringIO(
-            requests.get(
-                f"https://raw.githubusercontent.com/NVIDIA/NeMo/main/examples/speaker_tasks/diarization/conf/inference/diar_infer_{domain}.yaml"
-            ).text
-        )
-
-        config = OmegaConf.load(config_io)
-
-        meta = {
-            "audio_filepath": audio_file,
-            "offset": 0,
-            "duration": None,
-            "label": "infer",
-            "text": "-",
-            "rttm_filepath": None,
-            "uem_filepath": None,
-        }
-
-        _manifest_file = os.path.join(out_dir, f"input_manifest_{uuid4()}.json")
-        with open(_manifest_file, "w") as fp:
-            json.dump(meta, fp)
-            fp.write("\n")
-
-        pretrained_vad = "vad_multilingual_marblenet"
-        pretrained_speaker_model = "titanet_large"
-        config.num_workers = 0
-        config.diarizer.manifest_filepath = _manifest_file
-        config.diarizer.out_dir = out_dir
-        config.diarizer.speaker_embeddings.model_path = pretrained_speaker_model
-        config.diarizer.oracle_vad = False
-        config.diarizer.clustering.parameters.oracle_num_speakers = False
-        config.diarizer.vad.model_path = pretrained_vad
-        config.diarizer.vad.parameters.onset = 0.8
-        config.diarizer.vad.parameters.offset = 0.6
-        config.diarizer.vad.parameters.pad_offset = -0.05
-        config.diarizer.msdd_model.model_path = f"diar_msdd_{domain}"
-
-        return config, out_dir
