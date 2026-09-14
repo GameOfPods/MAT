@@ -33,4 +33,4 @@ from MAT.tools import *
 from MAT.pipelines import *
 from MAT.reader import *
 
-__all__ = ['__version__', "__author__", "MATResult", "ResultTypes"]
+__all__ = ['__version__', "__author__", "MATResult", "PodcastResult", "BookResult"]

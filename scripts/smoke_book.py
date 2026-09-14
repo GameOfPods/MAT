@@ -44,7 +44,7 @@ def main():
 
     from MAT.pipelines import Pipeline
     from MAT.pipelines.Book import BookPipeline
-    from MAT.reader import MATResult, ResultTypes
+    from MAT.reader import MATResult
     from MAT.utils.config import Config
     from MAT.writer import Writer
 
@@ -71,8 +71,9 @@ def main():
     folder = Writer().store(file=str(book_path), output=str(out / "results"), pipeline_results=[result])
     zipped = shutil.make_archive(folder, "zip", folder)
     for path in (folder, zipped):
-        books = list(MATResult.read(Path(path)).get_results(ResultTypes.BOOK))
-        assert [c.heading for c in books[0].chapters] == list(CHAPTERS.keys()), f"could not read back {path}"
+        book = MATResult.read(path).book
+        assert [c.heading for c in book.chapters] == list(CHAPTERS.keys()), f"could not read back {path}"
+        assert any(s.entities for c in book.chapters for s in c.sentences), f"entities missing in {path}"
     print("SMOKE BOOK OK")
 
 

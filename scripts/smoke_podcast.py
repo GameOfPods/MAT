@@ -26,7 +26,7 @@ def main():
     import torch
     from MAT.pipelines import Pipeline
     from MAT.pipelines.Podcast import PodcastPipeline
-    from MAT.reader import MATResult, ResultTypes
+    from MAT.reader import MATResult
     from MAT.utils.config import Config
     from MAT.writer import Writer
 
@@ -65,8 +65,9 @@ def main():
     folder = Writer().store(file=str(audio), output=str(out / "results"), pipeline_results=[result])
     zipped = shutil.make_archive(folder, "zip", folder)
     for path in (folder, zipped):
-        podcasts = list(MATResult.read(Path(path)).get_results(ResultTypes.PODCAST))
-        assert len(podcasts) == 1 and len(podcasts[0].transcript) > 0, f"could not read back {path}"
+        podcast = MATResult.read(path).podcast
+        assert podcast is not None and len(podcast.transcript) > 0, f"could not read back {path}"
+        assert podcast.models["transcriber"]["backend"] == "whisper", f"models missing in {path}"
     assert len(result.diarization_matched.speaker) >= 2, "expected at least two speakers in the sample"
     print("SMOKE PODCAST OK")
 

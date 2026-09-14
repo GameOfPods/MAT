@@ -203,4 +203,4 @@ class BookPipeline(Pipeline):
         return False
 
 
-__all__ = ["BookPipeline", "BookOutput", "Chapter"]
+__all__ = ["BookPipeline", "BookOutput"]

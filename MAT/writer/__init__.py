@@ -8,25 +8,134 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from typing import List, Callable, Dict, Type
+"""
+Writes results in format 2.
+
+    <input name>_<time>/
+        meta.json               format, MAT version, input file, pipelines that ran
+        podcast/result.json     everything the podcast pipeline found, plus transcript.txt, summary.md, diarization.rttm
+        book/result.json
+
+`MAT.reader.MATResult` reads it back, from the folder or from a zip of it.
+"""
+import json
 import os
 import pathlib
 from datetime import datetime
-import json
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from MAT.pipelines import PipelineResult, PodcastOutput, BookOutput, BookPipeline
+from MAT.pipelines import PipelineResult, PodcastOutput, BookOutput
+from MAT.tools import DiarizationResult, WordTupleSpeaker
+
+FORMAT_VERSION = 2
+
+
+def _write_json(path: str, data: Any) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+
+
+def _write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text if text.endswith("\n") else text + "\n")
+
+
+def _timeline(diarization: Optional[DiarizationResult]) -> Optional[Dict[str, List[List[float]]]]:
+    if diarization is None:
+        return None
+    return {speaker: [[start, end] for start, end in sorted(diarization.get_diarization(speaker))]
+            for speaker in sorted(diarization.speaker)}
+
+
+def _words(words: Optional[List[WordTupleSpeaker]]) -> List[Dict[str, Any]]:
+    return [{"start": w.word.start, "end": w.word.end, "text": w.word.word,
+             "speakers": sorted(s for s in w.speaker if s is not None)} for w in words or []]
+
+
+def _summary_text(output: PodcastOutput) -> Optional[str]:
+    return None if output.summary is None else "\n\n---\n\n".join(output.summary.text)
+
+
+def podcast_json(output: PodcastOutput) -> Dict[str, Any]:
+    media = output.media_info.as_dict() if output.media_info is not None else None
+    return {
+        "schema": "mat.podcast",
+        "format": FORMAT_VERSION,
+        "models": output.models,
+        "language": (media or {}).get("language") or None,
+        "media": media,
+        # speakers after matching them to gold labels, diarization is what the diarizer said
+        "speakers": _timeline(output.diarization_matched),
+        "diarization": _timeline(output.diarization),
+        "words": _words(output.word_speaker),
+        # words of the same speaker merged into lines
+        "segments": _words(output.squished_speaker),
+        "summary": _summary_text(output),
+        # filled by later stages (audio events, named entities in transcripts)
+        "events": [],
+        "entities": [],
+    }
+
+
+def book_json(output: BookOutput) -> Dict[str, Any]:
+    chapters = []
+    for chapter in output.chapter_data:
+        sentences = []
+        for i, text in enumerate(chapter.sentences or []):
+            lemmas = chapter.sentence_words[i] if chapter.sentence_words and i < len(chapter.sentence_words) else {}
+            ner = chapter.ner[i] if chapter.ner and i < len(chapter.ner) else {}
+            entities = [{"label": label, "text": entity, "start": start, "end": end}
+                        for label, found in ner.items() for entity, start, end in found]
+            sentences.append({"text": text, "lemmas": dict(lemmas), "entities": entities})
+        chapters.append({
+            "heading": chapter.get_beautiful_heading(),
+            "heading_raw": chapter.heading,
+            "paragraphs": chapter.content,
+            "sentences": sentences,
+        })
+    return {
+        "schema": "mat.book",
+        "format": FORMAT_VERSION,
+        "models": output.models,
+        "title": output.title,
+        "language": output.language or None,
+        "chapters": chapters,
+    }
+
+
+def write_podcast(output: PodcastOutput, folder: str) -> None:
+    _write_json(os.path.join(folder, "result.json"), podcast_json(output))
+    if output.full_transcript:
+        _write_text(os.path.join(folder, "transcript.txt"), output.full_transcript)
+    summary = _summary_text(output)
+    if summary:
+        _write_text(os.path.join(folder, "summary.md"), summary)
+    if output.diarization_matched is not None and output.media_info is not None:
+        from pydantic import ValidationError
+        try:
+            from rttm_manager import export_rttm, RTTM
+            time_line = sorted((start, end, speaker) for speaker in output.diarization_matched.speaker
+                               for start, end in output.diarization_matched.get_diarization(speaker=speaker))
+            rttms = [RTTM(type="SPEAKER", file_id=output.media_info.file_name, channel_id=1, speaker_name=speaker,
+                          turn_onset=start, turn_duration=end - start) for start, end, speaker in time_line]
+            export_rttm(rttms=rttms, file_path=os.path.join(folder, "diarization.rttm"))
+        except (ImportError, ValidationError):
+            pass
+
+
+def write_book(output: BookOutput, folder: str) -> None:
+    _write_json(os.path.join(folder, "result.json"), book_json(output))
 
 
 class Writer:
-    __api_version__ = "1"
-
     def __init__(self):
-        self._storage_functions: Dict[Type[PipelineResult], Callable[[PipelineResult, str], None]] = {}
-        self.register_writer(PodcastOutput, self.store_podcast_output)
-        self.register_writer(BookOutput, self.store_book_output)
+        self._writers: Dict[Type[PipelineResult], Tuple[str, Callable[[PipelineResult, str], None]]] = {}
+        self.register_writer(PodcastOutput, "podcast", write_podcast)
+        self.register_writer(BookOutput, "book", write_book)
 
-    def register_writer(self, t: Type[PipelineResult], f: Callable[[PipelineResult, str], None]):
-        self._storage_functions[t] = f
+    def register_writer(self, result_type: Type[PipelineResult], folder_name: str,
+                        function: Callable[[PipelineResult, str], None]) -> None:
+        self._writers[result_type] = (folder_name, function)
 
     def store(self, file: str, output: str, pipeline_results: List[PipelineResult]) -> str:
         from MAT.utils import get_hash_file
@@ -40,109 +149,25 @@ class Writer:
             i += 1
         os.makedirs(folder, exist_ok=False)
         meta = {
-            "version": self.__api_version__,
-            "MAT_version": __version__,
-            "file_name": os.path.basename(file),
-            "file_hash": get_hash_file(file_path=os.path.abspath(file)),
-            "file_name_wo_extension": pathlib.Path(file).stem,
-            "full_file": os.path.abspath(file),
-            "creation_time": now.isoformat(),
-            "pipelines": []
+            "format": FORMAT_VERSION,
+            "mat_version": __version__,
+            "created": now.isoformat(timespec="seconds"),
+            "input": {
+                "name": os.path.basename(file),
+                "path": os.path.abspath(file),
+                "sha1": get_hash_file(file_path=os.path.abspath(file)),
+            },
+            "pipelines": [],
         }
-        for i, res in enumerate(pipeline_results):
-            # noinspection PyBroadException
-            try:
-                pipe_folder = f"{i}.{type(res).__name__}"
-                os.makedirs(os.path.join(folder, pipe_folder), exist_ok=False)
-                self._storage_functions[type(res)](res, os.path.join(folder, pipe_folder))
-                meta["pipelines"].append({
-                    "folder": pipe_folder,
-                    "type": str(type(res)),
-                })
-            except Exception as e:
-                raise e
-        with open(os.path.join(folder, "meta.json"), "w") as f:
-            json.dump(meta, f)
+        for result in pipeline_results:
+            if type(result) not in self._writers:
+                raise TypeError(f"No writer registered for {type(result).__name__}")
+            name, write = self._writers[type(result)]
+            os.makedirs(os.path.join(folder, name), exist_ok=False)
+            write(result, os.path.join(folder, name))
+            meta["pipelines"].append(name)
+        _write_json(os.path.join(folder, "meta.json"), meta)
         return os.path.abspath(folder)
 
-    @staticmethod
-    def store_book_output(output: BookOutput, folder: str):
-        r = {
-            "title": output.title if output.title is not None else "",
-            "language": output.language if output.language is not None else "",
-            "chapters": []
-        }
-        for c in output.chapter_data:
-            r_c = {
-                "heading_raw": c.heading,
-                "heading": c.get_beautiful_heading(),
-                "content": c.content,
-            }
-            if c.sentence_words is not None:
-                r_c["sentence_words"] = c.sentence_words
-            if c.sentences is not None:
-                r_c["sentences"] = c.sentences
-            if c.ner is not None:
-                r_c["ner"] = []
-                for n in c.ner:
-                    r_c["ner"].append({})
-                    for k, v in n.items():
-                        r_c["ner"][-1][k] = []
-                        for ent, fr, to in v:
-                            r_c["ner"][-1][k].append({
-                                "ent": ent,
-                                "from": fr,
-                                "to": to,
-                            })
-            r["chapters"].append(r_c)
-        with open(os.path.join(folder, "book.json"), "w") as f:
-            json.dump(r, f)
 
-    @staticmethod
-    def store_podcast_output(output: PodcastOutput, folder: str):
-        if output.media_info is not None:
-            with open(os.path.join(folder, "media.json"), "w") as f:
-                json.dump(output.media_info.as_dict(), f, indent=2)
-
-        if output.full_transcript is not None:
-            with open(os.path.join(folder, "transcript.txt"), "w") as f:
-                f.write(output.full_transcript)
-
-        if output.word_speaker is not None:
-            with open(os.path.join(folder, "transcript.json"), "w") as f:
-                r = {"transcript": []}
-                for x in output.word_speaker:
-                    r["transcript"].append(
-                        {"speaker": tuple(x.speaker), "word": x.word.word, "start": x.word.start, "finish": x.word.end}
-                    )
-                json.dump(r, f)
-
-        if output.summary is not None:
-            with open(os.path.join(folder, "summary.txt"), "w") as f:
-                r = []
-                for i, t in enumerate(output.summary.text):
-                    r.append(t)
-                f.write("\n---\n".join(r))
-
-        if output.diarization_matched is not None:
-            with open(os.path.join(folder, "diarization.json"), "w") as f:
-                json.dump(output.diarization_matched.to_dict(), f)
-
-        if output.diarization_matched is not None and output.media_info is not None:
-            from pydantic import ValidationError
-            try:
-                from rttm_manager import export_rttm, RTTM
-                time_line = []
-                for speaker in output.diarization_matched.speaker:
-                    for fr, to in output.diarization_matched.get_diarization(speaker=speaker):
-                        time_line.append((fr, to, speaker))
-                time_line.sort()
-                rttms = []
-                for fr, to, speaker in time_line:
-                    rttms.append(RTTM(
-                        type="SPEAKER", file_id=output.media_info.file_name, channel_id=1, speaker_name=speaker,
-                        turn_onset=fr, turn_duration=to - fr
-                    ))
-                export_rttm(rttms=rttms, file_path=os.path.join(folder, "diarization.rttm"))
-            except (ImportError, ValidationError):
-                pass
+__all__ = ["Writer", "FORMAT_VERSION", "podcast_json", "book_json"]
