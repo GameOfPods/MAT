@@ -53,7 +53,7 @@ Docs
 - [x] Fix the API changes that come with that (pyannote `use_auth_token` became `token`, gliner2 needs its `local` extra). whisperx alignment and NeMo Sortformer kept their signatures.
 - [x] Whisper default `large-v3-turbo` instead of `large-v2`. `compute-type` defaults to `auto`, which picks the fastest type the device supports (`int8_float32` on the 1080 Ti and on CPU).
 - [x] Smoke scripts in `scripts/` so they can run on the GPU box
-- [ ] Done when unit tests and the CPU smoke scripts pass here (done) and the smoke scripts also run on the GPU box (waiting for a run on the 1080 Ti)
+- [x] Unit tests and CPU smoke scripts pass on the dev machine, both smoke scripts pass on the GTX 1080 Ti (driver 580.178.04, torch 2.8.0+cu126, CTranslate2 `int8_float32`). First numbers on the 30 second sample, models cached: whisper decoding 0.75 s for 20.7 s of speech (about 28x realtime), whole pipeline 5.7 s, most of it model loading. Peak GPU memory about 1.6 GB on top of the desktop.
 
 ## Stage 3: behavior and usability
 
@@ -61,7 +61,7 @@ Docs
 - [ ] `--LLM-Summarizer_chunk-size` below 200 crashes because the splitter overlap is fixed at 200. Make the overlap relative or configurable.
 - [ ] Default summary model is `gpt-4`. Pick a current default.
 - [ ] Whisper: detect the language first and ask faster-whisper for word timestamps when there is no alignment model, instead of segment timings
-- [ ] `large-v3-turbo` returned lowercase text without punctuation on the pyannote sample (a phone call), `large-v2` punctuated the same audio. Check on real episodes. If it happens there too, try an `initial-prompt` option with a punctuated sentence or go back to `large-v3`.
+- [ ] `large-v3-turbo` returned lowercase text without punctuation on the pyannote sample when running on CPU. On the GTX 1080 Ti the same model and audio came out with normal punctuation and casing, so it looks like a CPU inference quirk. Still check a few real episodes on the GPU. If it happens there too, try an `initial-prompt` option with a punctuated sentence or go back to `large-v3`.
 
 ## Stage 4: pluggable backends, new CLI and config
 
@@ -110,7 +110,7 @@ Each one gets its extra, a backend class, a unit test with a mocked model and a 
 
 Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (needed for the `*_trf` spaCy models) and at `<5` by gliner2. Cohere Transcribe needs transformers 5.4+ and Granite Speech 4.1 needs 5.8+. Decide when we get there, for example drop the transformer based spaCy models or wait for new releases.
 
-- [ ] 6a: Parakeet TDT 0.6B v3 (transcriber), pyannote community-1 (diarizer), WeSpeaker embeddings from pyannote 4 for gold label matching (replaces the old gated `pyannote/embedding`)
+- [ ] 6a: Parakeet TDT 0.6B v3 (transcriber), pyannote community-1 (diarizer), WeSpeaker embeddings from pyannote 4 for gold label matching (replaces the old gated `pyannote/embedding`). Watch out: pyannote decodes files with torchcodec, and torchcodec 0.7 (the one that fits torch 2.8) only supports FFmpeg 4 to 7. The GPU box has FFmpeg 9. Either pass decoded audio to pyannote (MAT already does that for speaker matching), install FFmpeg 7 there, or move to torch 2.9+ with a newer torchcodec.
 - [ ] 6b: DiariZen (diarizer). Its pyannote fork pins torch 2.1.1, so this needs a port, a separate environment or a subprocess. Streaming Sortformer v2.1 (diarizer, max 4 speakers, handles long audio without our chunk linking).
 - [ ] 6c: Qwen3-ASR 1.7B with Qwen3-ForcedAligner for timestamps, MOSS-Transcribe-Diarize and Granite Speech 4.1 2B-plus (both transcribe and diarize). MOSS handles 90 minutes and Granite 9 minutes per pass, so both use the long-audio splitter.
 - [ ] 6d: Cohere Transcribe. It needs the language up front and has no timestamps, so language comes from a first pass and timestamps from Qwen3-ForcedAligner.
@@ -129,6 +129,7 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 - [ ] GLiNER is asked about one label at a time, so it tends to find something for every label. In a test run `Bob` and `Paris` also came back as `ORGANIZATION`. Pass all labels in one call.
 - [ ] spaCy sentences keep their trailing newline (`"Alice met Bob.\n"`). Strip them before storing.
 - [ ] German and English spaCy model defaults
+- [ ] GLiNER2 and spaCy always run on CPU, there is no device option. On the GPU box the book smoke run didn't touch the GPU and NER took 12 s for 5 sentences. Add a device option and move GLiNER2 (and transformer based spaCy models) to the GPU.
 - [ ] spaCy models get pip-installed at runtime by `spacy_download`, and every `uv sync` removes them again because it only keeps declared packages. Declare the default models as dependencies (direct wheel URLs) so they stay installed.
 - [ ] Character list per book: merge name variants, count mentions per chapter
 - [ ] Chapter summaries with the same LLM settings as podcasts

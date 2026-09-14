@@ -16,7 +16,7 @@ The project is pre-alpha. Options and the output format can still change.
 
 Used for any file ffmpeg can decode.
 
-1. **Transcription** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`large-v2` by default). If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language we get word timings. If not, we fall back to segment timings.
+1. **Transcription** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`large-v3-turbo` by default). If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language we get word timings. If not, we fall back to segment timings.
 2. **Diarization** with NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio is split into 5 minute chunks to keep memory use down. Speakers in different chunks are linked with pyannote embeddings.
 3. **Speaker names** (optional). Give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
 4. **Transcript**. Every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
@@ -40,7 +40,7 @@ Everything ends up in `book.json`.
 ## Requirements
 
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
-- ffmpeg 4 to 7 on your `PATH` (torchcodec, which pyannote uses for decoding, doesn't support newer versions yet)
+- ffmpeg on your `PATH`. The current pipelines work with any recent version (tested with 6.1 and 9.0). torchcodec 0.7, which pyannote uses when it has to open audio files itself, only supports ffmpeg 4 to 7, so that becomes relevant once pyannote reads files directly.
 - For the GPU: an NVIDIA driver that supports CUDA 12.6. GTX 10xx cards need the 580 driver branch, later branches dropped them.
 - Disk space for models. The first run downloads a few GB into the Hugging Face and torch caches.
 - For summaries: `OPENAI_API_KEY`. Set `OPENAI_API_BASE` if you want to use another OpenAI compatible server.
