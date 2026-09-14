@@ -67,13 +67,13 @@ LLM calls (found while testing a DeepSeek summary on the GPU box, the run sat si
 
 - [ ] Streaming on by default, with a log line every few hundred tokens so a long answer doesn't look like a hang. The refine chain still gets the full text.
 - [ ] Timeouts based on streamed tokens. Right now the client has no timeout and can wait forever. DeepSeek answers `200` right away and then sends empty lines until the model is done, and the HTTP read timeout resets on those lines, so it can't tell a slow model from a stuck request. MAT has to watch the stream chunks itself, with async streaming and a timeout on every "wait for the next chunk", and cancel the request when it runs out:
-  - `--LLM-Summarizer_first-token-timeout`, default 10 minutes. Covers queueing and prompt processing (DeepSeek gives up after 10 minutes on its side, a local model on the 1080 Ti can need minutes for a 32k token prompt).
+  - `--LLM-Summarizer_first-token-timeout`, default 15 minutes. Covers queueing and prompt processing. DeepSeek's docs say they close the connection after 10 minutes, but in our test run it took 900 seconds until they gave up. If MAT gives up earlier, it only lands at the back of the queue again. A local model on the 1080 Ti can also need minutes for a 32k token prompt.
   - `--LLM-Summarizer_idle-timeout`, default 2 minutes. Maximum gap between two tokens, every token resets it.
-  - `--LLM-Summarizer_max-retries`, default 2, for timeouts and connection errors.
+  - `--LLM-Summarizer_max-retries`, default 2, for timeouts, connection errors and "server busy" errors, with a growing wait between tries (for example 30 s, then 2 min). DeepSeek reports a queue timeout as HTTP 200 with an error in the body (`We were unable to start processing your request within the 900-second timeout limit`), langchain raises that as a plain `ValueError`, so MAT has to recognize it.
   - No total time limit, `max-tokens` already bounds the answer.
   - Check if thinking tokens (DeepSeek streams them as `reasoning_content`) reach MAT through langchain's OpenAI client. If not, the idle timer could fire while the model is thinking.
 - [ ] `--LLM-Summarizer_reasoning-effort`, default the lowest the provider supports. Summaries don't need much thinking, and thinking tokens cost time, money and `max-tokens` on every refine step. Plus `--LLM-Summarizer_extra-body` (JSON) for provider specific switches like DeepSeek's `thinking` or `enable_thinking` on local servers.
-- [ ] A failed or cancelled summary must not drop the transcript and diarization of the episode. Moved up from stage 10 for the summary step, stage 10 still covers the general case.
+- [ ] A failed or cancelled summary must not drop the transcript and diarization of the episode. Moved up from stage 10 for the summary step, stage 10 still covers the general case. In the DeepSeek test run the summary failed after 15 minutes in their queue and the finished transcript of the episode was lost with it.
 - [ ] `--LLM-Summarizer_chunk-size` default from 15000 to 32000 tokens. Every current API model handles that. Automatic sizing comes in stage 7.
 
 ## Stage 4: pluggable backends, new CLI and config
@@ -163,6 +163,7 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 Drop whatever stage 4 already solved.
 
 - [ ] Audio is decoded 4+ times per file (`accept`, diarization, speaker matching, media info). Decode once and share.
+- [ ] Cache step results per input file (keyed by file hash plus the options of the step) in the work directory or a cache folder, so a re-run after a failed summary doesn't transcribe and diarize the whole episode again. `MAT/utils` already has an unused `get_hash_pipeline`.
 - [ ] `PodcastPipeline.accept` decodes the whole file just to check the type. Use a probe instead.
 - [ ] Word/speaker alignment is O(words x segments). Use a sweep over sorted segments.
 - [ ] Models are loaded again for every file. Keep them between files when memory allows.
