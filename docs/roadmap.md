@@ -47,12 +47,13 @@ Docs
 
 ## Stage 2: platform upgrade
 
-- [ ] Python 3.12, numpy 2
-- [ ] torch 2.8 or newer. Two uv extras, `cpu` for the dev machine and `cu126` for the GPU box, marked as conflicting in `[tool.uv] conflicts`. Only the cu126 wheels still run on the 1080 Ti (see notes).
-- [ ] pyannote.audio 4, whisperx 3.8, faster-whisper 1.2, NeMo 3.0, current langchain
-- [ ] Fix the API changes that come with that (for example pyannote `use_auth_token` became `token`, whisperx alignment and loading)
-- [ ] Whisper default `large-v3-turbo` instead of `large-v2`. Pick `compute-type` from the device (`int8_float32` on the 1080 Ti).
-- [ ] Done when unit tests and the CPU smoke scripts pass here and the smoke scripts also run on the GPU box
+- [x] Python 3.12, numpy 2
+- [x] torch 2.8 with torchcodec 0.7. The torch build is picked with uv dependency groups: `cu126` is the default (also runs on CPU), `cpu` is opt-in. We use groups because uv has no default extras, and without a default a plain `uv run` installs the PyPI build, which doesn't run on the 1080 Ti.
+- [x] pyannote.audio 4.0.7, whisperx 3.8.6, faster-whisper 1.2.1, NeMo 3.0, langchain 1.4, gliner2 2.0, transformers 4.53
+- [x] Fix the API changes that come with that (pyannote `use_auth_token` became `token`, gliner2 needs its `local` extra). whisperx alignment and NeMo Sortformer kept their signatures.
+- [x] Whisper default `large-v3-turbo` instead of `large-v2`. `compute-type` defaults to `auto`, which picks the fastest type the device supports (`int8_float32` on the 1080 Ti and on CPU).
+- [x] Smoke scripts in `scripts/` so they can run on the GPU box
+- [ ] Done when unit tests and the CPU smoke scripts pass here (done) and the smoke scripts also run on the GPU box (waiting for a run on the 1080 Ti)
 
 ## Stage 3: behavior and usability
 
@@ -60,6 +61,7 @@ Docs
 - [ ] `--LLM-Summarizer_chunk-size` below 200 crashes because the splitter overlap is fixed at 200. Make the overlap relative or configurable.
 - [ ] Default summary model is `gpt-4`. Pick a current default.
 - [ ] Whisper: detect the language first and ask faster-whisper for word timestamps when there is no alignment model, instead of segment timings
+- [ ] `large-v3-turbo` returned lowercase text without punctuation on the pyannote sample (a phone call), `large-v2` punctuated the same audio. Check on real episodes. If it happens there too, try an `initial-prompt` option with a punctuated sentence or go back to `large-v3`.
 
 ## Stage 4: pluggable backends, new CLI and config
 
@@ -106,6 +108,8 @@ We have no reference transcripts of our own episodes, so the suite uses public d
 
 Each one gets its extra, a backend class, a unit test with a mocked model and a benchmark run on the 1080 Ti.
 
+Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (needed for the `*_trf` spaCy models) and at `<5` by gliner2. Cohere Transcribe needs transformers 5.4+ and Granite Speech 4.1 needs 5.8+. Decide when we get there, for example drop the transformer based spaCy models or wait for new releases.
+
 - [ ] 6a: Parakeet TDT 0.6B v3 (transcriber), pyannote community-1 (diarizer), WeSpeaker embeddings from pyannote 4 for gold label matching (replaces the old gated `pyannote/embedding`)
 - [ ] 6b: DiariZen (diarizer). Its pyannote fork pins torch 2.1.1, so this needs a port, a separate environment or a subprocess. Streaming Sortformer v2.1 (diarizer, max 4 speakers, handles long audio without our chunk linking).
 - [ ] 6c: Qwen3-ASR 1.7B with Qwen3-ForcedAligner for timestamps, MOSS-Transcribe-Diarize and Granite Speech 4.1 2B-plus (both transcribe and diarize). MOSS handles 90 minutes and Granite 9 minutes per pass, so both use the long-audio splitter.
@@ -125,6 +129,7 @@ Each one gets its extra, a backend class, a unit test with a mocked model and a 
 - [ ] GLiNER is asked about one label at a time, so it tends to find something for every label. In a test run `Bob` and `Paris` also came back as `ORGANIZATION`. Pass all labels in one call.
 - [ ] spaCy sentences keep their trailing newline (`"Alice met Bob.\n"`). Strip them before storing.
 - [ ] German and English spaCy model defaults
+- [ ] spaCy models get pip-installed at runtime by `spacy_download`, and every `uv sync` removes them again because it only keeps declared packages. Declare the default models as dependencies (direct wheel URLs) so they stay installed.
 - [ ] Character list per book: merge name variants, count mentions per chapter
 - [ ] Chapter summaries with the same LLM settings as podcasts
 - [ ] Try coreference resolution for characters in German and English. Keep it only if the results are usable.

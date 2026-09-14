@@ -13,12 +13,20 @@ CLI that runs ML pipelines on media files and writes results to a folder/zip. Tw
 
 ## Commands
 
+This dev machine has no GPU and uses the CPU torch build. Put the group flags on **every** uv call here, otherwise uv
+swaps in the default CUDA 12.6 build (a ~3 GB download):
+
 ```bash
-uv sync                      # install (torch comes from the CPU index, see [tool.uv.sources])
-uv run pytest tests          # unit tests, no model downloads, a few seconds
-uv run MAT --help            # lists every tool option
-uv run MAT -i "file.mp3" -o out/
+uv sync --no-default-groups --group dev --group cpu
+uv run --no-default-groups --group dev --group cpu pytest tests        # unit tests, no model downloads
+uv run --no-default-groups --group dev --group cpu MAT --help
+uv run --no-default-groups --group dev --group cpu python scripts/smoke_podcast.py --device cpu   # ~2-3 min
+uv run --no-default-groups --group dev --group cpu python scripts/smoke_book.py                   # ~1 min
 ```
+
+The GPU box uses the defaults: `uv sync`, `uv run python scripts/smoke_podcast.py --device cuda`.
+
+When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, ...). A mismatch only fails at runtime.
 
 ## How the code is wired
 
@@ -29,9 +37,9 @@ uv run MAT -i "file.mp3" -o out/
 
 ## Machines
 
-- The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. For smoke tests use a clip of about 30 seconds (pyannote ships `sample.wav`, it's in the uv cache) and a tiny generated EPUB.
+- The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
 - No `OPENAI_API_KEY` and no Hugging Face token here. Fake the summary step and keep audio under 5 minutes so NeMo doesn't need the gated `pyannote/embedding` model.
-- Cached models: `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`.
+- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. spaCy models are pip-installed at runtime by `spacy_download` and removed again by every `uv sync` (exact sync), so the book smoke script downloads `en_core_web_sm` again after a sync.
 - Real runs and benchmarks happen on a separate GPU box with a GTX 1080 Ti (Pascal, compute capability 6.1, 11 GB), set up with uv. Claude can't reach it, the user runs GPU smoke tests and `MAT bench` there and shares the results.
 
 ## GTX 1080 Ti limits

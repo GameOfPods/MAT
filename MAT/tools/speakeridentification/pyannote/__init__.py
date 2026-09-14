@@ -119,7 +119,8 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
         import torchaudio.transforms
         import torch
 
-        pyannote_model = Model.from_pretrained(model, use_auth_token=use_hf_token)
+        # pyannote.audio 4 renamed use_auth_token to token
+        pyannote_model = Model.from_pretrained(model, token=use_hf_token)
         classifier = Inference(pyannote_model, window="whole")
         classifier.to(torch.device(device))
 

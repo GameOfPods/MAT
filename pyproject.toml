@@ -15,33 +15,32 @@ classifiers = [
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 3.12',
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "beautifulsoup4",
     "deepmultilingualpunctuation",
     "ebooklib",
-    "faster-whisper",
+    "faster-whisper>=1.2",
     "gliner",
-    "gliner2",
-    "huggingface-hub>=0.24",
-    "langchain",
-    "langchain-classic",
-    "langchain-core",
-    "langchain-openai",
-    "langchain-text-splitters",
+    # 2.0 moved torch/transformers/peft into the "local" extra
+    "gliner2[local]>=2",
+    "huggingface-hub",
+    "langchain>=1",
+    "langchain-classic>=1",
+    "langchain-core>=1",
+    "langchain-openai>=1",
+    "langchain-text-splitters>=1",
     "langdetect>=1.0.9",
     "linkify-it-py",
     "markdown",
     "markdown-it-py",
     "mdformat",
     "mdutils",
-    "nemo-toolkit[asr]>=2",
-    "numpy<2",
-    "nvidia-cudnn-cu12",
-    "nvidia-pyindex",
+    "nemo-toolkit[asr]>=3",
+    "numpy>=2",
     "pip",
     "psutil",
-    "pyannote-audio",
+    "pyannote-audio>=4",
     "pydantic",
     "pydub",
     "python-levenshtein",
@@ -57,17 +56,34 @@ dependencies = [
     "spacy-transformers",
     "speechbrain",
     "tiktoken",
-    "torch>=2.5,<2.6",
-    "torchaudio<2.9",
+    # 2.15 stops publishing CUDA 12.6 wheels, the last ones with Pascal (GTX 10xx) kernels
+    "torch>=2.8,<2.15",
+    "torchaudio>=2.8,<2.15",
+    # torchcodec releases are tied to one torch version: 0.7 <-> 2.8, 0.8 <-> 2.9, ...
+    # Move this together with torch, otherwise pyannote fails to decode audio at runtime
+    "torchcodec>=0.7,<0.8",
     "torchvision",
     "tqdm",
-    "whisperx",
+    "whisperx>=3.8",
     "xlsxwriter",
 ]
+
 [dependency-groups]
 dev = [
     "pandas-stubs>=2.3.3.251219",
     "pytest>=9.1.1",
+]
+# Torch build. cu126 is the default and also runs on CPU.
+# CPU-only machines can use the smaller build: uv sync --no-default-groups --group dev --group cpu
+cu126 = [
+    "torch>=2.8,<2.15",
+    "torchaudio>=2.8,<2.15",
+    "torchvision",
+]
+cpu = [
+    "torch>=2.8,<2.15",
+    "torchaudio>=2.8,<2.15",
+    "torchvision",
 ]
 
 [project.urls]
@@ -89,45 +105,41 @@ exclude = [
 [tool.hatch.version]
 path = "MAT/__version__.py"
 
+[tool.uv]
+# uv has no default extras, so the torch build is picked with groups.
+# Without a default, a plain `uv run` would install the PyPI build, which doesn't run on GTX 10xx cards.
+default-groups = ["dev", "cu126"]
+conflicts = [
+    [
+        { group = "cpu" },
+        { group = "cu126" },
+    ],
+]
+
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-]
-torchvision = [
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu126", group = "cu126" },
 ]
 torchaudio = [
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu126", group = "cu126" },
 ]
-nvidia-cudnn-cu12 = [
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+torchvision = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu126", group = "cu126" },
 ]
 
 [tool.uv.extra-build-dependencies]
-nvidia-pyindex = ["pip"]
 youtokentome = ["Cython", "setuptools", "wheel"]
-
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-rocm"
-url = "https://download.pytorch.org/whl/rocm6.4"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-xpu"
-url = "https://download.pytorch.org/whl/xpu"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+# CUDA 12.6 is the newest PyTorch build that still runs on Pascal cards like the GTX 1080 Ti
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
