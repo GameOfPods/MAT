@@ -63,6 +63,14 @@ Docs
 - [x] Whisper detects the language first and asks faster-whisper for word timestamps when whisperx has no alignment model, instead of using segment timings. The audio is decoded once and shared with the alignment.
 - [ ] `large-v3-turbo` returned lowercase text without punctuation on the pyannote sample when running on CPU. On the GTX 1080 Ti the same model and audio came out with normal punctuation and casing, so it looks like a CPU inference quirk. Still check a few real episodes on the GPU. If it happens there too, try an `initial-prompt` option with a punctuated sentence or go back to `large-v3`.
 
+LLM calls (found while testing a DeepSeek summary on the GPU box, the run sat silent after `HTTP 200` for many minutes):
+
+- [ ] `--LLM-Summarizer_timeout` per call (default 10 minutes) and `--LLM-Summarizer_max-retries` (default 2). Right now the client has no timeout and can wait forever. DeepSeek answers `200` right away and then sends empty lines until the model is done, so a slow model and a dead connection look the same.
+- [ ] Streaming on by default, with a log line every few hundred tokens so a long answer doesn't look like a hang. The refine chain still gets the full text. Streaming doesn't replace the timeout, because keep-alive lines also count as data.
+- [ ] `--LLM-Summarizer_reasoning-effort`, default the lowest the provider supports. Summaries don't need much thinking, and thinking tokens cost time, money and `max-tokens` on every refine step. Plus `--LLM-Summarizer_extra-body` (JSON) for provider specific switches like DeepSeek's `thinking` or `enable_thinking` on local servers.
+- [ ] A failed or cancelled summary must not drop the transcript and diarization of the episode. Moved up from stage 10 for the summary step, stage 10 still covers the general case.
+- [ ] `--LLM-Summarizer_chunk-size` default from 15000 to 32000 tokens. Every current API model handles that. Automatic sizing comes in stage 7.
+
 ## Stage 4: pluggable backends, new CLI and config
 
 Today every tool adds `--<Tool>_<option>` flags to one argparse parser. With more backends and all extras installed `MAT -h` would list hundreds of options. The pipeline also hardcodes Whisper, NeMo and pyannote, so a new backend means editing `PodcastPipeline`.
@@ -119,6 +127,16 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 ## Stage 7: podcast extras
 
 - [ ] LLM settings for either the OpenAI API or a local OpenAI compatible server (Ollama, llama.cpp). Document a few model picks that fit on the 1080 Ti.
+- [ ] Ollama as its own provider (`langchain-ollama`). Chat through Ollama's OpenAI compatible `/v1` endpoint already works, but only the native API (`/api/show`, `/api/chat`) exposes the context size and lets us set `num_ctx` per request. Through `/v1` the server default applies (often 2048 or 4096 tokens) and Ollama cuts longer prompts without an error.
+- [ ] `chunk-size = auto`: explicit value wins, then ask the server (llama.cpp `meta.n_ctx` in `/v1/models`, vLLM `max_model_len`, OpenRouter `context_length`, Ollama `/api/show`), then a small built-in table of known API models (OpenAI and DeepSeek don't report it), then 32000. Chunk size = context - `max-tokens` - prompt size - 10% margin (MAT counts with OpenAI's tokenizer, other models count German text differently), capped at 100000 tokens because very long inputs make summaries worse in the middle. With 1M context API models a 2 hour episode then fits into one call.
+- [ ] Review and rework the summary pipeline, including the prompts. Known so far:
+  - The "system message" is pasted into the user prompt instead of being sent as a system message
+  - The question and refine prompts are langchain's old English defaults ("Write a concise summary of the following"). Write our own, and decide how German and English episodes are handled.
+  - Typos in the system message ("Dont", "beeing", "language of theoriginal")
+  - It uses deprecated `langchain_classic` chains, and some imports (`ConditionalPromptSelector`, `MapReduceChain`) are unused. Consider plain client calls instead of the legacy chain.
+  - Refine processes chunks one after another, so late chunks can dominate. Compare with one call per episode (now possible with large contexts) and map-reduce for local models with small contexts.
+  - The summary is Markdown but gets saved as `summary.txt`
+  - Decide what a good summary of an episode should contain (structure, length, topics, speakers, spoilers) and check results against a few episodes, together with the stage 5 benchmark
 - [ ] Speaker names from the transcript when there are no gold clips: send the first minutes and some lines per speaker to the LLM, get name guesses with the lines that support them
 - [ ] Optional speaker library: keep embeddings of named speakers and match them automatically in later episodes
 - [ ] NER on transcripts with GLiNER2: entities with speaker and timestamp, summed up per episode
