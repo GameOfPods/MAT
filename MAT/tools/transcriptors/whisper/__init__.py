@@ -65,7 +65,7 @@ class TransciptorWhisper(TransciptionTool):
         import sys
         from time import perf_counter
         from datetime import timedelta
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel, decode_audio
         import whisperx
         from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF, DEFAULT_ALIGN_MODELS_TORCH
         import tqdm
@@ -78,7 +78,18 @@ class TransciptorWhisper(TransciptionTool):
         self._LOGGER.info(f"Loading whisper {cfg['model']} on {cfg['device']} with compute type {compute_type}")
         model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=compute_type,
                              cpu_threads=cfg["cpu-count"])
-        segments, info = model.transcribe(origin_data.input_file, beam_size=cfg["beam-size"], vad_filter=True, )
+        # decode once, faster-whisper and the whisperx alignment both work on 16 kHz mono float arrays
+        audio = decode_audio(origin_data.input_file)
+
+        # Detect the language first. Only when whisperx has no alignment model for it we ask whisper itself for word
+        # timestamps, they cost extra time and the whisperx alignment is more precise.
+        language, language_probability, _ = model.detect_language(audio=audio, vad_filter=True)
+        has_align_model = language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys())
+        self._LOGGER.info(f"Detected language {language} ({language_probability:.0%}). "
+                          f"{'Aligning words with whisperx' if has_align_model else 'No whisperx alignment model, using whisper word timestamps'}")
+
+        segments, info = model.transcribe(audio, language=language, beam_size=cfg["beam-size"], vad_filter=True,
+                                          word_timestamps=not has_align_model)
 
         segment_lengths = []
         segments_as_dict = []
@@ -109,13 +120,13 @@ class TransciptorWhisper(TransciptionTool):
             return TranscriptionResult(word_timings=[], language=info.language, duration=info.duration,
                                        duration_after_vad=info.duration_after_vad)
 
-        if info.language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys()):
+        if has_align_model:
             align_model, meta = whisperx.load_align_model(language_code=info.language, device=cfg["device"])
             aligned = whisperx.align(
                 transcript=segments_as_dict,
                 model=align_model,
                 align_model_metadata=meta,
-                audio=origin_data.input_file,
+                audio=audio,
                 device=cfg["device"],
                 print_progress=False,
             )
@@ -130,7 +141,6 @@ class TransciptorWhisper(TransciptionTool):
             )
 
         else:
-            self._LOGGER.warning(f"No alignment model for language {info.language}. Using segment level timings")
             word_timestamps = TransciptorWhisper._words_from_segments(segments=segments_as_dict)
 
         return TranscriptionResult(word_timings=word_timestamps, language=info.language, duration=info.duration,
@@ -138,8 +148,8 @@ class TransciptorWhisper(TransciptionTool):
 
     @staticmethod
     def _words_from_segments(segments: List[dict]) -> List[WordTuple]:
-        # We don't ask faster-whisper for word timestamps, so "words" is usually None here.
-        # In that case every segment becomes one entry with the segment timings.
+        # Used when whisperx has no alignment model, whisper is asked for word timestamps then.
+        # If a segment still has no words it becomes one entry with the segment timings.
         ret = []
         for s in segments:
             words = s.get("words") or []

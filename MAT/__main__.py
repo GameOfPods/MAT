@@ -40,6 +40,8 @@ def main(args: Sequence[str] = None) -> List[str]:
     parser.add_argument("--log-file-append", action="store_true", dest="log_file_append",
                         help="If set will append to the logfile instead of overwriting it")
     parser.add_argument('--input-recursive', action="store_true", dest="input_recursive")
+    parser.add_argument('-y', '--yes', action="store_true", dest="yes",
+                        help="Don't ask before processing the found files. Useful for scripts and cron jobs.")
     parser.add_argument('-o', '--output', type=str, required=True, dest="output", metavar="OUTPUT",
                         help='Folder to store output files to. Will be created if it does not exist.')
     parser.add_argument('--output-zip', action="store_true", dest="output_zip",
@@ -89,7 +91,7 @@ def main(args: Sequence[str] = None) -> List[str]:
         "list": ("l", "list")
     }.items()}
 
-    while True:
+    while not args.yes:
         res = input(f"Found {len(input_files)} files to process. Continue? [{'/'.join(x[0] for x in options.values())}] ")
         if res.lower() in options[True]:
             break

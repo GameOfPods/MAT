@@ -57,10 +57,10 @@ Docs
 
 ## Stage 3: behavior and usability
 
-- [ ] Add `--yes` so MAT can run without the interactive confirmation (cron, containers)
-- [ ] `--LLM-Summarizer_chunk-size` below 200 crashes because the splitter overlap is fixed at 200. Make the overlap relative or configurable.
-- [ ] Default summary model is `gpt-4`. Pick a current default.
-- [ ] Whisper: detect the language first and ask faster-whisper for word timestamps when there is no alignment model, instead of segment timings
+- [x] Add `--yes` so MAT can run without the interactive confirmation (cron, containers)
+- [x] `--LLM-Summarizer_chunk-size` below 200 crashed because the splitter overlap was fixed at 200. New option `--LLM-Summarizer_chunk-overlap`, default 10% of the chunk size and at most 200.
+- [x] Default summary model was `gpt-4`, now `gpt-5.6-terra`. `max-tokens` default went from 4096 to 16384 because reasoning models count their thinking tokens there. Not tested against the real API yet (no key on the dev machine).
+- [x] Whisper detects the language first and asks faster-whisper for word timestamps when whisperx has no alignment model, instead of using segment timings. The audio is decoded once and shared with the alignment.
 - [ ] `large-v3-turbo` returned lowercase text without punctuation on the pyannote sample when running on CPU. On the GTX 1080 Ti the same model and audio came out with normal punctuation and casing, so it looks like a CPU inference quirk. Still check a few real episodes on the GPU. If it happens there too, try an `initial-prompt` option with a punctuated sentence or go back to `large-v3`.
 
 ## Stage 4: pluggable backends, new CLI and config
