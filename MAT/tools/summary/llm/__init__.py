@@ -9,6 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from typing import Dict, Optional, List
+import json
 import os
 from enum import Enum, auto as enum_auto
 import logging
@@ -20,18 +21,36 @@ from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult
 class LLM(Enum):
     OpenAI = enum_auto()
 
-    def get_llm(self, model: str, max_tokens: int, temperature: float = None):
+    def get_llm(self, model: str, max_tokens: int, temperature: float = None, reasoning_effort: Optional[str] = None,
+                extra_body: Optional[dict] = None, first_token_timeout: float = 900.0, idle_timeout: float = 120.0,
+                max_retries: int = 2):
+        from MAT.tools.summary.llm.robust import StreamingChatModel
 
         if self == self.OpenAI:
             from logging import WARNING
             logging.getLogger("httpx").setLevel(WARNING)
-            from langchain_openai import ChatOpenAI as OpenAI
+            from langchain_openai import ChatOpenAI
             if "OPENAI_API_BASE" in os.environ:
                 logging.getLogger("LLM-Service").info(f"Using openai api located at {os.environ['OPENAI_API_BASE']}")
-            if temperature is None:
-                return OpenAI(model_name=model, max_tokens=max_tokens)
-            else:
-                return OpenAI(model_name=model, temperature=temperature, max_tokens=max_tokens)
+
+            kwargs = {"model": model, "max_tokens": max_tokens, "stream_usage": True,
+                      # retries are done by StreamingChatModel, with longer waits than the SDK uses
+                      "max_retries": 0,
+                      # langchain's own chunk timeout (120 s by default) also applies to the first token and would
+                      # cancel waits in a provider queue, StreamingChatModel handles both timeouts
+                      "stream_chunk_timeout": None}
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            if reasoning_effort is not None and reasoning_effort != "unset":
+                kwargs["reasoning_effort"] = reasoning_effort
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+
+            def factory(http_async_client):
+                return ChatOpenAI(http_async_client=http_async_client, **kwargs)
+
+            return StreamingChatModel(factory=factory, first_token_timeout=first_token_timeout,
+                                      idle_timeout=idle_timeout, max_retries=max_retries)
 
         raise ValueError(f"LLM of type {self} not defined")
 
@@ -86,7 +105,7 @@ class SummaryLLM(SummaryTool):
                 }
             ),
             "chunk-size": ConfigElement(
-                default_value=15000,
+                default_value=32000,
                 argparse_kwargs={
                     "help": "Chunk size for summarization. "
                             "Original text will be split into chunks of this size and then the summarization will be "
@@ -99,6 +118,47 @@ class SummaryLLM(SummaryTool):
                 argparse_kwargs={
                     "help": "How many tokens neighboring chunks share. Must be smaller than the chunk size. "
                             "Default: 10%% of the chunk size, at most 200",
+                    "type": int,
+                }
+            ),
+            "reasoning-effort": ConfigElement(
+                default_value="low",
+                argparse_kwargs={
+                    "help": "How much a reasoning model may think before answering. low, medium and high work with "
+                            "OpenAI and DeepSeek, OpenAI also knows none, DeepSeek also max. Use \"unset\" to not "
+                            "send the parameter at all (for servers that reject it). Default: %(default)s",
+                    "type": str,
+                }
+            ),
+            "extra-body": ConfigElement(
+                default_value=None,
+                argparse_kwargs={
+                    "help": "Extra JSON fields for the request body, for provider specific switches. "
+                            "Example to turn DeepSeek thinking off: '{\"thinking\": {\"type\": \"disabled\"}}'",
+                    "type": json.loads,
+                }
+            ),
+            "first-token-timeout": ConfigElement(
+                default_value=900.0,
+                argparse_kwargs={
+                    "help": "Seconds to wait for the first streamed token of an answer. Covers queueing at the "
+                            "provider and prompt processing. Default: %(default)s",
+                    "type": float,
+                }
+            ),
+            "idle-timeout": ConfigElement(
+                default_value=120.0,
+                argparse_kwargs={
+                    "help": "Seconds to wait between two streamed tokens. Every token resets it. "
+                            "Default: %(default)s",
+                    "type": float,
+                }
+            ),
+            "max-retries": ConfigElement(
+                default_value=2,
+                argparse_kwargs={
+                    "help": "How often a call is tried again after a timeout, connection problem or a busy "
+                            "provider. Default: %(default)s",
                     "type": int,
                 }
             ),
@@ -154,7 +214,12 @@ class SummaryLLM(SummaryTool):
         llm = LLM.parse_str(name=cfg["service"]).get_llm(
             model=cfg["model"],
             max_tokens=cfg["max-tokens"],
-            temperature=cfg["temperature"]
+            temperature=cfg["temperature"],
+            reasoning_effort=cfg["reasoning-effort"],
+            extra_body=cfg["extra-body"],
+            first_token_timeout=cfg["first-token-timeout"],
+            idle_timeout=cfg["idle-timeout"],
+            max_retries=cfg["max-retries"],
         )
         self.__class__._LOGGER.info(f'Loaded {cfg["service"]} as summarization LLM with model {cfg["model"]}')
 

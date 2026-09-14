@@ -105,6 +105,16 @@ uv run MAT -i episode.mp3 -o results \
 
 The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at a local OpenAI compatible server (Ollama, llama.cpp) the model name is whatever that server calls the model.
 
+Answers are streamed. If no first token arrives within 15 minutes (`--LLM-Summarizer_first-token-timeout`, covers the provider queue) or tokens stop for 2 minutes (`--LLM-Summarizer_idle-timeout`), the call is cancelled and tried again after 30 seconds, then 2 minutes (`--LLM-Summarizer_max-retries`, default 2). If the summary still fails, the episode is written without it and the error is in the log.
+
+Reasoning models think before they answer, which costs time and tokens. MAT asks for `--LLM-Summarizer_reasoning-effort low` by default. Provider specific switches go into `--LLM-Summarizer_extra-body`, for example to turn thinking off completely on DeepSeek:
+
+```bash
+uv run MAT -i episode.mp3 -o results --yes \
+  --LLM-Summarizer_model deepseek-flash \
+  --LLM-Summarizer_extra-body '{"thinking": {"type": "disabled"}}'
+```
+
 The same options work in a JSON config file. The top level keys are the tool names:
 
 ```json
