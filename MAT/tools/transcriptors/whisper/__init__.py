@@ -35,7 +35,7 @@ class TransciptorWhisper(TransciptionTool):
                 }
             ),
             "model": ConfigElement(
-                default_value="large-v2",
+                default_value="large-v3-turbo",
                 argparse_kwargs={
                     "help": "Model to use for whisper model. Default: %(default)s", "type": str,
                 }
@@ -47,9 +47,10 @@ class TransciptorWhisper(TransciptionTool):
                 }
             ),
             "compute-type": ConfigElement(
-                default_value="int8",
+                default_value="auto",
                 argparse_kwargs={
-                    "help": "Compute type. Default: %(default)s", "type": str,
+                    "help": "CTranslate2 compute type. \"auto\" picks the fastest type the device supports "
+                            "(int8_float32 on CPU and GTX 10xx cards). Default: %(default)s", "type": str,
                 }
             ),
             "beam-size": ConfigElement(
@@ -70,8 +71,12 @@ class TransciptorWhisper(TransciptionTool):
         import tqdm
         import math
 
+        from MAT.utils.device import ct2_compute_type
+
         cfg = config.get_config(key=self)
-        model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=cfg["compute-type"],
+        compute_type = ct2_compute_type(device=cfg["device"], requested=cfg["compute-type"])
+        self._LOGGER.info(f"Loading whisper {cfg['model']} on {cfg['device']} with compute type {compute_type}")
+        model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=compute_type,
                              cpu_threads=cfg["cpu-count"])
         segments, info = model.transcribe(origin_data.input_file, beam_size=cfg["beam-size"], vad_filter=True, )
 

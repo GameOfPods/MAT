@@ -39,8 +39,9 @@ Everything ends up in `book.json`.
 
 ## Requirements
 
-- Python 3.11 and [uv](https://docs.astral.sh/uv/)
-- ffmpeg on your `PATH`
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- ffmpeg 4 to 7 on your `PATH` (torchcodec, which pyannote uses for decoding, doesn't support newer versions yet)
+- For the GPU: an NVIDIA driver that supports CUDA 12.6. GTX 10xx cards need the 580 driver branch, later branches dropped them.
 - Disk space for models. The first run downloads a few GB into the Hugging Face and torch caches.
 - For summaries: `OPENAI_API_KEY`. Set `OPENAI_API_BASE` if you want to use another OpenAI compatible server.
 - For speaker names and for audio longer than 5 minutes: a Hugging Face token with access to the gated [`pyannote/embedding`](https://huggingface.co/pyannote/embedding) model. Accept the terms on the model page, then run `huggingface-cli login` or set `HF_TOKEN`.
@@ -55,7 +56,16 @@ cd MAT
 uv sync
 ```
 
-Right now torch 2.5.x is installed from the PyTorch CPU index (see `[tool.uv.sources]` in `pyproject.toml`). The CUDA index entries in there don't match the torch pin yet, so GPU installs need some manual work. That's on the [roadmap](docs/roadmap.md).
+`uv sync` installs torch with CUDA 12.6. We stay on 12.6 on purpose: it's the newest PyTorch build that still runs on GTX 10xx cards, and it works on newer cards and on CPU as well.
+
+On a machine without an NVIDIA GPU you can use the smaller CPU build. uv doesn't remember that choice, so the flags go on every `uv sync` and `uv run`:
+
+```bash
+uv sync --no-default-groups --group dev --group cpu
+uv run --no-default-groups --group dev --group cpu MAT --help
+```
+
+If you forget the flags once, uv installs the CUDA build again. That still works, it's just a big download.
 
 ## Usage
 
@@ -147,7 +157,14 @@ uv sync
 uv run pytest tests
 ```
 
-The unit tests don't download any models. For a real check use a short clip (30 seconds is enough) and a small EPUB. Running the full podcast pipeline on a one hour episode on CPU takes a long time.
+The unit tests don't download any models. For a real check there are two smoke scripts that run the actual pipelines on tiny inputs: the 30 second two speaker clip that ships with pyannote, and a generated EPUB. Run them after dependency updates, and on the GPU box after every install:
+
+```bash
+uv run python scripts/smoke_podcast.py --device cuda
+uv run python scripts/smoke_book.py
+```
+
+The podcast script fakes the summary unless you pass `--summary`. The first run downloads the models (a few GB).
 
 Some notes on the code:
 
