@@ -37,4 +37,29 @@ def ct2_compute_type(device: str, requested: str = "auto") -> str:
     return "default"
 
 
-__all__ = ["resolve_device", "ct2_compute_type"]
+def torch_dtype(device: str, preferred: str = "bfloat16"):
+    """
+    dtype for loading a torch model. Many new models are published in bfloat16, but bfloat16 needs compute capability
+    8.0+ (RTX 30xx and newer). GTX 10xx and RTX 20xx get float16 instead, CPU always gets float32.
+    """
+    import torch
+    if preferred not in ("bfloat16", "float16", "float32"):
+        raise ValueError(f"Unknown dtype {preferred}, use bfloat16, float16 or float32")
+    if not device.startswith("cuda") or preferred == "float32":
+        return torch.float32
+    major, _ = torch.cuda.get_device_capability(torch.device(device))
+    if preferred == "bfloat16" and major >= 8:
+        return torch.bfloat16
+    return torch.float16
+
+
+def free_gpu_memory() -> None:
+    """Call after `del model`, so the next step gets the GPU memory back. The 1080 Ti only has 11 GB."""
+    import gc
+    gc.collect()
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+__all__ = ["resolve_device", "ct2_compute_type", "torch_dtype", "free_gpu_memory"]
