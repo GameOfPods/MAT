@@ -8,6 +8,8 @@ MAT is a command line tool that takes podcast episodes and EPUB books and pulls 
 
 You point it at some files, it picks the pipeline that fits each file, runs it and writes the results to a folder (or a zip). There's also a small reader API to load those results in Python later.
 
+Every step of a pipeline is done by a backend (Whisper for speech to text, Sortformer for diarization, ...). Backends are installed as uv extras and picked per run, so new models can be added without touching the pipelines.
+
 The project is pre-alpha. Options and the output format can still change.
 
 ## What the pipelines do
@@ -16,26 +18,22 @@ The project is pre-alpha. Options and the output format can still change.
 
 Used for any file ffmpeg can decode.
 
-1. **Transcription** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`large-v3-turbo` by default). If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used.
-2. **Diarization** with NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio is split into 5 minute chunks to keep memory use down. Speakers in different chunks are linked with pyannote embeddings.
-3. **Speaker names** (optional). Give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
-4. **Transcript**. Every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
-5. **Summary** with an OpenAI compatible model through LangChain. Long transcripts are split into chunks and the summary gets refined chunk by chunk.
+1. **Transcription** (`whisper`): [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with `large-v3-turbo` by default. If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used.
+2. **Diarization** (`sortformer`): NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio longer than 5 minutes is cut into pieces at quiet spots to keep memory use down, and the speakers of neighboring pieces are linked with pyannote embeddings.
+3. **Speaker names** (`pyannote`, optional): give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
+4. **Transcript**: every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
+5. **Summary** (`llm`, optional): an OpenAI compatible model through LangChain. Long transcripts are split into chunks and the summary gets refined chunk by chunk.
 6. **Media info**: duration, sample rate, loudness, language.
-
-Files written per episode: `media.json`, `transcript.txt`, `transcript.json`, `summary.txt`, `diarization.json`, `diarization.rttm`.
 
 ### Books
 
 Used for EPUB files.
 
 1. Read the book and walk the chapters in table of contents order.
-2. Keep headings that look like real chapters: numbers, `Chapter 12` / `Kapitel 12`, prologue/epilogue, headings that repeat, or names you pass with `--bookpipeline_chapter-names`. Repeated headings get roman numerals (`Part I`, `Part II`).
+2. Keep headings that look like real chapters: numbers, `Chapter 12` / `Kapitel 12`, prologue/epilogue, headings that repeat, or names you pass with `--set 'book.chapter-names=["Prolog", "Nachwort"]'`. Repeated headings get roman numerals (`Part I`, `Part II`).
 3. Detect the language.
-4. Split sentences and count lemmas with spaCy. The model is picked by language (English, German, French, multilingual fallback) unless you set `--SpaCy_model`.
-5. Named entities per sentence with GLiNER2 (`PERSON`, `LOCATION`, `ORGANIZATION`, `DATE` by default).
-
-Everything ends up in `book.json`.
+4. Split sentences and count lemmas (`spacy`). The spaCy model is picked by language (English, German, French, multilingual fallback) unless you set `spacy.model`.
+5. Named entities per sentence (`gliner`, optional): GLiNER2 with `PERSON`, `LOCATION`, `ORGANIZATION`, `DATE` by default.
 
 ## Requirements
 
@@ -56,13 +54,30 @@ cd MAT
 uv sync
 ```
 
-`uv sync` installs torch with CUDA 12.6. We stay on 12.6 on purpose: it's the newest PyTorch build that still runs on GTX 10xx cards, and it works on newer cards and on CPU as well.
+`uv sync` installs torch with CUDA 12.6 and all backends. We stay on CUDA 12.6 on purpose: it's the newest PyTorch build that still runs on GTX 10xx cards, and it works on newer cards and on CPU as well.
 
-On a machine without an NVIDIA GPU you can use the smaller CPU build. uv doesn't remember that choice, so the flags go on every `uv sync` and `uv run`:
+You can also install only the backends you need. Each one is an extra:
+
+| Extra | Backend | Step |
+|---|---|---|
+| `whisper` | `whisper` | transcriber |
+| `sortformer` | `sortformer` | diarizer |
+| `pyannote` | `pyannote` | identifier |
+| `llm` | `llm` | summarizer |
+| `spacy` | `spacy` | splitter |
+| `gliner` | `gliner` | ner |
 
 ```bash
-uv sync --no-default-groups --group dev --group cpu
-uv run --no-default-groups --group dev --group cpu MAT --help
+uv sync --no-default-groups --group cu126 --extra whisper --extra sortformer --extra pyannote
+```
+
+Backends that aren't installed are skipped. `MAT backends` shows what is installed and what to install for the rest.
+
+On a machine without an NVIDIA GPU you can use the smaller CPU build of torch. uv doesn't remember that choice, so the flags go on every `uv sync` and `uv run`:
+
+```bash
+uv sync --no-default-groups --group dev --group cpu --group backends
+uv run --no-default-groups --group dev --group cpu --group backends MAT --help
 ```
 
 If you forget the flags once, uv installs the CUDA build again. That still works, it's just a big download.
@@ -70,98 +85,137 @@ If you forget the flags once, uv installs the CUDA build again. That still works
 ## Usage
 
 ```bash
-uv run MAT -i "episodes/*.mp3" -o results
+uv run MAT run -i "episodes/*.mp3" -o results
 ```
 
 MAT lists how many files it found and asks before it starts. Answer `y` to go, `n` to stop or `l` to print the file list. Pass `--yes` to skip the question, for example in scripts or cron jobs.
 
-Main options:
+The commands:
+
+| Command | What it does |
+|---|---|
+| `MAT run` | Process files |
+| `MAT backends` | List all backends per step, installed or not |
+| `MAT backends show NAME` | Options of one backend with type, default and description |
+| `MAT config init` | Print a commented config file for the chosen backends |
+| `MAT config show` | Print the config a run would use (defaults, config file and `--set` merged) |
+
+Options of `MAT run`:
 
 | Option | What it does |
 |---|---|
 | `-i`, `--input` | One or more input globs. Quote them so your shell doesn't expand them. |
-| `--input-recursive` | Allow `**` in globs |
-| `-y`, `--yes` | Don't ask before processing |
 | `-o`, `--output` | Output folder, created if missing |
+| `-y`, `--yes` | Don't ask before processing |
+| `--input-recursive` | Allow `**` in globs |
+| `-c`, `--config` | TOML config file |
+| `--set SECTION.KEY=VALUE` | Set one option, can be used many times |
+| `--transcriber`, `--diarizer`, `--identifier`, `--summarizer`, `--splitter`, `--ner` | Pick the backend for a step. `none` skips optional steps. |
 | `--output-zip` | Zip each result folder |
 | `--keep-uncompressed` | Keep the folder next to the zip |
+| `--export-config` | Save the config that was used as `config.toml` in each result |
 | `-wd`, `--work-dir` | Where temp files go (default: current directory) |
-| `-c`, `--config` | JSON config file |
-| `--export-config` | Save the config that was used as `config.json` in each result |
 | `--verbose`, `--log-file`, `--log-file-append` | Logging |
 
-If one file fails, MAT writes `<file name>.error.txt` into the output folder and moves on to the next file.
+If one file fails, MAT writes `<file name>.error.txt` into the output folder and moves on to the next file. The exit code is 1 if any file failed.
 
-### Tool options
+### Backend options
 
-Each tool has its own options, named `--<Tool>_<option>`. `uv run MAT --help` lists all of them. Some examples:
+Every pipeline and backend has a config section named after it: `podcast`, `book`, `whisper`, `sortformer`, `pyannote`, `llm`, `spacy`, `gliner`. `MAT backends show whisper` lists the options of a section.
 
-```bash
-uv run MAT -i episode.mp3 -o results \
-  --Whisper_model medium \
-  --Pyannote-Identification_gold-labels speakers/ \
-  --LLM-Summarizer_model gpt-5.6-luna
-```
-
-The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at a local OpenAI compatible server (Ollama, llama.cpp) the model name is whatever that server calls the model.
-
-Answers are streamed. If no first token arrives within 15 minutes (`--LLM-Summarizer_first-token-timeout`, covers the provider queue) or tokens stop for 2 minutes (`--LLM-Summarizer_idle-timeout`), the call is cancelled and tried again after 30 seconds, then 2 minutes (`--LLM-Summarizer_max-retries`, default 2). If the summary still fails, the episode is written without it and the error is in the log.
-
-Reasoning models think before they answer, which costs time and tokens. MAT asks for `--LLM-Summarizer_reasoning-effort low` by default. Provider specific switches go into `--LLM-Summarizer_extra-body`, for example to turn thinking off completely on DeepSeek:
+Set single options on the command line:
 
 ```bash
-uv run MAT -i episode.mp3 -o results --yes \
-  --LLM-Summarizer_model deepseek-flash \
-  --LLM-Summarizer_extra-body '{"thinking": {"type": "disabled"}}'
+uv run MAT run -i episode.mp3 -o results \
+  --set whisper.model=medium \
+  --set pyannote.gold-labels=speakers/ \
+  --summarizer none
 ```
 
-The same options work in a JSON config file. The top level keys are the tool names:
+Values are read as JSON when that works (`8`, `true`, `null`, `["a", "b"]`, `{"k": "v"}`), anything else is a plain string.
 
-```json
-{
-  "Whisper": {"model": "medium", "beam-size": 5},
-  "Pyannote-Identification": {"gold-labels": "speakers/"},
-  "LLM-Summarizer": {"model": "gpt-5.6-luna"}
-}
+For more than a few options use a TOML file. `MAT config init` writes one with every option, its default and a short description:
+
+```bash
+uv run MAT config init > mat.toml
+uv run MAT run -i "episodes/*.mp3" -o results -c mat.toml
 ```
 
-Values from the config file currently override command line flags. The easiest way to get a complete file to start from is a run with `--export-config`.
+```toml
+[podcast]
+summarizer = "llm"
+
+[whisper]
+model = "large-v3-turbo"
+beam-size = 5
+
+[pyannote]
+gold-labels = "speakers/"
+```
+
+The order is: defaults, then the config file, then `--set`. Unknown sections, misspelled options and wrong types stop the run before any file is processed. Sections for backends that aren't installed only give a warning.
+
+### Summaries
+
+The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at another OpenAI compatible server (DeepSeek, Ollama, llama.cpp) the model name is whatever that server calls the model.
+
+Answers are streamed. If no first token arrives within 15 minutes (`llm.first-token-timeout`, covers the provider queue) or tokens stop for 2 minutes (`llm.idle-timeout`), the call is cancelled and tried again after 30 seconds, then 2 minutes (`llm.max-retries`, default 2). If the summary still fails, the episode is written without it and the error is in the log.
+
+Reasoning models think before they answer, which costs time and tokens. MAT asks for `llm.reasoning-effort = "low"` by default. Provider specific switches go into `llm.extra-body`, for example to turn thinking off completely on DeepSeek:
+
+```bash
+OPENAI_API_BASE=https://api.deepseek.com OPENAI_API_KEY=sk-... uv run MAT run -i episode.mp3 -o results --yes \
+  --set llm.model=deepseek-flash \
+  --set 'llm.extra-body={"thinking": {"type": "disabled"}}'
+```
 
 ## Output
 
 ```
 results/
-└── episode_2026-09-13_20-15-02/
+└── episode_2026-09-14_20-15-02/
     ├── meta.json
-    └── 0.PodcastOutput/
-        ├── media.json
+    ├── config.toml              with --export-config
+    └── podcast/
+        ├── result.json
         ├── transcript.txt
-        ├── transcript.json
-        ├── summary.txt
-        ├── diarization.json
+        ├── summary.md
         └── diarization.rttm
 ```
 
-`meta.json` has the result format version, the MAT version, the input file name and hash, and which pipeline wrote which subfolder.
+`meta.json` has the result format (`2`), the MAT version, the input file with its SHA-1 and the pipelines that ran. An EPUB gets a `book/` folder with a `result.json` instead.
+
+`podcast/result.json` has:
+
+- `models`: backend, model and package versions of every step that ran
+- `media` and `language`
+- `speakers`: time ranges per speaker after matching to gold labels, `diarization`: what the diarizer found
+- `words`: every word with start, end and speakers, `segments`: the words merged into lines
+- `summary`
+- `events` and `entities`, still empty, planned for later
+
+`book/result.json` has `models`, `title`, `language` and the chapters with their paragraphs and sentences. Every sentence has its lemma counts and entities.
+
+Results from MAT 0.2 and older use a different layout and can't be read anymore.
 
 ## Reading results in Python
 
 ```python
-from pathlib import Path
-from MAT import MATResult, ResultTypes
+from MAT import MATResult
 
-result = MATResult.read(Path("results/episode_2026-09-13_20-15-02.zip"))  # folder or zip
+result = MATResult.read("results/episode_2026-09-14_20-15-02.zip")  # folder or zip
 
-for podcast in result.get_results(ResultTypes.PODCAST):
-    print(podcast.speaker_names)
-    print(podcast.summary)
+if result.podcast:
+    print(result.podcast.speaker_names)
+    print(result.podcast.transcript)
+    print(result.podcast.summary)
 
-for book in result.get_results(ResultTypes.BOOK):
-    for chapter in book.chapters:
+if result.book:
+    for chapter in result.book.chapters:
         print(chapter.heading, len(chapter.sentences))
 ```
 
-Importing `MAT` loads torch and all tools, so this takes a few seconds.
+Importing `MAT` loads torch, so this takes a few seconds.
 
 ## Development
 
@@ -177,15 +231,27 @@ uv run python scripts/smoke_podcast.py --device cuda
 uv run python scripts/smoke_book.py
 ```
 
-The podcast script fakes the summary unless you pass `--summary`. The first run downloads the models (a few GB).
+The podcast script skips the summary unless you pass `--summary`. The first run downloads the models (a few GB).
+
+### Adding a backend
+
+1. Add an extra with its libraries to `pyproject.toml`.
+2. Write a module next to the existing ones, for example `MAT/tools/transcriptors/parakeet/__init__.py`:
+   - call `require("nemo", extra="parakeet")` at the top, before anything else from the library is imported
+   - define an `Options` pydantic model (subclass of `MAT.utils.config.Options`) with a description per field
+   - decorate the class with `@register("transcriber", "parakeet", description="...")` and implement `process`
+   - import heavy libraries inside `process`, not at module level
+3. Load it at the end of the step's package `__init__.py`: `load_optional("MAT.tools.transcriptors.parakeet", slot="transcriber", name="parakeet", extra="parakeet")`.
+4. Add a unit test with a fake model.
+
+A model that transcribes and diarizes in one go subclasses `TranscribeDiarizeTool`, the podcast pipeline then skips the diarizer. Helpers for backends are in `MAT/utils/device.py` (device, dtype, freeing GPU memory) and `MAT/utils/audio.py` (cutting long audio at quiet spots).
 
 Some notes on the code:
 
-- Tools, pipelines and readers are found by subclassing. A new tool has to be imported in its package `__init__.py`, otherwise MAT never sees it.
-- Config names and keys can't contain `_`, because `_` separates tool and option in the CLI flags.
 - Pipeline steps pass data to each other by step name. A step that is missing its input returns `None` instead of raising.
+- Logs go to stderr, command output (like `MAT config init`) to stdout.
 
-`pagebreak.lua` is a pandoc filter that puts a page break before every heading when you convert Markdown (like `summary.txt`) to docx: `pandoc summary.txt -f markdown -o summary.docx --lua-filter pagebreak.lua`.
+`pagebreak.lua` is a pandoc filter that puts a page break before every heading when you convert Markdown to docx: `pandoc summary.md -o summary.docx --lua-filter pagebreak.lua`.
 
 Known problems and planned work are in [docs/roadmap.md](docs/roadmap.md).
 
