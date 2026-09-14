@@ -11,7 +11,7 @@
 import logging
 import os.path
 from collections import defaultdict
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Sequence, Tuple, List
 from uuid import uuid4
 
 from pydantic import Field
@@ -22,6 +22,7 @@ from MAT.registry import register, require
 require("nemo", "pyannote.audio", extra="sortformer")
 
 from MAT.tools.diarizators import DiarizationTool, DiarizerInput, DiarizationResult  # noqa: E402
+from MAT.utils.audio import Window  # noqa: E402
 from MAT.utils.config import Config, Options  # noqa: E402
 
 
@@ -29,9 +30,9 @@ class SortformerOptions(Options):
     model: str = Field("nvidia/diar_sortformer_4spk-v1", description="NeMo Sortformer model.")
     device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
     segment_length: int = Field(5 * 60, ge=30, description="Longest piece of audio in seconds the model sees at "
-                                                           "once. Longer audio is cut into pieces and the speakers "
-                                                           "are linked between pieces. Lower it if the GPU runs out "
-                                                           "of memory.")
+                                                           "once. Longer audio is cut at a quiet spot and the "
+                                                           "speakers are linked between pieces. Lower it if the GPU "
+                                                           "runs out of memory.")
 
 
 @register("diarizer", "sortformer", description="NVIDIA NeMo Sortformer, up to 4 speakers per audio piece")
@@ -41,25 +42,31 @@ class DiarizerNEMO(DiarizationTool):
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:
+        import numpy as np
         from MAT.utils import timeout_retry
-        from MAT.utils.device import resolve_device
+        from MAT.utils.audio import plan_windows
+        from MAT.utils.device import free_gpu_memory, resolve_device
         from nemo.collections.asr.models import SortformerEncLabelModel
-        from math import ceil
         from pydub import AudioSegment
-        import torch
 
         options = config.options(self)
         device = resolve_device(options.device)
-        segment_length = options.segment_length
 
         nemo_dir = os.path.join(config.work_directory, f"nemo.{uuid4()}")
         os.makedirs(nemo_dir, exist_ok=True)
 
         sound = AudioSegment.from_file(origin_data.in_file).set_channels(1)
+        if sound.sample_width not in (2, 4):
+            sound = sound.set_sample_width(2)
+        # a view on pydub's buffer, no copy of hours of audio
+        samples = np.frombuffer(sound.raw_data, dtype=np.int16 if sound.sample_width == 2 else np.int32)
+        # cut at quiet spots instead of every segment-length seconds, so cuts don't land in the middle of a word
+        windows = plan_windows(samples, sound.frame_rate, max_length=options.segment_length)
+        self._LOGGER.info(f"Diarizing {len(windows)} audio piece(s) of at most {options.segment_length} s")
         mono_files = []
-        for i in range(ceil(sound.duration_seconds / segment_length)):
+        for i, window in enumerate(windows):
             audio_file_mono = os.path.join(nemo_dir, f"mono.{uuid4()}.{i}.wav")
-            sound[i * segment_length * 1000:(i + 1) * segment_length * 1000].export(audio_file_mono, format="wav")
+            sound[int(window.start * 1000):int(window.end * 1000)].export(audio_file_mono, format="wav")
             mono_files.append(audio_file_mono)
 
         diar_model: SortformerEncLabelModel = timeout_retry(
@@ -76,8 +83,7 @@ class DiarizerNEMO(DiarizationTool):
         )
 
         del diar_model
-        if device.startswith("cuda") and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        free_gpu_memory()
 
         clean_segments: List[Dict[str, List[Tuple[float, float]]]] = []
         for predicted_segment in predicted_segments:
@@ -122,13 +128,19 @@ class DiarizerNEMO(DiarizationTool):
                 combinations[i][new_speaker] = audio
                 clean_segments[i][new_speaker] = clean_segment[old_speaker]
 
-        ret = DiarizationResult()
-        for i, clean_segment in enumerate(clean_segments):
-            offset = i * segment_length
-            for k, v in clean_segment.items():
-                for f, t in v:
-                    ret.add_diarization(speaker=k, f=float(f) + offset, t=float(t) + offset)
+        return self._merge_windows(windows, clean_segments)
 
+    @staticmethod
+    def _merge_windows(windows: Sequence[Window],
+                       segments_per_window: Sequence[Dict[str, List[Tuple[float, float]]]]) -> DiarizationResult:
+        """Shift the segments of every audio piece to absolute times, keep each only in the piece that owns it."""
+        ret = DiarizationResult()
+        for window, segments in zip(windows, segments_per_window):
+            for speaker, times in segments.items():
+                for f, t in times:
+                    start, end = float(f) + window.start, float(t) + window.start
+                    if window.owns(start, end):
+                        ret.add_diarization(speaker=speaker, f=start, t=end)
         return ret
 
     @staticmethod

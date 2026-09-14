@@ -132,9 +132,9 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
             else:
                 ret.append(None)
 
+        from MAT.utils.device import free_gpu_memory
         del classifier
         del pyannote_model
-        if device.startswith("cuda") and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        free_gpu_memory()
 
         return ret
