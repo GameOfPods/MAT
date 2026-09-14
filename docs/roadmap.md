@@ -65,8 +65,13 @@ Docs
 
 LLM calls (found while testing a DeepSeek summary on the GPU box, the run sat silent after `HTTP 200` for many minutes):
 
-- [ ] `--LLM-Summarizer_timeout` per call (default 10 minutes) and `--LLM-Summarizer_max-retries` (default 2). Right now the client has no timeout and can wait forever. DeepSeek answers `200` right away and then sends empty lines until the model is done, so a slow model and a dead connection look the same.
-- [ ] Streaming on by default, with a log line every few hundred tokens so a long answer doesn't look like a hang. The refine chain still gets the full text. Streaming doesn't replace the timeout, because keep-alive lines also count as data.
+- [ ] Streaming on by default, with a log line every few hundred tokens so a long answer doesn't look like a hang. The refine chain still gets the full text.
+- [ ] Timeouts based on streamed tokens. Right now the client has no timeout and can wait forever. DeepSeek answers `200` right away and then sends empty lines until the model is done, and the HTTP read timeout resets on those lines, so it can't tell a slow model from a stuck request. MAT has to watch the stream chunks itself, with async streaming and a timeout on every "wait for the next chunk", and cancel the request when it runs out:
+  - `--LLM-Summarizer_first-token-timeout`, default 10 minutes. Covers queueing and prompt processing (DeepSeek gives up after 10 minutes on its side, a local model on the 1080 Ti can need minutes for a 32k token prompt).
+  - `--LLM-Summarizer_idle-timeout`, default 2 minutes. Maximum gap between two tokens, every token resets it.
+  - `--LLM-Summarizer_max-retries`, default 2, for timeouts and connection errors.
+  - No total time limit, `max-tokens` already bounds the answer.
+  - Check if thinking tokens (DeepSeek streams them as `reasoning_content`) reach MAT through langchain's OpenAI client. If not, the idle timer could fire while the model is thinking.
 - [ ] `--LLM-Summarizer_reasoning-effort`, default the lowest the provider supports. Summaries don't need much thinking, and thinking tokens cost time, money and `max-tokens` on every refine step. Plus `--LLM-Summarizer_extra-body` (JSON) for provider specific switches like DeepSeek's `thinking` or `enable_thinking` on local servers.
 - [ ] A failed or cancelled summary must not drop the transcript and diarization of the episode. Moved up from stage 10 for the summary step, stage 10 still covers the general case.
 - [ ] `--LLM-Summarizer_chunk-size` default from 15000 to 32000 tokens. Every current API model handles that. Automatic sizing comes in stage 7.
