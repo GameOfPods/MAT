@@ -85,9 +85,9 @@ Today every tool adds `--<Tool>_<option>` flags to one argparse parser. With mor
 
 Config and CLI
 
-- [ ] Options of each backend become a typed pydantic model instead of `ConfigElement` dicts. Type, default and help text live in one place. Keys look like `whisper.beam-size`, so the "no underscores" rule goes away.
-- [ ] Config files are TOML (read with stdlib `tomllib`). Order: defaults, then config file, then `--set key=value` on the command line.
-- [ ] Subcommands:
+- [x] Options of each backend become a typed pydantic model instead of `ConfigElement` dicts. Type, default and help text live in one place. Keys look like `whisper.beam-size`, so the "no underscores" rule goes away.
+- [x] Config files are TOML (read with stdlib `tomllib`). Order: defaults, then config file, then `--set key=value` on the command line.
+- [x] Subcommands (`MAT bench` comes with stage 5):
   - `MAT run -i ... -o ... [--transcriber X] [--diarizer Y] [-c mat.toml] [--set parakeet.batch-size=8] [--yes]`. `-h` only shows the core options and the backend slots with the choices that are installed.
   - `MAT backends` lists every backend per slot, either available or skipped with the extra you need to install
   - `MAT backends show <name>` prints the options of one backend
@@ -97,16 +97,22 @@ Config and CLI
 
 Backends
 
-- [ ] `PodcastPipeline` gets the slots `transcriber`, `diarizer`, `identifier` and `summarizer`. Choices come from the subclasses of each tool base class, keyed by `config_name()`.
-- [ ] One uv extra per backend (`whisper`, `parakeet`, `pyannote`, `diarizen`, `qwen-asr`, `moss`, `events`, ...)
-- [ ] Backend modules get imported from their package `__init__.py` inside `try/except ImportError`. Each backend module checks its libraries with `importlib.util.find_spec` at the top, so a missing extra skips the backend without importing torch at startup.
-- [ ] New base class `TranscribeDiarizeTool` for models that do both. The pipeline skips the separate diarization step when one of them is picked.
-- [ ] Shared helpers: pick device and dtype (Pascal aware), unload a model and free GPU memory, split long audio into windows at pauses (with overlap) and merge the results. Any backend with a length limit uses the same splitter.
+- [x] `PodcastPipeline` gets the slots `transcriber`, `diarizer`, `identifier` and `summarizer`, `BookPipeline` the slots `splitter` and `ner`. Choices are the backends registered for the slot, `none` skips `identifier`, `summarizer` and `ner`.
+- [x] One uv extra per backend. So far `whisper`, `sortformer`, `pyannote`, `llm`, `spacy`, `gliner`, plus `all`. The default dependency group `backends` installs `all`, so a plain `uv sync` still gets everything. Stage 6 adds `parakeet`, `diarizen`, `qwen-asr`, `moss`, ...
+- [x] Backend registry (`MAT/registry.py`): a backend module calls `require(...)` (find_spec only) and registers with `@register(slot, name)`, the package `__init__.py` loads it with `load_optional(...)`. A missing extra skips the backend, `MAT backends` lists it with the extra to install. Checked with an install without any backend extra.
+- [x] New base class `TranscribeDiarizeTool` for models that do both. The pipeline skips the separate diarization step when one of them is picked.
+- [x] Shared helpers: `resolve_device`, `torch_dtype` (bfloat16 only on compute capability 8.0+, float16 on Pascal), `free_gpu_memory` in `MAT/utils/device.py`, `plan_windows` in `MAT/utils/audio.py` (cuts long audio at the quietest spot near the window end, optional overlap, `Window.owns` decides which piece keeps a result). Sortformer uses it instead of hard 5 minute cuts.
+- [ ] Run a long episode (more than 5 minutes, so Sortformer cuts it into pieces) on the GPU box. Linking the pieces needs the gated `pyannote/embedding` model, which the dev machine can't download.
 
 Output format
 
-- [ ] New format, old results don't need to stay readable: one JSON per pipeline with a schema version, the models and versions that were used, segments, words, speakers, events and entities. Human readable `transcript.txt` and `summary.md` next to it.
-- [ ] Stable type names instead of `str(type(...))`. Remove the v1 reader.
+- [x] New format 2, old results don't need to stay readable: `meta.json` plus one folder per pipeline (`podcast/`, `book/`) with a `result.json` holding models and package versions, media info, speakers, raw diarization, words, segments, summary, and empty `events`/`entities` for later. `transcript.txt`, `summary.md` and `diarization.rttm` next to it.
+- [x] Stable pipeline names (`podcast`, `book`) instead of `str(type(...))`. The v1 reader is removed, `MATResult.read` rejects other formats with a clear error.
+
+Found on the way:
+
+- [x] The console script exited with code 1 on success, because `main` returned a list of result folders. `MAT` now returns a real exit code (1 if a file failed, 2 for config errors).
+- [x] Logs went to stdout and got mixed into command output. They go to stderr now, so `MAT config init > mat.toml` gives a clean file.
 
 ## Stage 5: benchmark suite
 
@@ -181,8 +187,8 @@ Drop whatever stage 4 already solved.
 
 - [ ] One failing step (for example the summary without an API key) drops all results of the file. Make steps fail on their own and keep the rest.
 - [ ] Steps that skip because of missing input do it silently. Log a warning.
-- [ ] `SpeakerIdetificationSpeechBrain.process` is a stub that returns `None`. Finish it or remove it.
-- [ ] `DiarizerNEMO._create_config` (old MSDD setup, downloads yaml from GitHub) is unused. Remove it.
+- [x] `SpeakerIdetificationSpeechBrain.process` was a stub that returned `None`. Removed in stage 4 together with the `speechbrain` dependency, the backend registry makes it easy to add a real one later.
+- [x] `DiarizerNEMO._create_config` (old MSDD setup, downloads yaml from GitHub) was unused. Removed in stage 4.
 - [ ] CI: GitHub Actions with the `cpu` extra and `pytest`
 - [ ] Clean up stale `mat.egg-info`/`MAT.egg-info` folders and decide if `.idea/` belongs in the repo
 
