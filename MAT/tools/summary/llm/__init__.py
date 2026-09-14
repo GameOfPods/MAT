@@ -63,7 +63,7 @@ class SummaryLLM(SummaryTool):
                 }
             ),
             "model": ConfigElement(
-                default_value="gpt-4",
+                default_value="gpt-5.6-terra",
                 argparse_kwargs={
                     "help": "model name for your selected LLM-provider. Default: %(default)s",
                     "type": str,
@@ -77,9 +77,11 @@ class SummaryLLM(SummaryTool):
                 }
             ),
             "max-tokens": ConfigElement(
-                default_value=4096,
+                # reasoning models (gpt-5 and newer) count their thinking tokens here too, 4096 could cut them off
+                default_value=16384,
                 argparse_kwargs={
-                    "help": "maximum number of tokens to use for your llm model. Default: %(default)s",
+                    "help": "Maximum number of tokens the model may generate per call. For reasoning models this "
+                            "includes the thinking tokens. Default: %(default)s",
                     "type": int,
                 }
             ),
@@ -89,6 +91,14 @@ class SummaryLLM(SummaryTool):
                     "help": "Chunk size for summarization. "
                             "Original text will be split into chunks of this size and then the summarization will be "
                             "run on the first and refined with the following chunks. Default: %(default)s",
+                    "type": int,
+                }
+            ),
+            "chunk-overlap": ConfigElement(
+                default_value=None,
+                argparse_kwargs={
+                    "help": "How many tokens neighboring chunks share. Must be smaller than the chunk size. "
+                            "Default: 10%% of the chunk size, at most 200",
                     "type": int,
                 }
             ),
@@ -149,7 +159,7 @@ class SummaryLLM(SummaryTool):
         self.__class__._LOGGER.info(f'Loaded {cfg["service"]} as summarization LLM with model {cfg["model"]}')
 
         len_fun = self._get_len_fun()
-        splitter = self._get_splitter(cfg["chunk-size"], len_fun=len_fun)
+        splitter = self._get_splitter(cfg["chunk-size"], len_fun=len_fun, chunk_overlap=cfg["chunk-overlap"])
 
         for text in origin_data.text:
             doc = Document(text)
@@ -213,12 +223,17 @@ class SummaryLLM(SummaryTool):
             return _len_fun
 
     @classmethod
-    def _get_splitter(cls, chunk_size: int, len_fun):
+    def _get_splitter(cls, chunk_size: int, len_fun, chunk_overlap: Optional[int] = None):
 
         try:
             from langchain.text_splitter import RecursiveCharacterTextSplitter
         except ImportError:
             from langchain_text_splitters import RecursiveCharacterTextSplitter
+        # The splitter's own default overlap is 200, which crashed for chunk sizes below 200
+        if chunk_overlap is None:
+            chunk_overlap = min(200, chunk_size // 10)
+        if chunk_overlap < 0 or chunk_overlap >= chunk_size:
+            raise ValueError(f"chunk-overlap ({chunk_overlap}) has to be between 0 and chunk-size ({chunk_size})")
         splitter = RecursiveCharacterTextSplitter(
             separators=["\n\n",
                         "\n",
@@ -233,6 +248,7 @@ class SummaryLLM(SummaryTool):
                         "",
                         ],
             chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             length_function=len_fun,
         )
         return splitter

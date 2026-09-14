@@ -16,7 +16,7 @@ The project is pre-alpha. Options and the output format can still change.
 
 Used for any file ffmpeg can decode.
 
-1. **Transcription** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`large-v3-turbo` by default). If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language we get word timings. If not, we fall back to segment timings.
+1. **Transcription** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`large-v3-turbo` by default). If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used.
 2. **Diarization** with NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio is split into 5 minute chunks to keep memory use down. Speakers in different chunks are linked with pyannote embeddings.
 3. **Speaker names** (optional). Give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
 4. **Transcript**. Every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
@@ -73,7 +73,7 @@ If you forget the flags once, uv installs the CUDA build again. That still works
 uv run MAT -i "episodes/*.mp3" -o results
 ```
 
-MAT lists how many files it found and asks before it starts. Answer `y` to go, `n` to stop or `l` to print the file list.
+MAT lists how many files it found and asks before it starts. Answer `y` to go, `n` to stop or `l` to print the file list. Pass `--yes` to skip the question, for example in scripts or cron jobs.
 
 Main options:
 
@@ -81,6 +81,7 @@ Main options:
 |---|---|
 | `-i`, `--input` | One or more input globs. Quote them so your shell doesn't expand them. |
 | `--input-recursive` | Allow `**` in globs |
+| `-y`, `--yes` | Don't ask before processing |
 | `-o`, `--output` | Output folder, created if missing |
 | `--output-zip` | Zip each result folder |
 | `--keep-uncompressed` | Keep the folder next to the zip |
@@ -99,8 +100,10 @@ Each tool has its own options, named `--<Tool>_<option>`. `uv run MAT --help` li
 uv run MAT -i episode.mp3 -o results \
   --Whisper_model medium \
   --Pyannote-Identification_gold-labels speakers/ \
-  --LLM-Summarizer_model gpt-4o-mini
+  --LLM-Summarizer_model gpt-5.6-luna
 ```
+
+The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at a local OpenAI compatible server (Ollama, llama.cpp) the model name is whatever that server calls the model.
 
 The same options work in a JSON config file. The top level keys are the tool names:
 
@@ -108,7 +111,7 @@ The same options work in a JSON config file. The top level keys are the tool nam
 {
   "Whisper": {"model": "medium", "beam-size": 5},
   "Pyannote-Identification": {"gold-labels": "speakers/"},
-  "LLM-Summarizer": {"model": "gpt-4o-mini"}
+  "LLM-Summarizer": {"model": "gpt-5.6-luna"}
 }
 ```
 
