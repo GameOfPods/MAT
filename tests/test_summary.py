@@ -3,8 +3,8 @@ from typing import List
 import pytest
 from langchain_core.language_models.fake import FakeListLLM
 
-from MAT.tools import SummaryInput, SummaryLLM
-from MAT.tools.summary.llm import LLM
+from MAT.tools import SummaryInput
+from MAT.tools.summary.llm import LLM, SummaryLLM
 from MAT.utils.config import Config
 
 
@@ -37,9 +37,8 @@ def test_metadata_reaches_every_prompt(monkeypatch):
     llm = RecordingLLM(responses=["first summary", "refined summary"] * 10)
     monkeypatch.setattr(LLM, "get_llm", lambda self, **kwargs: llm)
 
-    config = Config()
     # small chunks so the refine prompt gets used too (chunk sizes below 200 used to crash)
-    config.parse_config({"LLM-Summarizer": {"chunk-size": 50}})
+    config = Config({"llm": {"chunk-size": 50}})
     text = "\n\n".join(f"This is paragraph number {i} of a longer transcript about nothing." for i in range(12))
 
     result = SummaryLLM().process(SummaryInput(text, additional_metadata={"filename": "episode.mp3"}), config=config)

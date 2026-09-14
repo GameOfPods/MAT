@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Dict
+from typing import Iterable, Optional, Dict
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
@@ -46,7 +46,8 @@ class SummaryTool(Tool[SummaryInput, SummaryResult], ABC):
         pass
 
 
-from MAT.tools.summary.llm import SummaryLLM
+from MAT.registry import load_optional
 
-__all__ = ["SummaryResult", "SummaryInput", "SummaryTool", "SummaryLLM"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.summary.llm", slot="summarizer", name="llm", extra="llm")
+
+__all__ = ["SummaryResult", "SummaryInput", "SummaryTool"]

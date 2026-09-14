@@ -15,13 +15,14 @@ import sys
 __author__ = 'RedRem95'
 from MAT.__version__ import __version__
 
+# Logs go to stderr, stdout is for command output like `MAT config init > mat.toml`
 logging.basicConfig(
     format="{asctime} - {levelname:^8} - {name}: {message}",
     style="{",
     encoding='utf-8',
     datefmt="%Y.%m.%d %H:%M:%S",
     level=logging.INFO,
-    stream=sys.stdout,
+    stream=sys.stderr,
 )
 
 del os

@@ -8,13 +8,17 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from dataclasses import dataclass
-from typing import Dict, Iterable, Callable, List, Tuple, Optional
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, Callable, List, Tuple, Optional
 import logging
 
-from MAT import SplitterSpacy, SplitterInput
-from MAT.pipelines import PipelineResult, Pipeline, PipelineStepResult, T_out, PipelineStepInput
-from MAT.utils.config import ConfigElement
+from pydantic import Field
+
+from MAT.pipelines import PipelineResult, Pipeline, PipelineStepResult, PipelineStepInput, Slot
+from MAT.tools.ner import NERInput
+from MAT.tools.text_splitter import SplitterInput
+from MAT.utils.config import Options
 
 
 @dataclass
@@ -46,10 +50,20 @@ class BookOutput(PipelineResult):
     title: str
     language: Optional[str]
     chapter_data: List[Chapter]
+    models: Dict[str, Any] = field(default_factory=dict)
+
+
+class BookOptions(Options):
+    splitter: str = Field("spacy", description="Splits chapters into sentences and counts lemmas.")
+    ner: str = Field("gliner", description='Named entities per sentence. "none" skips it.')
+    chapter_names: List[str] = Field(default_factory=list, description="Headings that always count as chapters.")
 
 
 class BookPipeline(Pipeline):
-    import re
+    section = "book"
+    description = "Chapters, sentences, lemma counts and named entities for EPUB books."
+    Options = BookOptions
+    slots = {"splitter": Slot(), "ner": Slot(optional=True)}
     _LOGGER = logging.getLogger(__name__)
     _SPECIAL_CHAPTERS = {"prologue", "introduction", "epilogue", "prolog", "epilog"}
     _CHAPTER_NUMBER_REGEX = {re.compile(r"chapter \d+$"), re.compile(r"kapitel \d+$")}
@@ -60,40 +74,21 @@ class BookPipeline(Pipeline):
             from ebooklib import epub
             epub.read_epub(f, options={"ignore_ncx": True})
             return True
-        except:
+        except Exception:
             return False
 
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "chapter-names": ConfigElement(
-                default_value=tuple(),
-                argparse_kwargs={
-                    "help": "Chapter names to use for this book",
-                    "nargs": "*",
-                }
-            )
-        }
-
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
-        from MAT.utils import get_hash_pipeline
         from ebooklib import epub, ITEM_DOCUMENT, ITEM_NAVIGATION
+
         def parse_book(step_input: PipelineStepInput) -> PipelineStepResult:
             book: epub.EpubBook = epub.read_epub(step_input.file, options={"ignore_ncx": True})
-            return PipelineStepResult(
-                name="Read Book",
-                data=book
-            )
+            return PipelineStepResult(name="Read Book", data=book)
 
         def validate_chapters(step_input: PipelineStepInput) -> PipelineStepResult:
             from bs4 import BeautifulSoup
-            import re
             from collections import Counter
-            try:
-                book: epub.EpubBook = step_input.previous_results["Read Book"].data
-                if book is None:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            book: epub.EpubBook = step_input.data("Read Book")
+            if book is None:
                 return PipelineStepResult(name="Chapters", data=None)
             nav = list(book.get_items_of_type(ITEM_NAVIGATION))[0].get_content().decode()
             items = sorted((x for x in book.get_items_of_type(ITEM_DOCUMENT) if x.get_name() in nav),
@@ -108,7 +103,7 @@ class BookPipeline(Pipeline):
                     continue
                 chapters.append((headings[0].strip(), story))
             heading_c = Counter(x[0] for x in chapters)
-            book_valid_chapters = step_input.config.get_config(self).get("chapter-names", list())
+            book_valid_chapters = step_input.config.options(self).chapter_names
             valid_chapters = set(
                 k for k, v in heading_c.items() if self._chapter_valid(k, heading_c, book_valid_chapters))
             invalid_chapters = set(heading_c.keys()) - valid_chapters
@@ -121,34 +116,23 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="Chapters", data=chapters)
 
         def beautify_chapters(step_input: PipelineStepInput) -> PipelineStepResult:
-            try:
-                chapters: List[Chapter] = step_input.previous_results["Chapters"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            from collections import Counter
+            from MAT.utils import toRoman
+            chapters: List[Chapter] = step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Chapters Beauty", data=None)
-            try:
-                from MAT.utils import toRoman
-                from collections import Counter
-                counter1 = Counter(x.heading for x in chapters)
-                counter2 = Counter()
-
-                for c in chapters:
-                    if counter1[c.heading] > 1:
-                        counter2[c.heading] += 1
-                        c.heading_beautified = f"{c.heading} {toRoman(counter2[c.heading])}"
-
-                return PipelineStepResult(name="Chapters Beauty", data=chapters)
-            except ImportError:
-                return PipelineStepResult(name="Chapters Beauty", data=chapters)
+            counter1 = Counter(x.heading for x in chapters)
+            counter2 = Counter()
+            for c in chapters:
+                if counter1[c.heading] > 1:
+                    counter2[c.heading] += 1
+                    c.heading_beautified = f"{c.heading} {toRoman(counter2[c.heading])}"
+            return PipelineStepResult(name="Chapters Beauty", data=chapters)
 
         def get_language(step_input: PipelineStepInput) -> PipelineStepResult:
             from langdetect import detect
-            try:
-                chapters: List[Chapter] = step_input.previous_results["Chapters"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Language", data=None)
             full_text = "\n".join("\n".join(x.content) for x in chapters)
             lang = detect(full_text)
@@ -157,16 +141,10 @@ class BookPipeline(Pipeline):
 
         def splitting_task(step_input: PipelineStepInput) -> PipelineStepResult:
             import tqdm
-            try:
-                _prev_res = step_input.previous_results
-                chapters: List[Chapter] = _prev_res.get("Chapters Beauty", _prev_res["Chapters"]).data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Chapters Beauty") or step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Word Counter", data=None)
-            from MAT import SplitterSpacy, SplitterInput, SplitterResult
-
-            splitter = SplitterSpacy()
+            splitter = self.backend("splitter", step_input.config)
             for c in tqdm.tqdm(chapters, leave=False, desc="Working on chapters", unit="chapter"):
                 splitted = splitter.process(origin_data=SplitterInput("\n".join(c.content)), config=step_input.config)
                 c.sentences = list(splitted.sentences) if splitted.sentences is not None else None
@@ -175,23 +153,18 @@ class BookPipeline(Pipeline):
 
         def ner_task(step_input: PipelineStepInput) -> PipelineStepResult:
             from tqdm import tqdm
-            try:
-                _prev_res = step_input.previous_results
-                chapters: List[Chapter] = _prev_res["Word Counter"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Word Counter")
+            if not chapters:
                 return PipelineStepResult(name="NER", data=None)
-
-            from MAT.tools.ner.ner_gliner import NERGliner, NERInput
-            ner_gliner = NERGliner()
-            self.__class__._LOGGER.info(f"Using {ner_gliner.__class__.__name__} for {len(chapters)} chapters")
+            ner = self.backend("ner", step_input.config)
+            if ner is None:
+                return PipelineStepResult(name="NER", data=chapters)
+            self.__class__._LOGGER.info(f"Using {ner.backend_name} for {len(chapters)} chapters")
             for c in tqdm(chapters, leave=False, desc="NER on chapters", unit="chapter"):
-                if c.sentences is None or len(c.sentences) <= 0:
+                if not c.sentences:
                     continue
-                res = ner_gliner.process(origin_data=NERInput(*c.sentences), config=step_input.config)
+                res = ner.process(origin_data=NERInput(*c.sentences), config=step_input.config)
                 c.ner = list(res.ner)
-
             return PipelineStepResult(name="NER", data=chapters)
 
         return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task]
@@ -199,10 +172,8 @@ class BookPipeline(Pipeline):
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> BookOutput:
 
         def _try_get(k: str):
-            try:
-                return step_results[k].data
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
-                return None
+            result = step_results.get(k)
+            return None if result is None else result.data
 
         book = _try_get("Read Book")
         chapters = _try_get("Chapters")
@@ -212,6 +183,7 @@ class BookPipeline(Pipeline):
             title=book.title if book is not None else "No title",
             language=language if language is not None else "",
             chapter_data=chapters if chapters is not None else [],
+            models=dict(self.models),
         )
 
     @classmethod
@@ -231,4 +203,4 @@ class BookPipeline(Pipeline):
         return False
 
 
-__all__ = ["BookPipeline", "BookOutput"]
+__all__ = ["BookPipeline", "BookOutput", "Chapter"]

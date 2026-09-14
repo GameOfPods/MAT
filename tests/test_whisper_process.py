@@ -6,7 +6,8 @@ import pytest
 import whisperx
 from faster_whisper.transcribe import Word
 
-from MAT.tools import TransciptorWhisper, TranscriptionInput, WordTuple
+from MAT.tools import TranscriptionInput, WordTuple
+from MAT.tools.transcriptors.whisper import TransciptorWhisper
 from MAT.utils.config import Config
 
 
@@ -34,9 +35,7 @@ def fake_whisper(monkeypatch):
     FakeWhisperModel.transcribe_calls = []
     monkeypatch.setattr(faster_whisper, "WhisperModel", FakeWhisperModel)
     monkeypatch.setattr(faster_whisper, "decode_audio", lambda path: np.zeros(16000, dtype=np.float32))
-    config = Config()
-    config.parse_config({"Whisper": {"device": "cpu", "compute-type": "int8"}})
-    return config
+    return Config({"whisper": {"device": "cpu", "compute-type": "int8"}})
 
 
 def test_language_with_alignment_model_uses_whisperx(fake_whisper, monkeypatch):

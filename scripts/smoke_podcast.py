@@ -2,7 +2,7 @@
 Quick end to end check of the podcast pipeline on a short clip.
 
 Uses the 30 second two speaker sample that ships with pyannote.audio unless you pass --audio.
-The summary step is faked unless you pass --summary (needs OPENAI_API_KEY or OPENAI_API_BASE).
+The summary step is skipped unless you pass --summary (needs OPENAI_API_KEY or OPENAI_API_BASE).
 
     uv run python scripts/smoke_podcast.py --device cuda
 """
@@ -24,11 +24,9 @@ def main():
     args = parser.parse_args()
 
     import torch
-    import MAT.pipelines.Podcast as podcast_module
     from MAT.pipelines import Pipeline
     from MAT.pipelines.Podcast import PodcastPipeline
     from MAT.reader import MATResult, ResultTypes
-    from MAT.tools import SummaryResult
     from MAT.utils.config import Config
     from MAT.writer import Writer
 
@@ -39,23 +37,18 @@ def main():
     if device.startswith("cuda"):
         print(f"gpu: {torch.cuda.get_device_name(0)}, compute capability {torch.cuda.get_device_capability(0)}")
 
-    if not args.summary:
-        class FakeSummary:
-            def process(self, origin_data, config):
-                return SummaryResult("fake summary")
-
-        podcast_module.SummaryLLM = FakeSummary
-
     assert PodcastPipeline in Pipeline.get_pipelines(f=str(audio)), "PodcastPipeline did not accept the audio file"
 
-    config = Config()
-    overrides = {"Whisper": {"device": device}, "NeMo": {"device": device}, "Pyannote-Identification": {"device": device}}
+    values = {
+        "podcast": {"summarizer": "llm" if args.summary else "none"},
+        "whisper": {"device": device}, "sortformer": {"device": device}, "pyannote": {"device": device},
+    }
     if args.whisper_model:
-        overrides["Whisper"]["model"] = args.whisper_model
-    config.parse_config(overrides)
+        values["whisper"]["model"] = args.whisper_model
     work = out / "work"
     work.mkdir(parents=True, exist_ok=True)
-    config.set_work_directory(str(work))
+    config = Config(values, work_directory=str(work))
+    config.validate()
 
     start = perf_counter()
     result = PodcastPipeline().process(file=str(audio), config=config)

@@ -10,7 +10,7 @@
 #  GNU General Public License for more details.
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Dict, List, Set
+from typing import Optional, Tuple, Dict, List, Set
 from copy import copy
 
 import pydub
@@ -74,7 +74,8 @@ class DiarizationTool(Tool[DiarizerInput, DiarizationResult], ABC):
         pass
 
 
-from MAT.tools.diarizators.nemo import DiarizerNEMO
+from MAT.registry import load_optional
 
-__all__ = ["DiarizationResult", "DiarizerInput", "DiarizationTool", "DiarizerNEMO"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.diarizators.nemo", slot="diarizer", name="sortformer", extra="sortformer")
+
+__all__ = ["DiarizationResult", "DiarizerInput", "DiarizationTool"]

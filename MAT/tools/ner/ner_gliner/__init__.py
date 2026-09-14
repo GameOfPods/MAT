@@ -9,11 +9,17 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
-from typing import Optional, Dict, List, Tuple, Callable, Union
+from typing import Optional, Dict, List, Tuple, Callable, Literal, Union
 from dataclasses import dataclass
 
-from MAT.tools.ner import NERTool, NERResult, NERInput
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+require("gliner2", extra="gliner")
+
+from MAT.tools.ner import NERTool, NERResult, NERInput  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
 @dataclass
@@ -24,48 +30,28 @@ class GLiNERResult:
     end: int
 
 
+class GlinerOptions(Options):
+    version: Literal[1, 2] = Field(2, description="GLiNER generation. 1 needs a GLiNER v1 model.")
+    model: str = Field("fastino/gliner2-large-v1", description="GLiNER model.")
+    labels: List[str] = Field(default_factory=lambda: ["PERSON", "LOCATION", "ORGANIZATION", "DATE"],
+                              description="Entity labels to look for.")
+
+
+@register("ner", "gliner", description="GLiNER / GLiNER2 zero shot named entities")
 class NERGliner(NERTool):
-    @classmethod
-    def config_name(cls) -> str:
-        return "GliNER"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "version": ConfigElement(
-                default_value=2,
-                argparse_kwargs={
-                    "help": "GliNER version to use. Choose from %(choices)s [Default: %(default)s]",
-                    "type": int, "choices": [1, 2]
-                }
-            ),
-            "model": ConfigElement(
-                default_value="fastino/gliner2-large-v1",
-                argparse_kwargs={
-                    "help": "GliNER model to use [Default: %(default)s]",
-                    "type": str,
-                }
-            ),
-            "labels": ConfigElement(
-                default_value=["PERSON", "LOCATION", "ORGANIZATION", "DATE"],
-                argparse_kwargs={
-                    "help": "GliNER labels to use [Default: %(default)s]",
-                    "type": str, "nargs": "+",
-                }
-            ),
-        }
-
+    Options = GlinerOptions
+    packages = ("gliner", "gliner2")
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: NERInput, config: Config) -> Optional[NERResult]:
         import tqdm
         model: Union["GLiNER", "GLiNER2"] = None
         get_entities: Callable[[str, List[str]], List[GLiNERResult]]
-        cfg = config.get_config(key=self.__class__)
-        match cfg["version"]:
+        options = config.options(self)
+        match options.version:
             case 1:
                 from gliner import GLiNER
-                model = GLiNER.from_pretrained(cfg["model"])
+                model = GLiNER.from_pretrained(options.model)
 
                 def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
                     _result = model.predict_entities(_txt, _labels)
@@ -77,7 +63,7 @@ class NERGliner(NERTool):
             case 2:
                 from gliner2 import GLiNER2
                 GLiNER2._print_config = lambda *args, **kwargs: None
-                model = GLiNER2.from_pretrained(cfg["model"])
+                model = GLiNER2.from_pretrained(options.model)
 
                 def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
                     _result = model.extract_entities(_txt, _labels, include_spans=True)
@@ -86,12 +72,9 @@ class NERGliner(NERTool):
                         for _e in _entities:
                             _ret.append(GLiNERResult(text=_e["text"], start=_e["start"], end=_e["end"], label=_label))
                     return _ret
-            case _:
-                self.__class__._LOGGER.error(f"Unknown GliNER version: {cfg['version']}")
-                return None
 
-        labels = cfg["labels"]
-        self.__class__._LOGGER.debug(f"Running GliNER{cfg['version']}-{cfg['model']} with labels: {', '.join(labels)}")
+        labels = options.labels
+        self.__class__._LOGGER.debug(f"Running GliNER{options.version}-{options.model} with labels: {', '.join(labels)}")
 
         ret: List[Dict[str, List[Tuple[str, int, int]]]] = []
         for txt in tqdm.tqdm(origin_data.text, leave=False, desc="NER on sentence", unit="sentences"):

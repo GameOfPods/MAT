@@ -8,114 +8,235 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-import sys
-import os
-import uuid
-from abc import ABC, abstractmethod
-from argparse import ArgumentParser, Namespace
-from copy import deepcopy
+"""
+Typed configuration.
+
+Every pipeline and backend has an `Options` pydantic model and a config `section` (for example `whisper`). Values
+come from the defaults, then a TOML file, then `--set section.key=value` on the command line. Keys are written with
+dashes in files and on the command line (`beam-size`) and with underscores in Python (`options.beam_size`).
+"""
+import copy
+import json
 import logging
-from typing import Dict, Any, List, Type, Union
+import math
+import os
+import re
+import textwrap
+import tomllib
+import uuid
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
-from MAT.utils import get_all_concrete_subclasses
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-
-class ConfigElement:
-    def __init__(self, default_value: Any, argparse_kwargs: Dict[str, Any]):
-        self._default_value = default_value
-        self._argparse_kwargs = argparse_kwargs
-        if "dest" in self._argparse_kwargs:
-            del self._argparse_kwargs["dest"]
-        if "default" in self._argparse_kwargs:
-            del self._argparse_kwargs["default"]
-
-    @property
-    def default_value(self) -> Any:
-        return self._default_value
-
-    @property
-    def argparse_kwargs(self) -> Dict[str, Any]:
-        return self._argparse_kwargs
-
-    def __copy__(self):
-        return ConfigElement(self._default_value, deepcopy(self._argparse_kwargs))
+_LOGGER = logging.getLogger(__name__)
 
 
-class ConfigClass(ABC):
+def _kebab(name: str) -> str:
+    return name.replace("_", "-")
 
-    @classmethod
-    def config_name(cls) -> str:
-        return cls.__name__.lower()
 
-    @classmethod
-    @abstractmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        raise NotImplementedError()
+class ConfigError(ValueError):
+    pass
+
+
+class Options(BaseModel):
+    model_config = ConfigDict(extra="forbid", alias_generator=_kebab, populate_by_name=True, validate_default=True)
+
+
+class Configurable:
+    section: ClassVar[str] = ""
+    description: ClassVar[str] = ""
+    Options: ClassVar[Type[Options]] = Options
+
+
+def parse_value(text: str) -> Any:
+    # JSON covers numbers, true/false, null, lists and objects. Everything else is a plain string.
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def parse_override(item: str) -> Tuple[str, str, Any]:
+    key, sep, value = item.partition("=")
+    section, dot, option = key.strip().partition(".")
+    if not sep or not dot or not section or not option:
+        raise ConfigError(f'Expected section.option=value, got "{item}"')
+    return section, _kebab(option), parse_value(value.strip())
+
+
+def configurables() -> Dict[str, Type[Configurable]]:
+    import MAT.tools  # noqa: F401, loads the backends
+    from MAT import registry
+    from MAT.pipelines import Pipeline
+
+    result: Dict[str, Type[Configurable]] = {pipeline.section: pipeline for pipeline in Pipeline.all()}
+    for backend in registry.backends():
+        if backend.name in result:
+            raise RuntimeError(f"Config section [{backend.name}] is used twice")
+        result[backend.name] = backend.cls
+    return result
+
+
+def _messages(section: str, error: ValidationError, options: Type[Options]) -> List[str]:
+    messages = []
+    known = ", ".join(field.alias or _kebab(name) for name, field in options.model_fields.items())
+    for err in error.errors():
+        location = ".".join(str(x) for x in err["loc"])
+        if err["type"] == "extra_forbidden":
+            messages.append(f'[{section}] unknown option "{location}". Options: {known}')
+        else:
+            messages.append(f"[{section}] {location}: {err['msg']}")
+    return messages
 
 
 class Config:
-    _LOGGER = logging.getLogger(__name__)
+    def __init__(self, values: Optional[Dict[str, Dict[str, Any]]] = None, work_directory: Optional[str] = None):
+        self._values: Dict[str, Dict[str, Any]] = {}
+        for section, options in (values or {}).items():
+            self._values[section] = {_kebab(k): copy.deepcopy(v) for k, v in options.items()}
+        self._work_dir = work_directory or os.path.join(os.getcwd(), f".MAT.{uuid.uuid4()}")
+        self._cache: Dict[str, Options] = {}
 
-    def __init__(self):
-        self._work_dir = os.path.join(os.getcwd(), f".MAT.{uuid.uuid4()}")
-        subclasses: List[Type[ConfigClass]] = get_all_concrete_subclasses(ConfigClass)
-        self._config_builder: Dict[str, Dict[str, ConfigElement]] = {}
-        self._config: Dict[str, Dict[str, Any]] = {}
-        for config in subclasses:
-            if "_" in config.config_name():
-                raise ValueError(f"Config class {config.config_name()} can not contain underscores")
-            if any("_" in x for x in config.config_keys().keys()):
-                raise ValueError(f"Config keys cannot not contain underscores [{config.config_keys().keys()}]")
-            if config.config_name() in self._config_builder:
-                self.__class__._LOGGER.error(f"Config with name {config.config_name()} already exists. Check code.")
-                sys.exit(1)
-            self._config_builder[config.config_name()] = deepcopy(config.config_keys())
-            self._config[config.config_name()] = {x: y.default_value for x, y in config.config_keys().items()}
-        return
-
-    def parse_config(self, config: Dict[str, Dict[str, Any]]):
-        for key, value in config.items():
-            if key in self._config:
-                for config_key, config_value in value.items():
-                    self._config[key][config_key] = config_value
-
-    def create_argparse(self, argparse: ArgumentParser):
-        for config_name, config_builder in self._config_builder.items():
-            for config_key, config_value in config_builder.items():
-                kwargs = config_value.argparse_kwargs
-                if "metavar" not in kwargs and kwargs.get("action", "") not in ("store_false", "store_true"):
-                    kwargs["metavar"] = config_key.upper()
-                argparse.add_argument(f'--{config_name}_{config_key}',
-                                      default=config_value.default_value, dest=f"{config_name}_{config_key}",
-                                      **kwargs)
-
-    def parse_argparse(self, namespace: Namespace):
-        for key, value in namespace.__dict__.items():
+    @classmethod
+    def load(cls, file: Optional[Union[str, os.PathLike]] = None, overrides: Sequence[str] = (),
+             validate: bool = True) -> "Config":
+        values: Dict[str, Dict[str, Any]] = {}
+        if file:
             try:
-                config_name, config_key = key.split("_")
-                if config_name in self._config:
-                    if config_key in self._config[config_name]:
-                        self._config[config_name][config_key] = value
-            except ValueError:
-                pass
+                with open(file, "rb") as f:
+                    data = tomllib.load(f)
+            except FileNotFoundError:
+                raise ConfigError(f"Config file {file} doesn't exist")
+            except tomllib.TOMLDecodeError as e:
+                raise ConfigError(f"Can't read config file {file}: {e}")
+            for section, options in data.items():
+                if not isinstance(options, dict):
+                    raise ConfigError(f'"{section}" in {file} has to be a [section], not a single value')
+                values[section] = {_kebab(k): v for k, v in options.items()}
+        for item in overrides:
+            section, option, value = parse_override(item)
+            values.setdefault(section, {})[option] = value
+        config = cls(values)
+        if validate:
+            config.validate()
+        return config
+
+    def set(self, section: str, option: str, value: Any) -> None:
+        self._values.setdefault(section, {})[_kebab(option)] = value
+        self._cache.pop(section, None)
 
     @property
-    def config(self) -> Dict[str, Dict[str, Any]]:
-        return deepcopy(self._config)
+    def values(self) -> Dict[str, Dict[str, Any]]:
+        return copy.deepcopy(self._values)
 
-    def get_config(self, key: Union[ConfigClass, Type[ConfigClass]]) -> dict:
-        return deepcopy(self._config[key.config_name()])
+    def validate(self) -> None:
+        from MAT import registry
+        from MAT.pipelines import Pipeline
 
-    def set_work_directory(self, work_directory: str):
+        known = configurables()
+        errors: List[str] = []
+        for section, options in self._values.items():
+            if section in known:
+                try:
+                    known[section].Options.model_validate(options)
+                except ValidationError as e:
+                    errors.extend(_messages(section, e, known[section].Options))
+            elif registry.find(section) is not None:
+                _LOGGER.warning(f"Ignoring config section [{section}], that backend isn't installed")
+            else:
+                errors.append(f"Unknown config section [{section}]. Known sections: {', '.join(sorted(known))}")
+        if not errors:
+            for pipeline in Pipeline.all():
+                errors.extend(pipeline.check_slots(self))
+        if errors:
+            raise ConfigError("\n".join(errors))
+
+    def options(self, configurable: Union[Configurable, Type[Configurable]]) -> Any:
+        cls = configurable if isinstance(configurable, type) else type(configurable)
+        if cls.section not in self._cache:
+            try:
+                self._cache[cls.section] = cls.Options.model_validate(self._values.get(cls.section, {}))
+            except ValidationError as e:
+                raise ConfigError("\n".join(_messages(cls.section, e, cls.Options))) from e
+        return self._cache[cls.section]
+
+    def set_work_directory(self, work_directory: str) -> None:
         self._work_dir = work_directory
 
     @property
-    def work_directory(self):
+    def work_directory(self) -> str:
         return self._work_dir
 
-    def __str__(self):
-        return self._config.__str__()
 
-    def pformat(self):
-        from pprint import pformat
-        return pformat(self._config)
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(key: str) -> str:
+    return key if _BARE_KEY.match(key) else json.dumps(key)
+
+
+def _literal_multiline_ok(value: str) -> bool:
+    return ("\n" in value and "'''" not in value and not value.endswith("'")
+            and all(c in "\n\t" or (ord(c) >= 32 and c != "\x7f") for c in value))
+
+
+def toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"TOML can't store {value}")
+        return repr(value)
+    if isinstance(value, str):
+        # long prompts stay readable as multi-line literal strings
+        return f"'''\n{value}'''" if _literal_multiline_ok(value) else json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(toml_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        items = ", ".join(f"{_toml_key(str(k))} = {toml_value(v)}" for k, v in value.items() if v is not None)
+        return "{" + items + "}"
+    raise TypeError(f"Can't write {type(value).__name__} to TOML")
+
+
+def render_sections(classes: Iterable[Type[Configurable]], config: Optional[Config] = None,
+                    comments: bool = True) -> str:
+    config = config or Config()
+    lines: List[str] = []
+    for cls in classes:
+        if lines:
+            lines.append("")
+        if comments and cls.description:
+            lines.extend(f"# {line}" for line in textwrap.wrap(cls.description, 100))
+        lines.append(f"[{cls.section}]")
+        values = config.options(cls).model_dump(by_alias=True, mode="json")
+        for name, field in cls.Options.model_fields.items():
+            key = field.alias or _kebab(name)
+            if comments and field.description:
+                lines.extend(f"# {line}" for line in textwrap.wrap(field.description, 100))
+            value = values.get(key)
+            # TOML has no null, unset options stay commented out
+            lines.append(f"# {_toml_key(key)} =" if value is None else f"{_toml_key(key)} = {toml_value(value)}")
+    return "\n".join(lines) + "\n"
+
+
+def describe_options(options: Type[Options]) -> str:
+    lines = []
+    for name, field in options.model_fields.items():
+        key = field.alias or _kebab(name)
+        annotation = field.annotation
+        type_name = annotation.__name__ if isinstance(annotation, type) else str(annotation).replace("typing.", "")
+        default = field.get_default(call_default_factory=True)
+        shown = json.dumps(default, ensure_ascii=False, default=str)
+        if len(shown) > 60:
+            shown = shown[:57] + "..."
+        lines.append(f"  {key}  ({type_name}, default {shown})")
+        if field.description:
+            lines.extend(f"      {line}" for line in textwrap.wrap(field.description, 90))
+    return "\n".join(lines)
+
+
+__all__ = ["ConfigError", "Options", "Configurable", "Config", "parse_value", "parse_override", "configurables",
+           "toml_value", "render_sections", "describe_options"]

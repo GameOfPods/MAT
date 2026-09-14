@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 from torch import Tensor
 import numpy as np
@@ -41,9 +41,8 @@ class SpeakerIdentificationTool(Tool[SpeakerIdentificationInput, SpeakerIdentifi
         pass
 
 
-from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote
-from MAT.tools.speakeridentification.speech_brain import SpeakerIdetificationSpeechBrain
+from MAT.registry import load_optional
+
+load_optional("MAT.tools.speakeridentification.pyannote", slot="identifier", name="pyannote", extra="pyannote")
 
 __all__ = ["SpeakerIdentificationResult", "SpeakerIdentificationInput", "SpeakerIdentificationTool"]
-__all__.extend(["SpeakerIdetificationPyannote", "SpeakerIdetificationSpeechBrain"])
-__all__.extend(["__all__"])

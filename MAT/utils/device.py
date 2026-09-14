@@ -14,6 +14,14 @@
 _CT2_PREFERENCE = ("int8_float16", "int8_float32", "int8", "float32")
 
 
+def resolve_device(requested: str = "auto") -> str:
+    """"auto" becomes "cuda" when torch sees a GPU, otherwise "cpu". Everything else is passed through."""
+    if requested != "auto":
+        return requested
+    import torch
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def ct2_compute_type(device: str, requested: str = "auto") -> str:
     """
     Compute type for CTranslate2 models (faster-whisper).
@@ -29,4 +37,4 @@ def ct2_compute_type(device: str, requested: str = "auto") -> str:
     return "default"
 
 
-__all__ = ["ct2_compute_type"]
+__all__ = ["resolve_device", "ct2_compute_type"]

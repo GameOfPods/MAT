@@ -9,13 +9,28 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
-from MAT.tools.text_splitter import SplitterInput, SplitterResult, SplitterTool
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+require("spacy", "spacy_download", extra="spacy")
+
+from MAT.tools.text_splitter import SplitterInput, SplitterResult, SplitterTool  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
+class SpacyOptions(Options):
+    model: Optional[str] = Field(None, description="spaCy model. Not set: picked by language (en_core_web_trf, "
+                                                   "de_core_news_lg, fr_dep_news_trf, xx_sent_ud_sm for others). "
+                                                   "Missing models get downloaded.")
+
+
+@register("splitter", "spacy", description="spaCy sentences and lemma counts")
 class SplitterSpacy(SplitterTool):
+    Options = SpacyOptions
+    packages = ("spacy",)
     _LOGGER = logging.getLogger(__name__)
     _DEFAULT_MODELS = {
         "en": "en_core_web_trf",
@@ -24,43 +39,21 @@ class SplitterSpacy(SplitterTool):
         None: "xx_sent_ud_sm"
     }
 
-    @classmethod
-    def config_name(cls) -> str:
-        return "SpaCy"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "model": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "Model to use for spacy. If not given will try to guess best model from language",
-                    "type": str,
-                }
-            )
-        }
-
     def process(self, origin_data: SplitterInput, config: Config) -> Optional[SplitterResult]:
-        from pprint import pformat
         from collections import Counter
-        cfg = config.get_config(self)
-        model = cfg["model"]
+        model = config.options(self).model
         if model is None:
             self.__class__._LOGGER.debug("No model specified. Guessing best model by language")
-            try:
-                from langdetect import detect
-                lang = detect(origin_data.text)
-            except ImportError:
-                lang = None
+            from langdetect import detect
+            lang = detect(origin_data.text)
             model = self.__class__._DEFAULT_MODELS.get(lang, self.__class__._DEFAULT_MODELS[None])
-        spacy_module_kwargs = {}
-        self.__class__._LOGGER.debug(f"Using {model} SpaCy model. With arguments: {pformat(spacy_module_kwargs)}")
+        self.__class__._LOGGER.debug(f"Using {model} SpaCy model")
         try:
             import spacy
-            nlp = spacy.load(model, **spacy_module_kwargs)
-        except:
+            nlp = spacy.load(model)
+        except OSError:
             from spacy_download import load_spacy
-            nlp = load_spacy(model, **spacy_module_kwargs)
+            nlp = load_spacy(model)
 
         doc = nlp(origin_data.text)
 

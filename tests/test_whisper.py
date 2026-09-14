@@ -1,6 +1,7 @@
 from faster_whisper.transcribe import Word
 
-from MAT.tools import TransciptorWhisper, WordTuple
+from MAT.tools import WordTuple
+from MAT.tools.transcriptors.whisper import TransciptorWhisper
 
 
 def test_words_from_segments_without_word_timestamps():
