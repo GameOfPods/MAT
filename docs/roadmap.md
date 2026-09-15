@@ -77,7 +77,7 @@ LLM calls (found while testing a DeepSeek summary on the GPU box, the run sat si
 - [x] `--LLM-Summarizer_reasoning-effort`, default `low`, the lowest value both OpenAI (`none`, `low`, `medium`, `high`, `xhigh`, default `medium`) and DeepSeek (`low`, `high`, `max`, thinking on by default at `high`) accept. `unset` doesn't send the parameter. Summaries don't need much thinking, and thinking tokens cost time, money and `max-tokens` on every refine step. Plus `--LLM-Summarizer_extra-body` (JSON) for provider specific switches like DeepSeek's `thinking` or `enable_thinking` on local servers.
 - [x] A failed summary must not drop the transcript and diarization of the episode. The episode is written without `summary.txt` and the error goes to the log. Ctrl+C still aborts the whole run. Moved up from stage 10 for the summary step, stage 10 still covers the general case. In the DeepSeek test run the summary failed after 15 minutes in their queue and the finished transcript of the episode was lost with it.
 - [x] `--LLM-Summarizer_chunk-size` default from 15000 to 32000 tokens. Every current API model handles that. Automatic sizing comes in stage 7.
-- [ ] Test the LLM changes against the real APIs (DeepSeek, OpenAI) on the GPU box. The dev machine has no API key, the unit tests use scripted fake models.
+- [ ] Test the LLM changes against the real APIs (DeepSeek, OpenAI) on the GPU box. The dev machine has no API key, the unit tests use scripted fake models. DeepSeek works for a 17 minute episode that fits into one call (streamed, 9.4 s, German summary). Still open: a long episode with several refine calls, a busy DeepSeek queue, OpenAI.
 
 ## Stage 4: pluggable backends, new CLI and config
 
@@ -102,7 +102,7 @@ Backends
 - [x] Backend registry (`MAT/registry.py`): a backend module calls `require(...)` (find_spec only) and registers with `@register(slot, name)`, the package `__init__.py` loads it with `load_optional(...)`. A missing extra skips the backend, `MAT backends` lists it with the extra to install. Checked with an install without any backend extra.
 - [x] New base class `TranscribeDiarizeTool` for models that do both. The pipeline skips the separate diarization step when one of them is picked.
 - [x] Shared helpers: `resolve_device`, `torch_dtype` (bfloat16 only on compute capability 8.0+, float16 on Pascal), `free_gpu_memory` in `MAT/utils/device.py`, `plan_windows` in `MAT/utils/audio.py` (cuts long audio at the quietest spot near the window end, optional overlap, `Window.owns` decides which piece keeps a result). Sortformer uses it instead of hard 5 minute cuts.
-- [ ] Run a long episode (more than 5 minutes, so Sortformer cuts it into pieces) on the GPU box. Linking the pieces needs the gated `pyannote/embedding` model, which the dev machine can't download.
+- [x] Run a long episode (more than 5 minutes, so Sortformer cuts it into pieces) on the GPU box. Linking the pieces needs the gated `pyannote/embedding` model, which the dev machine can't download. `scripts/full_test.sh` on a 17 minute German episode with two hosts: 4 pieces, linked into 3 speakers (one of them only 2 s, see stage 6), all 9 test steps ok, result valid against the schemas.
 
 Output format
 
@@ -151,7 +151,9 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 
 Transcript quality (seen on the first real German episode):
 
-- [ ] Many tiny fragments assigned to two speakers at once, like `sprecher_0 & sprecher_1 [28.49 - 28.678]: Nicht`, plus single `<Unknown>` words. Sortformer segments overlap and words at speaker changes match both. Try pyannote community-1's exclusive diarization, assign each word to the single speaker with the most overlap, and merge very short fragments into the neighboring line.
+- [ ] Many tiny fragments assigned to two speakers at once, like `sprecher_0 & sprecher_1 [28.49 - 28.678]: Nicht`, plus single `<Unknown>` words. Sortformer segments overlap and words at speaker changes match both. Try pyannote community-1's exclusive diarization, assign each word to the single speaker with the most overlap, and merge very short fragments into the neighboring line. On a 17 minute episode 112 of 2331 words had two speakers and 95 had none.
+- [ ] Speaker time doesn't add up: on the same episode the speakers have 770 s together, but voice activity detection found 991 s of speech. Check whether Sortformer misses speech, whether time gets lost where pieces are merged, or whether the two measures just differ.
+- [ ] Linking Sortformer pieces left a third speaker with one 2 s segment on an episode with two hosts. Either a real short voice (clip, jingle) or a piece that didn't match. Consider merging speakers with very little time into the closest speaker by embedding, with a configurable minimum.
 - [ ] Show specific names get misheard ("Samuel" for Samwell, "Spoiler-Tile"). faster-whisper has `initial_prompt` and `hotwords`. Add a vocabulary option (per show, for example a text file with character and place names) and check which backends of stage 6 support something similar.
 
 ## Stage 7: podcast extras
@@ -186,6 +188,8 @@ Transcript quality (seen on the first real German episode):
 ## Stage 9: speed
 
 Drop whatever stage 4 already solved.
+
+- [ ] Numbers from the GPU box so far, models cached: 12.9 minute episode 64 s for the whole pipeline (stage 3), 17 minute episode 121 s (stage 4, about 8.5x realtime). Of those 121 s transcription with word alignment took 94 s, diarization 10 s, speaker matching 2 s, summary 10 s. Find out why the second episode was slower per minute (alignment, model loading, reading from the NAS) with the stage 5 benchmark before optimizing.
 
 - [ ] Audio is decoded 4+ times per file (`accept`, diarization, speaker matching, media info). Decode once and share.
 - [ ] Cache step results per input file (keyed by file hash plus the options of the step) in the work directory or a cache folder, so a re-run after a failed summary doesn't transcribe and diarize the whole episode again. `MAT/utils` already has an unused `get_hash_pipeline`.
