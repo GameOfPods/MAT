@@ -189,7 +189,7 @@ The format is described in [docs/result-format.md](docs/result-format.md), with 
 
 ## Reading results in Python
 
-The reader is a separate small package, `mat-format` in `packages/mat-format`. It only needs pydantic, so other projects can read results without installing MAT and its ML libraries.
+The reader is a separate small package, `mat-format` in `packages/mat-format`. It only needs pydantic, so other projects can read results without installing MAT and its ML libraries. Unlike MAT it's licensed under Apache 2.0.
 
 ```python
 from mat_format import MATResult
@@ -227,6 +227,14 @@ uv run python scripts/smoke_book.py
 
 The podcast script skips the summary unless you pass `--summary`. The first run downloads the models (a few GB).
 
+GitHub Actions run on every pull request and push to `master` (`.github/workflows/ci.yml`):
+
+- **Tests (all backends, CPU)**: unit tests of MAT and mat-format, schema check, a quick check of the command line
+- **Install without backends**: MAT has to start and list every backend as not installed
+- **mat-format (Python 3.10, 3.12, 3.13)**: mat-format installed on its own and tested without MAT
+
+When a release is published, `.github/workflows/release-schemas.yml` attaches the JSON schemas and a zip with schemas, spec and examples to it.
+
 ### Adding a backend
 
 1. Add an extra with its libraries to `pyproject.toml`.
@@ -251,4 +259,6 @@ Known problems and planned work are in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+MAT is GPL-3.0, see [LICENSE](LICENSE).
+
+The result format package in `packages/mat-format` (data model, reader, JSON schemas and examples) is Apache 2.0, see [packages/mat-format/LICENSE](packages/mat-format/LICENSE), so programs under other licenses can read MAT results.

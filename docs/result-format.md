@@ -10,6 +10,15 @@ Machine readable definitions (JSON Schema, draft 2020-12):
 
 The schemas are generated from the pydantic models in [`packages/mat-format/src/mat_format/models.py`](../packages/mat-format/src/mat_format/models.py), which MAT's writer uses. A test fails if the schema files and the models don't match. Real example results are in [`packages/mat-format/examples/`](../packages/mat-format/examples).
 
+Every GitHub release has the schemas attached under fixed names, whether they changed or not, plus `mat-result-format.zip` with schemas, this spec and the examples. The newest ones are always at:
+
+- `https://github.com/GameOfPods/MAT/releases/latest/download/meta.schema.json`
+- `https://github.com/GameOfPods/MAT/releases/latest/download/podcast-result.schema.json`
+- `https://github.com/GameOfPods/MAT/releases/latest/download/book-result.schema.json`
+- `https://github.com/GameOfPods/MAT/releases/latest/download/mat-result-format.zip`
+
+Use a specific release instead of `latest` if your build should not pick up changes on its own. The schemas, the examples and the `mat-format` package are licensed under Apache 2.0.
+
 ## Layout
 
 One result per input file. It's either a folder or a zip of that folder (`--output-zip`). In the zip the files sit at the root, there is no extra top folder.

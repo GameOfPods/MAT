@@ -4,7 +4,9 @@ name = "mat-format"
 version = "2.0.0"
 description = "Data model, JSON schemas and reader for MAT (Media Analytics Toolset) results"
 readme = "README.md"
-license = "GPL-3.0"
+# Apache 2.0, unlike the rest of MAT (GPL-3.0), so programs under any license can use the reader and the schemas
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name="RedRem", email="alex@gameofpods.de"}
 ]
