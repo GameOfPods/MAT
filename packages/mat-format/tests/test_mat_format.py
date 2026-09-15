@@ -66,6 +66,13 @@ def test_output_option_writes_every_schema(tmp_path):
         assert (tmp_path / file_name).read_text(encoding="utf-8") == format_schema.render(schema)
 
 
+def test_package_major_version_is_the_format_version():
+    from importlib.metadata import version
+    from mat_format import FORMAT_VERSION
+    assert int(version("mat-format").split(".")[0]) == FORMAT_VERSION, \
+        "bump the mat-format major version in packages/mat-format/pyproject.toml together with FORMAT_VERSION"
+
+
 def test_does_not_pull_in_mat_or_torch():
     code = "import sys, mat_format; assert 'torch' not in sys.modules and 'MAT' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)

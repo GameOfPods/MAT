@@ -85,8 +85,11 @@ Check every new dependency against these before adding it:
 - `.github/workflows/ci.yml` runs on PRs and pushes to `master`: "Tests (all backends, CPU)" (`uv sync --locked`, so
   `uv.lock` has to be committed and current), "Install without backends", "mat-format (Python 3.10/3.12/3.13)"
   (mat-format installed alone, tests in `packages/mat-format/tests` must not import MAT).
-- `.github/workflows/release-schemas.yml` attaches the generated schemas and `mat-result-format.zip` to every published
-  release. Keep the schema file names stable, other projects download them from `releases/latest/download/`.
+- `.github/workflows/release-schemas.yml` runs on every published release. First `scripts/check_release_version.py`
+  checks that the tag is `v` + `MAT/__version__.py` (0.2.0 -> v0.2.0), then it attaches the generated schemas and
+  `mat-result-format.zip`. Keep the schema file names stable, other projects download them from
+  `releases/latest/download/`.
+- `mat-format`'s major version (`packages/mat-format/pyproject.toml`) has to equal `FORMAT_VERSION`, a test checks it.
 - `packages/mat-format` is Apache 2.0, MAT is GPL-3.0. Don't copy GPL code into `mat_format`.
 
 ## Git, commits, PRs
