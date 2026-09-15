@@ -143,6 +143,10 @@ def build_parser() -> argparse.ArgumentParser:
     show = config_commands.add_parser("show", help="Print the merged config (defaults, config file, --set)")
     _add_config_args(show)
     _add_slot_flags(show)
+
+    from MAT.bench.commands import add_bench_parser
+
+    add_bench_parser(commands)
     return parser
 
 
@@ -305,6 +309,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return cmd_run(args)
         if args.command == "backends":
             return cmd_backends(args)
+        if args.command == "bench":
+            from MAT.bench.commands import cmd_bench
+
+            return cmd_bench(args)
         return cmd_config(args)
     except (ConfigError, BackendError) as e:
         sys.stderr.write(f"MAT: {e}\n")

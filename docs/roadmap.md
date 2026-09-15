@@ -129,13 +129,18 @@ Result format definition (other programs like Mosaicast, which is Java, need to 
 
 We have no reference transcripts of our own episodes, so the suite uses public datasets for quality and our episodes for speed and for comparing backends with each other.
 
-- [ ] `benchmarks/` and a `MAT bench` subcommand that runs every installed backend on a list of datasets
-- [ ] Speed as real time factor, peak GPU memory (torch stats plus `nvidia-smi` sampling, because CTranslate2 doesn't report to torch)
-- [ ] WER with jiwer and text normalization for German and English. DER with pyannote.metrics. cpWER with meeteval where there are speaker labeled references.
-- [ ] Datasets (small subsets, check each license first): FLEURS de/en for short WER, ASR Bundestag for German long-form, VoxConverse and AMI for diarization with varying speaker counts, This American Life for English long-form podcasts
-- [ ] Our own episodes without references: speed, memory, estimated speaker count, how much backends agree with each other
-- [ ] Report as Markdown and CSV in `docs/benchmarks/`, run on the GPU box
-- [ ] First run with the current backends. Every new backend from stage 6 gets benchmarked when it lands.
+- [x] `MAT bench run|report|download|datasets|reference` (`MAT/bench`, docs in `docs/benchmarks.md`, example bench file in `benchmarks/example.toml`). A bench file lists systems (backends plus `--set` style settings, summaries never run) and datasets. Every run is stored as a normal MAT result plus `bench.json`, finished runs are skipped, so aborted benchmarks continue and new systems only run themselves. Metrics are always computed from the stored results.
+- [x] Speed as RTFx plus seconds per pipeline step, peak GPU memory of the process from `nvidia-smi` (CTranslate2 doesn't report to torch) and torch's own peak.
+- [x] WER with jiwer after lowercasing, removing punctuation and German/English fillers. DER with pyannote.metrics. cpWER computed with jiwer and scipy's Hungarian algorithm instead of meeteval, which only ships as source on PyPI and would need compiling on the GPU box.
+- [x] Own references in MAT's `transcript.txt` format, so a MAT draft only needs correcting. `MAT bench reference RESULT --start --end` makes one, a scored time range lets the systems run on the whole episode but get compared on the corrected part.
+- [x] Datasets, downloaded into a configurable cache (for example on a NAS) or read from an existing copy: FLEURS de/en (read sentences packed into 10 minute files), VoxConverse (DER, 1 to 20+ speakers), AMI (WER, cpWER, DER, meetings), ASR Bundestag (German, WER). Big zips (VoxConverse 4 GB, Bundestag 59 GB) are read with HTTP range requests, so only the picked files get downloaded. This American Life is left out, its license for audio isn't clear.
+- [x] Audio without references (`audio` dataset): speed, memory, speaker count and agreement with the first system.
+- [x] Report as Markdown and CSV in the output folder.
+- [x] Checked on the dev machine: every dataset loader against the real servers (Bundestag and VoxConverse files out of the big zips, AMI meeting with annotations, FLEURS lists), and `MAT bench reference` plus `MAT bench run` with real models on CPU on the 30 second sample: WER and cpWER 0 against its own result, DER 20 % without a collar. Reference lines only cover words, diarizers also cover the pauses around them, so own references use a 0.25 s collar by default (6 % there), public datasets stay at 0.
+- [ ] Waiting for the user's corrected reference of about 10 minutes of a German episode.
+- [ ] First run with the current backends on the GPU box, public dataset numbers into `docs/benchmarks/`. Every new backend from stage 6 gets benchmarked when it lands.
+- [ ] Numbers aren't normalized (5 vs five), which hurts WER on ASR Bundestag. Consider a German/English number normalizer if it matters for picking defaults.
+- [ ] Models load again for every file (stage 9). Packing FLEURS and Bundestag sentences into 10 minute files works around that for short clips.
 
 ## Stage 6: new speech backends
 

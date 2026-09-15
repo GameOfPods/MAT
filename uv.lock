@@ -1309,6 +1309,19 @@ wheels = [
 ]
 
 [[package]]
+name = "jiwer"
+version = "4.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "rapidfuzz" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/1e/963dfc249d5bbe88079b57a22556e981ddd9208e4b6116e48bdbfc01f26b/jiwer-4.0.0.tar.gz", hash = "sha256:ae9c051469102a61ef0927100baeeb4546f78d180c9b0948281d08eaf44c191e", size = 28074, upload-time = "2025-06-19T16:05:23.004Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/c9/172c525330c739a068c01050759a6f855ce16212db10a0359e690a03ac48/jiwer-4.0.0-py3-none-any.whl", hash = "sha256:7efaf0bd336b095d99ddef9dd67e1ee829d75d58aa2a81d9639870b01d6d95ea", size = 23034, upload-time = "2025-06-19T16:05:21.821Z" },
+]
+
+[[package]]
 name = "joblib"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1950,6 +1963,7 @@ all = [
     { name = "faster-whisper" },
     { name = "gliner" },
     { name = "gliner2", extra = ["local"] },
+    { name = "jiwer" },
     { name = "langchain" },
     { name = "langchain-classic" },
     { name = "langchain-core" },
@@ -1958,11 +1972,16 @@ all = [
     { name = "nemo-toolkit", extra = ["asr"] },
     { name = "pip" },
     { name = "pyannote-audio" },
+    { name = "pyannote-metrics" },
     { name = "spacy" },
     { name = "spacy-download" },
     { name = "spacy-transformers" },
     { name = "tiktoken" },
     { name = "whisperx" },
+]
+bench = [
+    { name = "jiwer" },
+    { name = "pyannote-metrics" },
 ]
 gliner = [
     { name = "gliner" },
@@ -2029,6 +2048,8 @@ requires-dist = [
     { name = "gliner2", extras = ["local"], marker = "extra == 'all'", specifier = ">=2" },
     { name = "gliner2", extras = ["local"], marker = "extra == 'gliner'", specifier = ">=2" },
     { name = "huggingface-hub" },
+    { name = "jiwer", marker = "extra == 'all'", specifier = ">=4" },
+    { name = "jiwer", marker = "extra == 'bench'", specifier = ">=4" },
     { name = "langchain", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain", marker = "extra == 'llm'", specifier = ">=1" },
     { name = "langchain-classic", marker = "extra == 'all'", specifier = ">=1" },
@@ -2055,6 +2076,8 @@ requires-dist = [
     { name = "pyannote-audio", marker = "extra == 'all'", specifier = ">=4" },
     { name = "pyannote-audio", marker = "extra == 'pyannote'", specifier = ">=4" },
     { name = "pyannote-audio", marker = "extra == 'sortformer'", specifier = ">=4" },
+    { name = "pyannote-metrics", marker = "extra == 'all'", specifier = ">=4" },
+    { name = "pyannote-metrics", marker = "extra == 'bench'", specifier = ">=4" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pydub" },
     { name = "python-levenshtein" },
@@ -2082,7 +2105,7 @@ requires-dist = [
     { name = "whisperx", marker = "extra == 'whisper'", specifier = ">=3.8" },
     { name = "xlsxwriter" },
 ]
-provides-extras = ["all", "gliner", "llm", "pyannote", "sortformer", "spacy", "whisper"]
+provides-extras = ["all", "bench", "gliner", "llm", "pyannote", "sortformer", "spacy", "whisper"]
 
 [package.metadata.requires-dev]
 backends = [{ name = "mat", extras = ["all"] }]
