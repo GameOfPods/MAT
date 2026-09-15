@@ -158,12 +158,14 @@ def cmd_backends(args: argparse.Namespace) -> int:
         if args.name:
             sys.stderr.write("MAT: use `MAT backends show NAME` to see one backend\n")
             return 2
+        width = max((len(b.name) for s in registry.slots() for b in [*registry.backends(s), *registry.skipped(s)]),
+                    default=0)
         for slot in registry.slots():
             print(slot)
             for backend in registry.backends(slot):
-                print(f"  {backend.name:<14} installed      {backend.description}")
+                print(f"  {backend.name:<{width}}  installed      {backend.description}")
             for backend in registry.skipped(slot):
-                print(f"  {backend.name:<14} not installed  {backend.reason}")
+                print(f"  {backend.name:<{width}}  not installed  {backend.reason}")
         return 0
 
     if not args.name:

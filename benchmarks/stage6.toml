@@ -6,6 +6,10 @@
 name = "whisper-sortformer"
 
 [[system]]
+name = "whisper-sortformer-streaming"
+set = ["podcast.diarizer=sortformer-streaming"]
+
+[[system]]
 name = "parakeet-sortformer"
 set = ["podcast.transcriber=parakeet"]
 
