@@ -1,0 +1,8 @@
+# Keeps the action versions in the workflows up to date. Python dependencies are managed by hand with uv,
+# the torch/CUDA pins for the GTX 1080 Ti need a human look anyway.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

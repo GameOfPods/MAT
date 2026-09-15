@@ -80,6 +80,15 @@ Check every new dependency against these before adding it:
 - Unit test with a mocked model, benchmark run on the GPU box before it can become a default.
 - Library conflicts: newer libraries usually win, but ask the user before dropping or isolating a backend.
 
+## CI
+
+- `.github/workflows/ci.yml` runs on PRs and pushes to `master`: "Tests (all backends, CPU)" (`uv sync --locked`, so
+  `uv.lock` has to be committed and current), "Install without backends", "mat-format (Python 3.10/3.12/3.13)"
+  (mat-format installed alone, tests in `packages/mat-format/tests` must not import MAT).
+- `.github/workflows/release-schemas.yml` attaches the generated schemas and `mat-result-format.zip` to every published
+  release. Keep the schema file names stable, other projects download them from `releases/latest/download/`.
+- `packages/mat-format` is Apache 2.0, MAT is GPL-3.0. Don't copy GPL code into `mat_format`.
+
 ## Git, commits, PRs
 
 - Work on a branch, not on `master`.

@@ -1,0 +1,61 @@
+# Attaches the result format schemas to every release, also when they didn't change, so other projects can always
+# download the newest ones from https://github.com/GameOfPods/MAT/releases/latest/download/<file name>
+name: Release schemas
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing release to attach the schemas to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  schemas:
+    name: Attach result format schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install mat-format
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv" ./packages/mat-format
+
+      - name: Generate the schemas
+        run: '"$RUNNER_TEMP/venv/bin/python" -m mat_format.schema --output dist/schemas'
+
+      - name: Compare with the committed schemas
+        # the generated files are the ones that get attached, a difference means someone forgot to regenerate them
+        run: |
+          if ! diff -r dist/schemas packages/mat-format/src/mat_format/schemas; then
+            echo "::warning::committed schema files differ from the models, attaching the generated ones"
+          fi
+
+      - name: Bundle schemas, spec and examples
+        run: |
+          mkdir -p dist/bundle
+          cp -r dist/schemas dist/bundle/schemas
+          cp -r packages/mat-format/examples dist/bundle/examples
+          cp docs/result-format.md packages/mat-format/LICENSE dist/bundle/
+          (cd dist/bundle && zip -qr ../mat-result-format.zip .)
+          ls -la dist dist/schemas
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --clobber replaces files of a previous run with the same name
+        run: gh release upload "$TAG" dist/schemas/*.schema.json dist/mat-result-format.zip --clobber --repo "$GITHUB_REPOSITORY"

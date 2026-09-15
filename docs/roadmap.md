@@ -121,7 +121,8 @@ Result format definition (other programs like Mosaicast, which is Java, need to 
 - [x] `docs/result-format.md`: layout (folder or zip), versioning rules (readers ignore unknown fields, `format` only changes on breaking changes), every field, the convenience files, how to read it from other languages.
 - [x] Real example results (30 second podcast sample, smoke test EPUB) in `packages/mat-format/examples/`.
 - [x] Cleaned up the format before documenting it: speakers and time ranges are objects, `language` only once, `duration_after_vad` is `speech_duration`, `events` and `entities` have a defined shape, loudness of silence is `null` instead of `-Infinity`.
-- [ ] Decide the license of `mat-format`. It's GPL-3.0 like MAT for now. A more permissive license (MIT or Apache 2.0) would let projects with other licenses use the reader and the schemas without GPL obligations.
+- [x] `mat-format` (package, schemas, examples) is Apache 2.0, MAT stays GPL-3.0. Projects under other licenses can use the reader and the schemas.
+- [x] Every published release gets the schemas attached under fixed names (`releases/latest/download/podcast-result.schema.json`) plus a zip with schemas, spec and examples.
 
 ## Stage 5: benchmark suite
 
@@ -198,7 +199,8 @@ Drop whatever stage 4 already solved.
 - [ ] Steps that skip because of missing input do it silently. Log a warning.
 - [x] `SpeakerIdetificationSpeechBrain.process` was a stub that returned `None`. Removed in stage 4 together with the `speechbrain` dependency, the backend registry makes it easy to add a real one later.
 - [x] `DiarizerNEMO._create_config` (old MSDD setup, downloads yaml from GitHub) was unused. Removed in stage 4.
-- [ ] CI: GitHub Actions with the `cpu` extra and `pytest`
+- [x] CI: GitHub Actions for pull requests and pushes to `master`. Unit tests with all backends on CPU torch, an install without any backend, mat-format alone on Python 3.10/3.12/3.13. Dependabot keeps the action versions current.
+- [ ] Mark the CI jobs as required status checks in the GitHub branch protection of `master` (repository settings, can't be done from a file).
 - [ ] Clean up stale `mat.egg-info`/`MAT.egg-info` folders and decide if `.idea/` belongs in the repo
 
 ## Notes on models and hardware (September 2026)

@@ -1,8 +1,9 @@
 """
 Generates the JSON schemas in schemas/ from the models.
 
-    python -m mat_format.schema          write the schema files
-    python -m mat_format.schema --check  exit with 1 if the files don't match the models
+    python -m mat_format.schema                 write the schema files in the package
+    python -m mat_format.schema --check         exit with 1 if the files don't match the models
+    python -m mat_format.schema --output DIR    write all schema files into DIR (used for releases)
 """
 import argparse
 import json
@@ -46,7 +47,16 @@ def render(schema: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="Only check, don't write")
+    parser.add_argument("--output", type=Path, metavar="DIR",
+                        help="Write all schema files into this folder instead of the package, changed or not")
     args = parser.parse_args()
+
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=True)
+        for file_name, schema in generate().items():
+            (args.output / file_name).write_text(render(schema), encoding="utf-8")
+            print(f"wrote {args.output / file_name}")
+        return 0
 
     outdated = []
     for file_name, schema in generate().items():

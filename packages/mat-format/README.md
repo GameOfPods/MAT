@@ -20,3 +20,9 @@ uv run python -m mat_format.schema --check  # fail if they are outdated
 ```
 
 The major version of this package is the result format version.
+
+Every GitHub release of MAT has the schemas attached under fixed names, so other projects can always download the newest ones, for example `https://github.com/GameOfPods/MAT/releases/latest/download/podcast-result.schema.json`.
+
+## License
+
+This package, the schemas and the examples are licensed under the Apache License 2.0, see [LICENSE](LICENSE). MAT itself is GPL-3.0.

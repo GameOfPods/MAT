@@ -1,0 +1,104 @@
+# Tests for pull requests and pushes to the main branch.
+# Mark the jobs "Tests (all backends, CPU)", "Install without backends" and the "mat-format (Python ...)" jobs as
+# required status checks in the branch protection rules to use them as merge gates.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    name: Tests (all backends, CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Free disk space
+        # all backends together (NeMo, whisperx, spaCy, GLiNER, torch) need a few GB
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install MAT with all backends and CPU torch
+        # --locked fails if uv.lock doesn't match pyproject.toml
+        run: uv sync --locked --no-default-groups --group dev --group cpu --group backends
+
+      - name: Unit tests
+        run: uv run --no-sync pytest tests packages/mat-format/tests -p no:cacheprovider
+
+      - name: Result format schemas are up to date
+        run: uv run --no-sync python -m mat_format.schema --check
+
+      - name: Command line works
+        run: |
+          uv run --no-sync MAT backends
+          uv run --no-sync MAT config init > "$RUNNER_TEMP/mat.toml"
+          uv run --no-sync MAT config show -c "$RUNNER_TEMP/mat.toml" > /dev/null
+
+  lean-install:
+    name: Install without backends
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install MAT without any backend extra
+        run: uv sync --locked --no-default-groups --group cpu
+
+      - name: MAT starts and skips every backend
+        # catches backend modules that import their libraries before require(...)
+        run: |
+          uv run --no-sync MAT backends | tee "$RUNNER_TEMP/backends.txt"
+          if grep -E '^\s+\S+\s+installed\s' "$RUNNER_TEMP/backends.txt"; then
+            echo "::error::a backend loaded without its extra"
+            exit 1
+          fi
+          uv run --no-sync MAT config init > /dev/null
+
+  mat-format:
+    name: mat-format (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install only mat-format
+        # a normal (not editable) install, so the tests also check that the schemas are in the package
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv" ./packages/mat-format pytest jsonschema
+
+      - name: Tests without MAT
+        run: '"$RUNNER_TEMP/venv/bin/python" -m pytest packages/mat-format/tests -p no:cacheprovider'
