@@ -38,11 +38,21 @@ class SortformerOptions(Options):
                                                    "earlier piece. Below it the speaker counts as new.")
     embedding_model: str = Field("pyannote/embedding", description="pyannote speaker embedding model for linking "
                                                                    "speakers between pieces.")
+    merge_threshold: Optional[float] = Field(None, description="After linking, speakers whose audio is at least this "
+                                                               "similar get merged (average linkage over up to 2 "
+                                                               "minutes of audio per speaker). Fixes one person "
+                                                               "split into several speakers. Off when not set.")
 
 
 # Similarity function for linking: gold speaker -> their audio from earlier pieces, audios of the new piece ->
 # (gold speaker names, similarity matrix with one row per audio and one column per gold speaker)
 Similarity = Callable[[Dict[str, List[Any]], List[Any]], Tuple[List[str], Any]]
+
+
+def _speaker_order(name: str):
+    # sprecher_10 after sprecher_9
+    prefix, _, number = name.rpartition("_")
+    return (prefix, int(number)) if number.isdigit() else (name, -1)
 
 
 def link_speakers(similarity, local: Sequence[str], known: Sequence[str],
@@ -131,13 +141,15 @@ class DiarizerNEMO(DiarizationTool):
                                            gold={name: (a, a.frame_rate) for name, a in joined.items()},
                                            audios=[(a, a.frame_rate) for a in audios])
 
-        linked = self._link_pieces(clean_segments, combinations, similarity, threshold=options.link_threshold)
+        linked = self._link_pieces(clean_segments, combinations, similarity, threshold=options.link_threshold,
+                                   merge_threshold=options.merge_threshold)
         return self._merge_windows(windows, linked)
 
     @classmethod
     def _link_pieces(cls, segments_per_piece: Sequence[Dict[str, List[Tuple[float, float]]]],
                      audio_per_piece: Sequence[Dict[str, Any]], similarity: Similarity, threshold: float,
-                     history: int = 5) -> List[Dict[str, List[Tuple[float, float]]]]:
+                     history: int = 5, merge_threshold: Optional[float] = None
+                     ) -> List[Dict[str, List[Tuple[float, float]]]]:
         """Gives the local speakers of every piece global names. Speakers of later pieces are compared with the audio
         of the speakers in up to `history` earlier pieces and linked one to one, so two local speakers never end up
         under the same name and no segments get lost. Unmatched speakers get a new name."""
@@ -168,7 +180,62 @@ class DiarizerNEMO(DiarizationTool):
                     piece_audio.setdefault(name, []).append(audios[speaker])
             linked_segments.append(piece_segments)
             linked_audio.append(piece_audio)
+        if merge_threshold is not None:
+            linked_segments = cls._merge_speakers(linked_segments, linked_audio, similarity, merge_threshold)
         return linked_segments
+
+    @classmethod
+    def _merge_speakers(cls, segments_per_piece: Sequence[Dict[str, List[Tuple[float, float]]]],
+                        audio_per_piece: Sequence[Dict[str, List[Any]]], similarity: Similarity, threshold: float,
+                        max_seconds: float = 120.0) -> List[Dict[str, List[Tuple[float, float]]]]:
+        """Joins speakers that sound alike over all pieces (average linkage on the embedding similarities) and
+        numbers them again. Strict linking keeps different people apart but splits some people into several
+        speakers, this puts them back together."""
+        import numpy as np
+        from functools import reduce
+        from operator import add
+        from scipy.cluster.hierarchy import fcluster, linkage
+        from scipy.spatial.distance import squareform
+
+        audio: Dict[str, List[Any]] = defaultdict(list)
+        for piece in audio_per_piece:
+            for name, parts in piece.items():
+                audio[name].extend(parts)
+        names = sorted(audio, key=_speaker_order)
+        if len(names) < 2:
+            return list(segments_per_piece)
+        # up to max_seconds per speaker keeps the embeddings of long episodes cheap
+        samples = {}
+        for name in names:
+            kept, seconds = [], 0.0
+            for part in audio[name]:
+                if kept and seconds >= max_seconds:
+                    break
+                kept.append(part)
+                seconds += getattr(part, "duration_seconds", 0.0)
+            samples[name] = kept
+        known, matrix = similarity(samples, [reduce(add, samples[name]) for name in names])
+        matrix = np.asarray(matrix, dtype=float)[:, [known.index(name) for name in names]]
+        distance = np.clip(1.0 - (matrix + matrix.T) / 2, 0.0, 2.0)
+        np.fill_diagonal(distance, 0.0)
+        clusters = fcluster(linkage(squareform(distance, checks=False), method="average"),
+                            t=1.0 - threshold, criterion="distance")
+
+        first_of_cluster: Dict[int, str] = {}
+        for name, cluster in zip(names, clusters):
+            first_of_cluster.setdefault(cluster, name)
+        new_names = {first: f"sprecher_{i}" for i, first in enumerate(first_of_cluster.values())}
+        rename = {name: new_names[first_of_cluster[cluster]] for name, cluster in zip(names, clusters)}
+        if len(new_names) < len(names):
+            cls._LOGGER.info(f"Merged {len(names)} speakers into {len(new_names)}: " + ", ".join(
+                f"{name} -> {rename[name]}" for name in names))
+        merged = []
+        for piece in segments_per_piece:
+            renamed: Dict[str, List[Tuple[float, float]]] = {}
+            for name, times in piece.items():
+                renamed.setdefault(rename.get(name, name), []).extend(times)
+            merged.append(renamed)
+        return merged
 
     @staticmethod
     def _merge_windows(windows: Sequence[Window],
