@@ -53,6 +53,35 @@ def test_link_pieces_single_piece_does_not_compare():
     assert linked == {"sprecher_0": [(0, 1)], "sprecher_1": [(2, 3)]}
 
 
+def _joined_voice(gold, audios):
+    """Fake embeddings for merging: a speaker's audio is the joined voice names, the same text means the same voice."""
+    names = list(gold)
+    return names, np.array([[1.0 if audio == "".join(gold[name]) else 0.0 for name in names] for audio in audios])
+
+
+def test_merge_joins_speakers_that_sound_alike():
+    segments = [{"sprecher_0": [(0, 1)], "sprecher_1": [(1, 2)]}, {"sprecher_2": [(2, 3)], "sprecher_1": [(3, 4)]}]
+    audio = [{"sprecher_0": ["alice"], "sprecher_1": ["bob"]}, {"sprecher_2": ["alice"], "sprecher_1": ["bob"]}]
+    merged = DiarizerNEMO._merge_speakers(segments, audio, _joined_voice, threshold=0.5)
+    # sprecher_2 sounds like sprecher_0, bob keeps his own speaker
+    assert merged == [{"sprecher_0": [(0, 1)], "sprecher_1": [(1, 2)]}, {"sprecher_0": [(2, 3)], "sprecher_1": [(3, 4)]}]
+
+
+def test_merge_keeps_different_speakers_and_renumbers():
+    segments = [{"sprecher_0": [(0, 1)], "sprecher_3": [(1, 2)], "sprecher_10": [(2, 3)]}]
+    audio = [{"sprecher_0": ["alice"], "sprecher_3": ["bob"], "sprecher_10": ["carol"]}]
+    merged = DiarizerNEMO._merge_speakers(segments, audio, _joined_voice, threshold=0.5)
+    assert merged == [{"sprecher_0": [(0, 1)], "sprecher_1": [(1, 2)], "sprecher_2": [(2, 3)]}]
+
+
+def test_link_pieces_merges_only_when_asked():
+    segments = [{"0": [(0, 1)]}, {"0": [(0, 1)], "1": [(1, 2)]}]
+    audio = [{"0": "alice"}, {"0": "alice", "1": "alice"}]
+    assert len(set().union(*DiarizerNEMO._link_pieces(segments, audio, _same_voice, threshold=0.3))) == 2
+    merged = DiarizerNEMO._link_pieces(segments, audio, _same_voice, threshold=0.3, merge_threshold=0.5)
+    assert set().union(*merged) == {"sprecher_0"}
+
+
 def test_identify_keeps_the_best_match_per_audio(monkeypatch):
     matrix = np.array([[0.9, 0.1], [0.8, 0.2], [0.1, 0.2]])
     monkeypatch.setattr(SpeakerIdetificationPyannote, "similarities", staticmethod(lambda **kwargs: (["a", "b"], matrix)))
