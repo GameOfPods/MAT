@@ -1,0 +1,39 @@
+# Stage 6a: new backends against the current defaults (whisper large-v3-turbo + Sortformer).
+#   uv run MAT bench run -c benchmarks/stage6.toml -o bench-stage6
+# Try it with --limit 1 first. Finished runs are skipped, so systems can be added later.
+
+[[system]]
+name = "whisper-sortformer"
+
+[[system]]
+name = "parakeet-sortformer"
+set = ["podcast.transcriber=parakeet"]
+
+[[system]]
+name = "whisper-community1"
+set = ["podcast.diarizer=pyannote-diarization"]
+
+[[system]]
+name = "whisper-community1-exclusive"
+set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=true"]
+
+[[system]]
+name = "parakeet-community1"
+set = ["podcast.transcriber=parakeet", "podcast.diarizer=pyannote-diarization"]
+
+[[dataset]]
+type = "fleurs"
+languages = ["de", "en"]
+limit = 100
+
+[[dataset]]
+type = "voxconverse"
+limit = 5
+
+[[dataset]]
+type = "ami"
+limit = 4
+
+[[dataset]]
+type = "bundestag"
+limit = 200

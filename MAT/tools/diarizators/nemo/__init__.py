@@ -36,6 +36,8 @@ class SortformerOptions(Options):
     link_threshold: float = Field(0.3, description="Minimum similarity of the pyannote speaker embeddings for a "
                                                    "speaker of one audio piece to be linked to a speaker of an "
                                                    "earlier piece. Below it the speaker counts as new.")
+    embedding_model: str = Field("pyannote/embedding", description="pyannote speaker embedding model for linking "
+                                                                   "speakers between pieces.")
 
 
 # Similarity function for linking: gold speaker -> their audio from earlier pieces, audios of the new piece ->
@@ -124,7 +126,7 @@ class DiarizerNEMO(DiarizationTool):
             from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Identifier
 
             joined = {name: sum(parts[1:], parts[0]) for name, parts in gold.items()}
-            return Identifier.similarities(model="pyannote/embedding", device=device,
+            return Identifier.similarities(model=options.embedding_model, device=device,
                                            gold={name: (a, a.frame_rate) for name, a in joined.items()},
                                            audios=[(a, a.frame_rate) for a in audios])
 

@@ -58,7 +58,10 @@ dependencies = [
 whisper = ["faster-whisper>=1.2", "whisperx>=3.8"]
 # pyannote links the speakers between the audio pieces Sortformer sees
 sortformer = ["nemo-toolkit[asr]>=3", "pyannote-audio>=4"]
+# identifier (pyannote) and diarizer (pyannote-diarization, community-1)
 pyannote = ["pyannote-audio>=4"]
+# Parakeet TDT runs on NeMo like Sortformer
+parakeet = ["nemo-toolkit[asr]>=3"]
 llm = [
     "langchain>=1",
     "langchain-classic>=1",
@@ -73,7 +76,7 @@ spacy = ["spacy", "spacy-download", "spacy-transformers", "pip"]
 gliner = ["gliner", "gliner2[local]>=2"]
 # `MAT bench`: WER with jiwer, DER with pyannote.metrics. Not a backend, but `all` includes it
 bench = ["jiwer>=4", "pyannote-metrics>=4"]
-all = ["mat[whisper,sortformer,pyannote,llm,spacy,gliner,bench]"]
+all = ["mat[whisper,sortformer,parakeet,pyannote,llm,spacy,gliner,bench]"]
 
 [dependency-groups]
 dev = [

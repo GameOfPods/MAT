@@ -18,8 +18,8 @@ The project is pre-alpha. Options and the output format can still change.
 
 Used for any file ffmpeg can decode.
 
-1. **Transcription** (`whisper`): [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with `large-v3-turbo` by default. If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used.
-2. **Diarization** (`sortformer`): NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio longer than 5 minutes is cut into pieces at quiet spots to keep memory use down, and the speakers of neighboring pieces are linked with pyannote embeddings.
+1. **Transcription** (`whisper` or `parakeet`): [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with `large-v3-turbo` by default. If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used. Or NVIDIA [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), 25 European languages with word timestamps from the model itself. It doesn't report the language, so MAT guesses it from the transcript.
+2. **Diarization** (`sortformer` or `pyannote-diarization`): NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio longer than 5 minutes is cut into pieces at quiet spots to keep memory use down, and the speakers of neighboring pieces are linked with pyannote embeddings. Or [pyannote community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), which has no speaker limit, takes the whole file at once and can give an exclusive diarization (one speaker at a time).
 3. **Speaker names** (`pyannote`, optional): give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
 4. **Transcript**: every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
 5. **Summary** (`llm`, optional): an OpenAI compatible model through LangChain. Long transcripts are split into chunks and the summary gets refined chunk by chunk.
@@ -61,8 +61,11 @@ You can also install only the backends you need. Each one is an extra:
 | Extra | Backend | Step |
 |---|---|---|
 | `whisper` | `whisper` | transcriber |
+| `parakeet` | `parakeet` | transcriber |
 | `sortformer` | `sortformer` | diarizer |
+| `pyannote` | `pyannote-diarization` | diarizer |
 | `pyannote` | `pyannote` | identifier |
+| `bench` | - | `MAT bench` metrics |
 | `llm` | `llm` | summarizer |
 | `spacy` | `spacy` | splitter |
 | `gliner` | `gliner` | ner |
@@ -121,7 +124,7 @@ If one file fails, MAT writes `<file name>.error.txt` into the output folder and
 
 ### Backend options
 
-Every pipeline and backend has a config section named after it: `podcast`, `book`, `whisper`, `sortformer`, `pyannote`, `llm`, `spacy`, `gliner`. `MAT backends show whisper` lists the options of a section.
+Every pipeline and backend has a config section named after it: `podcast`, `book`, `whisper`, `parakeet`, `sortformer`, `pyannote-diarization`, `pyannote`, `llm`, `spacy`, `gliner`. `MAT backends show whisper` lists the options of a section.
 
 Set single options on the command line:
 
