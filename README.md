@@ -227,7 +227,7 @@ uv run python scripts/smoke_book.py
 
 The podcast script skips the summary unless you pass `--summary`. The first run downloads the models (a few GB).
 
-`scripts/full_test.sh` runs everything in one go: install, unit tests, schema check, both smoke scripts and a complete `MAT run` on an audio file of your choice, which then gets validated against the result schemas. It asks for the device (`cuda` or `cpu`), an output folder, the audio file and optional tokens, or takes them from environment variables (see the top of the script). Tool output goes to log files, the console only shows the steps and results:
+`scripts/full_test.sh` runs everything in one go: install, unit tests, schema check, both smoke scripts and a complete `MAT run` on an audio file of your choice, which then gets validated against the result schemas. It asks for the device (`cuda` or `cpu`), an output folder, the audio file and optional tokens, or takes them from environment variables (see the top of the script). Each question shows its variable name, and the settings of a run are saved to `full_test.env` in the output folder without the tokens, so `source` that file to skip the questions next time. Tool output goes to log files, the console only shows the steps and results:
 
 ```bash
 bash scripts/full_test.sh 2>&1 | tee full_test.log
