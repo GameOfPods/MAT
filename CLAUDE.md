@@ -28,6 +28,10 @@ uv run --no-default-groups --group dev --group cpu --group backends python scrip
 
 The GPU box uses the defaults: `uv sync`, `uv run python scripts/smoke_podcast.py --device cuda`.
 
+`bash scripts/full_test.sh 2>&1 | tee full_test.log` runs install, tests, smoke scripts and a complete run on one audio
+file. Settings come from `MAT_TEST_*` env vars or get asked for. Never put paths or names from the user's machines into
+it as defaults.
+
 When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, ...). A mismatch only fails at runtime.
 
 ## How the code is wired
