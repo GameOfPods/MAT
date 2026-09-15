@@ -97,6 +97,7 @@ class TranscribeDiarizeTool(TransciptionTool, ABC):
 from MAT.registry import load_optional
 
 load_optional("MAT.tools.transcriptors.whisper", slot="transcriber", name="whisper", extra="whisper")
+load_optional("MAT.tools.transcriptors.parakeet", slot="transcriber", name="parakeet", extra="parakeet")
 
 __all__ = ["TranscriptionResult", "TranscriptionInput", "TransciptionTool", "TranscribeDiarizeResult",
            "TranscribeDiarizeTool", "WordTuple", "WordTupleSpeaker"]

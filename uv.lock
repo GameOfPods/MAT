@@ -1995,6 +1995,9 @@ llm = [
     { name = "langchain-text-splitters" },
     { name = "tiktoken" },
 ]
+parakeet = [
+    { name = "nemo-toolkit", extra = ["asr"] },
+]
 pyannote = [
     { name = "pyannote-audio" },
 ]
@@ -2068,6 +2071,7 @@ requires-dist = [
     { name = "mdformat" },
     { name = "mdutils" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'all'", specifier = ">=3" },
+    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'parakeet'", specifier = ">=3" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'sortformer'", specifier = ">=3" },
     { name = "numpy", specifier = ">=2" },
     { name = "pip", marker = "extra == 'all'" },
@@ -2105,7 +2109,7 @@ requires-dist = [
     { name = "whisperx", marker = "extra == 'whisper'", specifier = ">=3.8" },
     { name = "xlsxwriter" },
 ]
-provides-extras = ["all", "bench", "gliner", "llm", "pyannote", "sortformer", "spacy", "whisper"]
+provides-extras = ["all", "bench", "gliner", "llm", "parakeet", "pyannote", "sortformer", "spacy", "whisper"]
 
 [package.metadata.requires-dev]
 backends = [{ name = "mat", extras = ["all"] }]
