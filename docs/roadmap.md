@@ -123,6 +123,7 @@ Result format definition (other programs like Mosaicast, which is Java, need to 
 - [x] Cleaned up the format before documenting it: speakers and time ranges are objects, `language` only once, `duration_after_vad` is `speech_duration`, `events` and `entities` have a defined shape, loudness of silence is `null` instead of `-Infinity`.
 - [x] `mat-format` (package, schemas, examples) is Apache 2.0, MAT stays GPL-3.0. Projects under other licenses can use the reader and the schemas.
 - [x] Every published release gets the schemas attached under fixed names (`releases/latest/download/podcast-result.schema.json`) plus a zip with schemas, spec and examples.
+- [x] The release workflow first checks that the tag is `v` + the MAT version (`scripts/check_release_version.py`). A wrong tag fails the run and nothing gets attached. GitHub can't stop the release itself from being published.
 
 ## Stage 5: benchmark suite
 

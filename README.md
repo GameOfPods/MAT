@@ -233,7 +233,14 @@ GitHub Actions run on every pull request and push to `master` (`.github/workflow
 - **Install without backends**: MAT has to start and list every backend as not installed
 - **mat-format (Python 3.10, 3.12, 3.13)**: mat-format installed on its own and tested without MAT
 
-When a release is published, `.github/workflows/release-schemas.yml` attaches the JSON schemas and a zip with schemas, spec and examples to it.
+When a release is published, `.github/workflows/release-schemas.yml` checks that the tag matches the MAT version and then attaches the JSON schemas and a zip with schemas, spec and examples to it.
+
+To release:
+
+1. Set the version in `MAT/__version__.py`, for example `0.3.0`, and merge that into `master`.
+2. Create the release on GitHub with the tag `v0.3.0`, exactly `v` plus the version.
+
+A tag that doesn't match fails the release workflow and nothing gets attached. Fix it by deleting the release and tag and creating them again with the right tag. `python scripts/check_release_version.py v0.3.0` does the same check locally.
 
 ### Adding a backend
 

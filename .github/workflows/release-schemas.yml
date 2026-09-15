@@ -1,6 +1,9 @@
-# Attaches the result format schemas to every release, also when they didn't change, so other projects can always
-# download the newest ones from https://github.com/GameOfPods/MAT/releases/latest/download/<file name>
-name: Release schemas
+# Runs when a release is published:
+# 1. the release tag has to be "v" + the MAT version from MAT/__version__.py (v0.2.0 for 0.2.0)
+# 2. the result format schemas are attached, also when they didn't change, so other projects can always download the
+#    newest ones from https://github.com/GameOfPods/MAT/releases/latest/download/<file name>
+# GitHub can't stop a release from being published, so a wrong tag fails the run and nothing gets attached.
+name: Release
 
 on:
   release:
@@ -8,19 +11,35 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag of an existing release to attach the schemas to
+        description: Tag of an existing release to check and attach the schemas to
         required: true
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  version:
+    name: Release tag matches the MAT version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Compare the tag with MAT/__version__.py
+        run: python3 scripts/check_release_version.py "$TAG"
+
   schemas:
     name: Attach result format schemas
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
