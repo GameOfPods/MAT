@@ -20,7 +20,7 @@ uv run MAT bench run -c benchmarks/example.toml -o bench-results
 
 Useful options of `run`:
 
-- `--limit N` uses only the first N files of every dataset, good for a first try
+- `--limit N` replaces the `limit` of every dataset in the bench file with N samples (sentences, files, meetings or snippets, per language for FLEURS). `--limit 1` is good for a first try, `--limit 0` or `-1` uses all of every dataset. Without `--limit` the limits of the bench file apply.
 - `--dataset NAME` and `--system NAME` pick single datasets or systems (both can be repeated)
 - `--cache FOLDER` sets the dataset cache
 - `--rerun` runs again where a result already exists
@@ -65,6 +65,16 @@ limit = 100
 | `bundestag` | German parliament speech (ASR Bundestag) | WER | Bundestag terms of use, no commercial use or advertising | only the picked snippets, read out of the 59 GB zip |
 
 `MAT bench datasets` prints the options of every type. The notes below say what to keep in mind when reading the numbers.
+
+`limit` counts samples in the unit of the dataset. Without `limit` in the bench file the type's default applies, `0` or `-1` uses everything, and `MAT bench run --limit N` replaces the limits of all datasets.
+
+| type | default `limit` | counts | all of it |
+|---|---|---|---|
+| `reference`, `audio` | everything | reference folders, audio files | - |
+| `fleurs` | 100 | sentences per language | about 350 per language in the test split, 1 to 1.5 hours |
+| `voxconverse` | 5 | files | 232 files, about 43 hours (test) |
+| `ami` | 2 | meetings | 16 meetings, about 9 hours (test) |
+| `bundestag` | 200 | snippets | the test split of the clean subset, many hours |
 
 **fleurs** (`languages`, `split`, `limit` = sentences per language, `pack-minutes`): every sentence exists from several speakers, MAT takes one recording per sentence. The sentences get joined into files of up to `pack-minutes` with a second of silence in between, so the models load once per file and not once per sentence. Clean read speech, so it only says how well words are recognized.
 

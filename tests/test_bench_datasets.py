@@ -51,10 +51,18 @@ def test_fleurs_from_a_local_copy(tmp_path):
     for name in ("f1.wav", "f3.wav"):
         _wav(folder / "audio" / "test" / name)
     options = FleursOptions(type="fleurs", languages=["de"], path=str(tmp_path / "fleurs"), pack_minutes=0.05)
-    (item,) = Fleurs(options, cache=tmp_path / "cache").items()
-    assert (item.id, item.language, item.has_words, item.has_speakers) == ("de_de-test-01", "de", True, False)
+    dataset = Fleurs(options, cache=tmp_path / "cache")
+    (item,) = dataset.items()
+    assert (item.language, item.has_words, item.has_speakers) == ("de", True, False)
+    assert item.id == item.audio.stem and item.id.startswith("de_de-test-")
     assert [(t.start, t.text) for t in item.turns] == [(0.0, "Erster Satz."), (2.0, "Zweiter Satz!")]
     assert item.audio.parent == tmp_path / "cache" / "fleurs" / "packed"
+
+    # another limit picks other sentences, so the item gets another id and old results aren't reused
+    dataset.limit_override = 1
+    (small,) = dataset.items()
+    assert [t.text for t in small.turns] == ["Erster Satz."]
+    assert small.id != item.id
 
 
 def test_voxconverse_from_a_local_copy(tmp_path):

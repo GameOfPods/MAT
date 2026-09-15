@@ -29,7 +29,8 @@ RTTM_URL = "https://raw.githubusercontent.com/joonson/voxconverse/master/{split}
 
 class VoxConverseOptions(DatasetOptions):
     split: Literal["dev", "test"] = Field("test", description="dev or test.")
-    limit: Optional[int] = Field(5, ge=1, description="Number of files, most are 5 to 20 minutes long.")
+    limit: Optional[int] = Field(5, ge=-1, description="Number of files, most are 5 to 20 minutes long. 0 or -1 "
+                                                       "uses all of them.")
     files: List[str] = Field(default_factory=list, description="File ids (like aepyx) instead of the first files.")
 
 
@@ -61,7 +62,7 @@ class VoxConverse(Dataset):
         split = self.options.split
         root = self.local_path()
         ids = list(self.options.files) or self._ids(root, split)
-        for file_id in ids[:self.options.limit]:
+        for file_id in ids[:self.limit]:
             rttm = self._rttm(root, split, file_id)
             yield Item(dataset=self.name, id=safe_name(file_id), audio=self._audio(root, split, file_id),
                        speaker_segments=parse_rttm(rttm.read_text(encoding="utf-8")),

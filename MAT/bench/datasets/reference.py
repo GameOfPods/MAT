@@ -56,7 +56,7 @@ class References(Dataset):
             folders = sorted(p.parent for p in root.glob("*/reference.toml"))
         if not folders:
             raise self.error(f"no reference.toml in {root} or its subfolders")
-        for folder in folders[:self.options.limit]:
+        for folder in folders[:self.limit]:
             yield self._item(folder)
 
     def _item(self, folder: Path) -> Item:
@@ -100,7 +100,7 @@ class AudioFiles(Dataset):
             paths.update(Path(p) for p in glob.glob(expanded, recursive=True) if Path(p).is_file())
         if not paths:
             raise self.error(f"no audio files found for {', '.join(self.options.files)}")
-        for path in sorted(paths)[:self.options.limit]:
+        for path in sorted(paths)[:self.limit]:
             digest = hashlib.sha1(str(path.resolve()).encode()).hexdigest()[:6]
             yield Item(dataset=self.name, id=safe_name(f"{path.stem}-{digest}"), audio=path,
                        language=self.options.language, has_words=False, has_speakers=False)

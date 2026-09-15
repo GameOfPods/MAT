@@ -30,6 +30,8 @@ def test_bench_help_and_datasets(capsys):
 def test_bench_errors_exit_with_2(tmp_path, capsys):
     assert main(["bench", "download", "-c", str(tmp_path / "missing.toml")]) == 2
     assert "doesn't exist" in capsys.readouterr().err
+    assert main(["bench", "download", "-c", str(tmp_path / "missing.toml"), "--limit", "-2"]) == 2
+    assert "--limit" in capsys.readouterr().err
 
 
 def test_backends_list(capsys):

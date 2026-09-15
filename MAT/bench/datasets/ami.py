@@ -36,7 +36,8 @@ Word = Tuple[float, float, str]
 
 class AmiOptions(DatasetOptions):
     split: Literal["dev", "test", "train"] = Field("test", description="dev, test or train (BUT's lists).")
-    limit: Optional[int] = Field(2, ge=1, description="Number of meetings, each 15 to 50 minutes long.")
+    limit: Optional[int] = Field(2, ge=-1, description="Number of meetings, each 15 to 50 minutes long. 0 or -1 uses "
+                                                       "all of them.")
     meetings: List[str] = Field(default_factory=list, description="Meeting ids (like ES2004a) instead of the "
                                                                    "first ones of the split.")
     turn_gap: float = Field(1.0, ge=0, description="Words of one speaker less than this many seconds apart form "
@@ -92,7 +93,7 @@ class Ami(Dataset):
         split = self.options.split
         root = self.local_path()
         meetings = list(self.options.meetings) or self._meetings(root, split)
-        for meeting in meetings[:self.options.limit]:
+        for meeting in meetings[:self.limit]:
             words = self._words(root, meeting)
             if not words:
                 raise self.error(f"no word annotations for {meeting}")

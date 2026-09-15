@@ -31,7 +31,7 @@ LANGUAGES = {"de": "de_de", "en": "en_us"}
 class FleursOptions(DatasetOptions):
     languages: List[str] = Field(["de", "en"], description="de, en or any FLEURS code like fr_fr.")
     split: Literal["dev", "test", "train"] = Field("test", description="dev, test or train.")
-    limit: Optional[int] = Field(100, ge=1, description="Sentences per language.")
+    limit: Optional[int] = Field(100, ge=-1, description="Sentences per language, 0 or -1 uses all of them.")
     pack_minutes: float = Field(10, gt=0, description="Sentences are joined into files of up to this many minutes.")
 
 
@@ -81,7 +81,7 @@ class Fleurs(Dataset):
         for language in self.options.languages:
             code = LANGUAGES.get(language, language)
             tsv, audio_dir, archive = self._locate(code, split)
-            rows = select_rows(parse_tsv(tsv.read_text(encoding="utf-8")), self.options.limit)
+            rows = select_rows(parse_tsv(tsv.read_text(encoding="utf-8")), self.limit)
             if not rows:
                 raise self.error(f"{tsv} has no sentences")
             wavs: Dict[str, Path] = {}
@@ -102,8 +102,9 @@ class Fleurs(Dataset):
                 extract_from_tar(archive, wanted)
             clips = [Clip(id=row.file, audio=wavs[row.file], text=row.text) for row in rows]
             packed = pack(clips, self.cache / "packed", f"{code}-{split}", self.options.pack_minutes * 60)
-            for index, (audio, turns) in enumerate(packed, start=1):
-                yield Item(dataset=self.name, id=f"{code}-{split}-{index:02d}", audio=audio,
+            for audio, turns in packed:
+                # the file name has a key of the picked sentences, so another limit doesn't reuse old results
+                yield Item(dataset=self.name, id=audio.stem, audio=audio,
                            language=code.split("_")[0], turns=turns, has_words=True, has_speakers=False)
 
     def _locate(self, code: str, split: str) -> Tuple[Path, Optional[Path], Optional[Path]]:

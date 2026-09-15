@@ -33,7 +33,7 @@ class DatasetOptions(Options):
                                 description="Name in the report and in the result folders. Default: the type.")
     path: Optional[str] = Field(None, description="Where the dataset already is. Without it, it gets downloaded "
                                                   "into the cache.")
-    limit: Optional[int] = Field(None, ge=1, description="Only use the first files.")
+    limit: Optional[int] = Field(None, ge=-1, description="Only use the first files. 0 or -1 uses all of them.")
     collar: Optional[float] = Field(None, ge=0, description="DER collar in seconds for this dataset. Default: "
                                                            "[bench] collar, else the default of the type.")
 
@@ -53,11 +53,19 @@ class Dataset(ABC):
         self.options = options
         self.cache_root = Path(cache)
         self.base_dir = Path(base_dir)
+        # `MAT bench --limit`, replaces options.limit when set
+        self.limit_override: Optional[int] = None
         self._indexes: Dict[Tuple[Path, str], Dict[str, Path]] = {}
 
     @property
     def name(self) -> str:
         return self.options.name or self.options.type
+
+    @property
+    def limit(self) -> Optional[int]:
+        """How many samples to use (per language for datasets with several), None means all. 0 and -1 mean all."""
+        value = self.options.limit if self.limit_override is None else self.limit_override
+        return None if value is None or value <= 0 else value
 
     @property
     def cache(self) -> Path:
