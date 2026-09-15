@@ -6,7 +6,7 @@ import pytest
 
 from MAT.pipelines.Book import BookOutput, Chapter
 from MAT.pipelines.Podcast import MediaInfo, PodcastOutput
-from MAT.reader import MATResult
+from MAT.reader import MATResult, TimeRange
 from MAT.tools import DiarizationResult, SummaryResult, TranscriptionResult, WordTuple, WordTupleSpeaker
 from MAT.writer import Writer
 
@@ -18,7 +18,7 @@ def input_file(tmp_path):
     return f
 
 
-def _podcast_output() -> PodcastOutput:
+def podcast_output() -> PodcastOutput:
     words = [WordTuple(0.0, 0.5, "hello"), WordTuple(1.0, 1.5, "hi")]
     word_speaker = [WordTupleSpeaker(words[0], {"alice"}), WordTupleSpeaker(words[1], {"bob"})]
     return PodcastOutput(
@@ -31,11 +31,12 @@ def _podcast_output() -> PodcastOutput:
         squished_speaker=word_speaker,
         full_transcript="alice [0.0 - 0.5]: hello\nbob [1.0 - 1.5]: hi",
         summary=SummaryResult("# A summary"),
-        models={"transcriber": {"backend": "whisper", "model": "large-v3-turbo"}},
+        models={"transcriber": {"backend": "whisper", "model": "large-v3-turbo", "packages": {"faster-whisper": "1"}},
+                "summarizer": {"backend": "llm", "model": "gpt-5.6-terra", "service": "OpenAI"}},
     )
 
 
-def _book_output() -> BookOutput:
+def book_output() -> BookOutput:
     return BookOutput(title="Book", language="en", models={"ner": {"backend": "gliner"}}, chapter_data=[
         Chapter(heading="Part", heading_beautified="Part I", content=["Alice went home. Bob stayed."],
                 sentences=["Alice went home.", "Bob stayed."],
@@ -46,13 +47,13 @@ def _book_output() -> BookOutput:
     ])
 
 
-def _write(tmp_path, input_file, results, as_zip):
+def write(tmp_path, input_file, results, as_zip=False) -> Path:
     folder = Writer().store(file=str(input_file), output=str(tmp_path / "out"), pipeline_results=results)
     return Path(shutil.make_archive(folder, "zip", folder)) if as_zip else Path(folder)
 
 
 def test_layout_and_meta(tmp_path, input_file):
-    folder = _write(tmp_path, input_file, [_podcast_output(), _book_output()], as_zip=False)
+    folder = write(tmp_path, input_file, [podcast_output(), book_output()])
     assert sorted(p.name for p in folder.iterdir()) == ["book", "meta.json", "podcast"]
     assert sorted(p.name for p in (folder / "podcast").iterdir()) == \
         ["diarization.rttm", "result.json", "summary.md", "transcript.txt"]
@@ -60,32 +61,36 @@ def test_layout_and_meta(tmp_path, input_file):
     assert meta["format"] == 2
     assert meta["input"]["name"] == "episode.wav"
     assert meta["pipelines"] == ["podcast", "book"]
+    assert json.loads((folder / "podcast" / "result.json").read_text())["schema"] == "mat.podcast"
 
 
 @pytest.mark.parametrize("as_zip", [False, True])
 def test_podcast_roundtrip(tmp_path, input_file, as_zip):
-    result = MATResult.read(_write(tmp_path, input_file, [_podcast_output()], as_zip))
+    result = MATResult.read(write(tmp_path, input_file, [podcast_output()], as_zip))
 
-    assert result.format == 2
+    assert result.meta.format == 2
     assert result.book is None
     podcast = result.podcast
     assert podcast.language == "en"
-    assert podcast.duration == 2.0
-    assert podcast.speaker_names == {"alice", "bob"}
-    assert podcast.speakers["alice"] == [(0.0, 0.9)]
-    assert podcast.diarization == {"sprecher_0": [(0.0, 0.9)], "sprecher_1": [(0.9, 2.0)]}
-    assert [(w.text, w.speakers) for w in podcast.words] == [("hello", ("alice",)), ("hi", ("bob",))]
-    assert podcast.transcript.splitlines() == ["alice [0.0 - 0.5]: hello", "bob [1.0 - 1.5]: hi"]
+    assert podcast.media.duration == 2.0
+    assert podcast.media.speech_duration == 1.5
+    assert podcast.speaker_ids == {"alice", "bob"}
+    assert podcast.speaker("alice").segments == [TimeRange(start=0.0, end=0.9)]
+    assert [s.id for s in podcast.diarization] == ["sprecher_0", "sprecher_1"]
+    assert [(w.text, w.speakers) for w in podcast.words] == [("hello", ["alice"]), ("hi", ["bob"])]
+    assert result.transcript().splitlines() == ["alice [0.0 - 0.5]: hello", "bob [1.0 - 1.5]: hi"]
     assert podcast.summary == "# A summary"
-    assert podcast.models["transcriber"]["model"] == "large-v3-turbo"
+    assert podcast.models["transcriber"].model == "large-v3-turbo"
+    # backend specific extra fields are kept
+    assert podcast.models["summarizer"].model_extra == {"service": "OpenAI"}
 
 
 @pytest.mark.parametrize("as_zip", [False, True])
 def test_book_roundtrip(tmp_path, input_file, as_zip):
-    book = MATResult.read(_write(tmp_path, input_file, [_book_output()], as_zip)).book
+    book = MATResult.read(write(tmp_path, input_file, [book_output()], as_zip)).book
 
     assert book.title == "Book"
-    assert book.models == {"ner": {"backend": "gliner"}}
+    assert book.models["ner"].backend == "gliner"
     assert [(c.heading, c.heading_raw) for c in book.chapters] == [("Part I", "Part"), ("Epilogue", "Epilogue")]
     first = book.chapters[0].sentences[0]
     assert first.text == "Alice went home."
@@ -95,12 +100,25 @@ def test_book_roundtrip(tmp_path, input_file, as_zip):
     assert book.chapters[1].paragraphs == ["The end."]
 
 
-def test_podcast_without_summary_and_transcript(tmp_path, input_file):
-    output = _podcast_output()
+def test_transcript_is_built_from_segments_without_the_file(tmp_path, input_file):
+    output = podcast_output()
+    output.full_transcript = None
+    folder = write(tmp_path, input_file, [output])
+    assert not (folder / "podcast" / "transcript.txt").exists()
+    assert MATResult.read(folder).transcript().splitlines()[0] == "alice [0.0 - 0.5]: hello"
+
+
+def test_silence_and_missing_summary(tmp_path, input_file):
+    output = podcast_output()
     output.summary = None
-    folder = _write(tmp_path, input_file, [output], as_zip=False)
+    output.media_info.max_dbfs = float("-inf")
+    folder = write(tmp_path, input_file, [output])
     assert not (folder / "podcast" / "summary.md").exists()
-    assert MATResult.read(folder).podcast.summary is None
+    # strict JSON, no -Infinity
+    json.loads((folder / "podcast" / "result.json").read_text(), parse_constant=lambda c: pytest.fail(c))
+    podcast = MATResult.read(folder).podcast
+    assert podcast.summary is None
+    assert podcast.media.max_dbfs is None
 
 
 def test_old_results_are_rejected(tmp_path):

@@ -24,6 +24,8 @@ dependencies = [
     "huggingface-hub",
     "langdetect>=1.0.9",
     "linkify-it-py",
+    # data model and reader of the result format, lives in packages/mat-format
+    "mat-format",
     "markdown",
     "markdown-it-py",
     "mdformat",
@@ -73,6 +75,7 @@ all = ["mat[whisper,sortformer,pyannote,llm,spacy,gliner]"]
 
 [dependency-groups]
 dev = [
+    "jsonschema>=4",
     "pandas-stubs>=2.3.3.251219",
     "pytest>=9.1.1",
 ]
@@ -122,7 +125,11 @@ conflicts = [
     ],
 ]
 
+[tool.uv.workspace]
+members = ["packages/mat-format"]
+
 [tool.uv.sources]
+mat-format = { workspace = true }
 torch = [
     { index = "pytorch-cpu", group = "cpu" },
     { index = "pytorch-cu126", group = "cu126" },

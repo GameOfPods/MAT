@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/book-result.schema.json",
+  "$comment": "MAT result format 2, describes book/result.json. Generated from mat_format/models.py, don't edit by hand.",
+  "$defs": {
+    "Chapter": {
+      "properties": {
+        "heading": {
+          "description": "Heading to show. Repeated headings get a roman numeral, for example \"Part II\".",
+          "title": "Heading",
+          "type": "string"
+        },
+        "heading_raw": {
+          "description": "Heading as it is in the book.",
+          "title": "Heading Raw",
+          "type": "string"
+        },
+        "paragraphs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Paragraphs",
+          "type": "array"
+        },
+        "sentences": {
+          "description": "Empty if sentence splitting didn't run.",
+          "items": {
+            "$ref": "#/$defs/Sentence"
+          },
+          "title": "Sentences",
+          "type": "array"
+        }
+      },
+      "required": [
+        "heading",
+        "heading_raw",
+        "paragraphs",
+        "sentences"
+      ],
+      "title": "Chapter",
+      "type": "object"
+    },
+    "ModelInfo": {
+      "additionalProperties": true,
+      "description": "Which backend and model produced a step, and the versions of the Python packages it used.",
+      "properties": {
+        "backend": {
+          "description": "MAT backend name, for example whisper or sortformer.",
+          "title": "Backend",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Model the backend used, if it has one.",
+          "title": "Model"
+        },
+        "packages": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Python package name to version.",
+          "title": "Packages",
+          "type": "object"
+        }
+      },
+      "required": [
+        "backend"
+      ],
+      "title": "ModelInfo",
+      "type": "object"
+    },
+    "Sentence": {
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "lemmas": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Lemma to count, without stop words and punctuation.",
+          "title": "Lemmas",
+          "type": "object"
+        },
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/TextEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "lemmas",
+        "entities"
+      ],
+      "title": "Sentence",
+      "type": "object"
+    },
+    "TextEntity": {
+      "description": "A named entity inside a sentence.",
+      "properties": {
+        "label": {
+          "description": "Entity type, for example PERSON.",
+          "title": "Label",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "start": {
+          "description": "Character offset in the sentence text where the entity starts.",
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "description": "Character offset in the sentence text where the entity ends (exclusive).",
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "text",
+        "start",
+        "end"
+      ],
+      "title": "TextEntity",
+      "type": "object"
+    }
+  },
+  "description": "Content of book/result.json.",
+  "properties": {
+    "schema": {
+      "const": "mat.book",
+      "default": "mat.book",
+      "title": "Schema",
+      "type": "string"
+    },
+    "format": {
+      "const": 2,
+      "default": 2,
+      "description": "Result format version.",
+      "title": "Format",
+      "type": "integer"
+    },
+    "models": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelInfo"
+      },
+      "description": "Step name (splitter, ner) to the backend that ran it.",
+      "title": "Models",
+      "type": "object"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Detected language as ISO 639-1 code.",
+      "title": "Language"
+    },
+    "chapters": {
+      "items": {
+        "$ref": "#/$defs/Chapter"
+      },
+      "title": "Chapters",
+      "type": "array"
+    }
+  },
+  "required": [
+    "models",
+    "title",
+    "language",
+    "chapters"
+  ],
+  "title": "BookResult",
+  "type": "object"
+}

@@ -1,0 +1,13 @@
+{
+ "format": 2,
+ "mat_version": "0.2.0",
+ "created": "2026-09-14T23:21:46",
+ "input": {
+  "name": "smoke.epub",
+  "path": "/data/smoke.epub",
+  "sha1": "ea9296747696011d7b636c681e55b93d4c4e8723"
+ },
+ "pipelines": [
+  "book"
+ ]
+}

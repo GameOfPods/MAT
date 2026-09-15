@@ -1,0 +1,12 @@
+sprecher_0 [6.721 - 7.062]: hello
+sprecher_1 [7.624 - 8.186]: hello oh
+sprecher_0 [8.567 - 9.792]: hello i didn't know you were there
+sprecher_1 [10.052 - 10.574]: neither did
+sprecher_0 & sprecher_1 [10.795 - 10.895]: i
+sprecher_0 [10.996 - 14.487]: okay i thought you know i heard a beep this is diane in new jersey and
+sprecher_0 & sprecher_1 [14.587 - 14.727]: i'm
+sprecher_1 [14.808 - 17.817]: sheila in texas originally from chicago oh
+sprecher_0 [18.479 - 21.449]: i'm originally from chicago also i'm in new jersey now though
+sprecher_1 [21.911 - 27.893]: well there isn't that much difference at least you know they all call me a yankee down here so what can i say
+sprecher_0 & sprecher_1 [28.114 - 28.535]: oh i
+sprecher_0 [28.575 - 29.8]: don't hear that new jersey now

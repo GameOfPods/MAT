@@ -1,0 +1,205 @@
+{
+ "schema": "mat.book",
+ "format": 2,
+ "models": {
+  "splitter": {
+   "backend": "spacy",
+   "model": "en_core_web_sm",
+   "packages": {
+    "spacy": "3.8.16"
+   }
+  },
+  "ner": {
+   "backend": "gliner",
+   "model": "fastino/gliner2-large-v1",
+   "packages": {
+    "gliner": "0.2.29",
+    "gliner2": "2.0.0"
+   }
+  }
+ },
+ "title": "Smoke Book",
+ "language": "en",
+ "chapters": [
+  {
+   "heading": "Chapter 1",
+   "heading_raw": "Chapter 1",
+   "paragraphs": [
+    "Alice met Bob in Berlin on Monday.",
+    "They both worked for Acme Corporation."
+   ],
+   "sentences": [
+    {
+     "text": "Alice met Bob in Berlin on Monday.\n",
+     "lemmas": {
+      "Alice": 1,
+      "meet": 1,
+      "Bob": 1,
+      "Berlin": 1,
+      "Monday": 1
+     },
+     "entities": [
+      {
+       "label": "PERSON",
+       "text": "Bob",
+       "start": 10,
+       "end": 13
+      },
+      {
+       "label": "PERSON",
+       "text": "Alice",
+       "start": 0,
+       "end": 5
+      },
+      {
+       "label": "LOCATION",
+       "text": "Berlin",
+       "start": 17,
+       "end": 23
+      },
+      {
+       "label": "DATE",
+       "text": "Monday",
+       "start": 27,
+       "end": 33
+      }
+     ]
+    },
+    {
+     "text": "They both worked for Acme Corporation.",
+     "lemmas": {
+      "work": 1,
+      "Acme": 1,
+      "Corporation": 1
+     },
+     "entities": [
+      {
+       "label": "ORGANIZATION",
+       "text": "Acme Corporation",
+       "start": 21,
+       "end": 37
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "heading": "Chapter 2",
+   "heading_raw": "Chapter 2",
+   "paragraphs": [
+    "On Friday Bob flew to Paris.",
+    "Alice stayed at home and read."
+   ],
+   "sentences": [
+    {
+     "text": "On Friday Bob flew to Paris.\n",
+     "lemmas": {
+      "Friday": 1,
+      "Bob": 1,
+      "fly": 1,
+      "Paris": 1
+     },
+     "entities": [
+      {
+       "label": "PERSON",
+       "text": "Bob",
+       "start": 10,
+       "end": 13
+      },
+      {
+       "label": "LOCATION",
+       "text": "Paris",
+       "start": 22,
+       "end": 27
+      },
+      {
+       "label": "ORGANIZATION",
+       "text": "Bob",
+       "start": 10,
+       "end": 13
+      },
+      {
+       "label": "ORGANIZATION",
+       "text": "Paris",
+       "start": 22,
+       "end": 27
+      },
+      {
+       "label": "DATE",
+       "text": "Friday",
+       "start": 3,
+       "end": 9
+      }
+     ]
+    },
+    {
+     "text": "Alice stayed at home and read.",
+     "lemmas": {
+      "Alice": 1,
+      "stay": 1,
+      "home": 1,
+      "read": 1
+     },
+     "entities": [
+      {
+       "label": "PERSON",
+       "text": "Alice",
+       "start": 0,
+       "end": 5
+      },
+      {
+       "label": "LOCATION",
+       "text": "home",
+       "start": 16,
+       "end": 20
+      },
+      {
+       "label": "ORGANIZATION",
+       "text": "Alice",
+       "start": 0,
+       "end": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "heading": "Epilogue",
+   "heading_raw": "Epilogue",
+   "paragraphs": [
+    "In March 2024 they met again in London."
+   ],
+   "sentences": [
+    {
+     "text": "In March 2024 they met again in London.",
+     "lemmas": {
+      "March": 1,
+      "2024": 1,
+      "meet": 1,
+      "London": 1
+     },
+     "entities": [
+      {
+       "label": "LOCATION",
+       "text": "London",
+       "start": 32,
+       "end": 38
+      },
+      {
+       "label": "ORGANIZATION",
+       "text": "London",
+       "start": 32,
+       "end": 38
+      },
+      {
+       "label": "DATE",
+       "text": "March 2024",
+       "start": 3,
+       "end": 13
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

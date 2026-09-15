@@ -9,30 +9,24 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 """
-Writes results in format 2.
+Writes results in format 2, as described in docs/result-format.md.
 
-    <input name>_<time>/
-        meta.json               format, MAT version, input file, pipelines that ran
-        podcast/result.json     everything the podcast pipeline found, plus transcript.txt, summary.md, diarization.rttm
-        book/result.json
-
-`MAT.reader.MATResult` reads it back, from the folder or from a zip of it.
+The data model lives in the mat-format package (packages/mat-format), this module only turns pipeline outputs into
+those models and writes the files.
 """
-import json
+import math
 import os
 import pathlib
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
+
+from mat_format import (
+    BookResult, Chapter, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
+    TextEntity, TimeRange, Word,
+)
 
 from MAT.pipelines import PipelineResult, PodcastOutput, BookOutput
 from MAT.tools import DiarizationResult, WordTupleSpeaker
-
-FORMAT_VERSION = 2
-
-
-def _write_json(path: str, data: Any) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
 
 
 def _write_text(path: str, text: str) -> None:
@@ -40,71 +34,67 @@ def _write_text(path: str, text: str) -> None:
         f.write(text if text.endswith("\n") else text + "\n")
 
 
-def _timeline(diarization: Optional[DiarizationResult]) -> Optional[Dict[str, List[List[float]]]]:
+def _finite(value: Optional[float]) -> Optional[float]:
+    # pydub reports -inf dBFS for silence, JSON has no infinity
+    return float(value) if value is not None and math.isfinite(value) else None
+
+
+def _speakers(diarization: Optional[DiarizationResult]) -> List[Speaker]:
     if diarization is None:
-        return None
-    return {speaker: [[start, end] for start, end in sorted(diarization.get_diarization(speaker))]
-            for speaker in sorted(diarization.speaker)}
+        return []
+    return [Speaker(id=speaker, segments=[TimeRange(start=start, end=end)
+                                          for start, end in sorted(diarization.get_diarization(speaker))])
+            for speaker in sorted(diarization.speaker)]
 
 
-def _words(words: Optional[List[WordTupleSpeaker]]) -> List[Dict[str, Any]]:
-    return [{"start": w.word.start, "end": w.word.end, "text": w.word.word,
-             "speakers": sorted(s for s in w.speaker if s is not None)} for w in words or []]
+def _words(words: Optional[List[WordTupleSpeaker]]) -> List[Word]:
+    return [Word(start=w.word.start, end=w.word.end, text=w.word.word or "",
+                 speakers=sorted(s for s in w.speaker if s is not None)) for w in words or []]
 
 
 def _summary_text(output: PodcastOutput) -> Optional[str]:
     return None if output.summary is None else "\n\n---\n\n".join(output.summary.text)
 
 
-def podcast_json(output: PodcastOutput) -> Dict[str, Any]:
-    media = output.media_info.as_dict() if output.media_info is not None else None
-    return {
-        "schema": "mat.podcast",
-        "format": FORMAT_VERSION,
-        "models": output.models,
-        "language": (media or {}).get("language") or None,
-        "media": media,
-        # speakers after matching them to gold labels, diarization is what the diarizer said
-        "speakers": _timeline(output.diarization_matched),
-        "diarization": _timeline(output.diarization),
-        "words": _words(output.word_speaker),
-        # words of the same speaker merged into lines
-        "segments": _words(output.squished_speaker),
-        "summary": _summary_text(output),
-        # filled by later stages (audio events, named entities in transcripts)
-        "events": [],
-        "entities": [],
-    }
+def podcast_result(output: PodcastOutput) -> PodcastResult:
+    media = output.media_info
+    return PodcastResult(
+        models={slot: ModelInfo(**info) for slot, info in output.models.items()},
+        language=(media.language if media is not None else None) or None,
+        media=None if media is None else Media(
+            duration=media.duration, speech_duration=_finite(media.duration_after_vad),
+            sample_rate=media.sample_rate, max_dbfs=_finite(media.max_dbfs), rms=_finite(media.rms),
+        ),
+        speakers=_speakers(output.diarization_matched),
+        diarization=_speakers(output.diarization),
+        words=_words(output.word_speaker),
+        segments=_words(output.squished_speaker),
+        summary=_summary_text(output),
+        events=[],
+        entities=[],
+    )
 
 
-def book_json(output: BookOutput) -> Dict[str, Any]:
+def book_result(output: BookOutput) -> BookResult:
     chapters = []
     for chapter in output.chapter_data:
         sentences = []
         for i, text in enumerate(chapter.sentences or []):
             lemmas = chapter.sentence_words[i] if chapter.sentence_words and i < len(chapter.sentence_words) else {}
             ner = chapter.ner[i] if chapter.ner and i < len(chapter.ner) else {}
-            entities = [{"label": label, "text": entity, "start": start, "end": end}
+            entities = [TextEntity(label=label, text=entity, start=start, end=end)
                         for label, found in ner.items() for entity, start, end in found]
-            sentences.append({"text": text, "lemmas": dict(lemmas), "entities": entities})
-        chapters.append({
-            "heading": chapter.get_beautiful_heading(),
-            "heading_raw": chapter.heading,
-            "paragraphs": chapter.content,
-            "sentences": sentences,
-        })
-    return {
-        "schema": "mat.book",
-        "format": FORMAT_VERSION,
-        "models": output.models,
-        "title": output.title,
-        "language": output.language or None,
-        "chapters": chapters,
-    }
+            sentences.append(Sentence(text=text, lemmas=dict(lemmas), entities=entities))
+        chapters.append(Chapter(heading=chapter.get_beautiful_heading(), heading_raw=chapter.heading,
+                                paragraphs=list(chapter.content), sentences=sentences))
+    return BookResult(
+        models={slot: ModelInfo(**info) for slot, info in output.models.items()},
+        title=output.title, language=output.language or None, chapters=chapters,
+    )
 
 
 def write_podcast(output: PodcastOutput, folder: str) -> None:
-    _write_json(os.path.join(folder, "result.json"), podcast_json(output))
+    _write_text(os.path.join(folder, "result.json"), podcast_result(output).model_dump_json(by_alias=True, indent=1))
     if output.full_transcript:
         _write_text(os.path.join(folder, "transcript.txt"), output.full_transcript)
     summary = _summary_text(output)
@@ -124,7 +114,7 @@ def write_podcast(output: PodcastOutput, folder: str) -> None:
 
 
 def write_book(output: BookOutput, folder: str) -> None:
-    _write_json(os.path.join(folder, "result.json"), book_json(output))
+    _write_text(os.path.join(folder, "result.json"), book_result(output).model_dump_json(by_alias=True, indent=1))
 
 
 class Writer:
@@ -148,26 +138,23 @@ class Writer:
             folder = f"{base_folder}_{i}"
             i += 1
         os.makedirs(folder, exist_ok=False)
-        meta = {
-            "format": FORMAT_VERSION,
-            "mat_version": __version__,
-            "created": now.isoformat(timespec="seconds"),
-            "input": {
-                "name": os.path.basename(file),
-                "path": os.path.abspath(file),
-                "sha1": get_hash_file(file_path=os.path.abspath(file)),
-            },
-            "pipelines": [],
-        }
+        pipelines = []
         for result in pipeline_results:
             if type(result) not in self._writers:
                 raise TypeError(f"No writer registered for {type(result).__name__}")
             name, write = self._writers[type(result)]
             os.makedirs(os.path.join(folder, name), exist_ok=False)
             write(result, os.path.join(folder, name))
-            meta["pipelines"].append(name)
-        _write_json(os.path.join(folder, "meta.json"), meta)
+            pipelines.append(name)
+        meta = Meta(
+            mat_version=__version__,
+            created=now.isoformat(timespec="seconds"),
+            input=Input(name=os.path.basename(file), path=os.path.abspath(file),
+                        sha1=get_hash_file(file_path=os.path.abspath(file))),
+            pipelines=pipelines,
+        )
+        _write_text(os.path.join(folder, "meta.json"), meta.model_dump_json(by_alias=True, indent=1))
         return os.path.abspath(folder)
 
 
-__all__ = ["Writer", "FORMAT_VERSION", "podcast_json", "book_json"]
+__all__ = ["Writer", "FORMAT_VERSION", "podcast_result", "book_result"]
