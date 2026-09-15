@@ -123,6 +123,8 @@ fi
 # ---------------------------------------------------------------- helpers
 STEPS=0
 FAILED=()
+# GPU memory in use before the tests (desktop, other programs), peaks are shown on top of it
+GPU_IDLE=0
 
 detail() { sed 's/^/      /'; }
 
@@ -143,7 +145,10 @@ run() {
   if [ -n "$sampler" ]; then
     kill "$sampler" 2>/dev/null
     wait "$sampler" 2>/dev/null
-    peak=", peak GPU memory $(sort -n "$LOGS/$2.gpu" | tail -1) MiB"
+    peak=$(sort -n "$LOGS/$2.gpu" | tail -1)
+    if [ -n "$peak" ]; then
+      peak=", peak GPU memory +$(( peak > GPU_IDLE ? peak - GPU_IDLE : 0 )) MiB"
+    fi
   fi
   if [ "$rc" -eq 0 ]; then
     echo "ok, ${seconds} s${peak}"
@@ -161,6 +166,9 @@ echo "  commit:  $(git log -1 --format='%h %s') ($(git branch --show-current))"
 echo "  device:  $MAT_TEST_DEVICE"
 if [ "$MAT_TEST_DEVICE" = cuda ]; then
   echo "  gpu:     $(nvidia-smi --query-gpu=name,driver_version,memory.used,memory.total --format=csv,noheader 2>&1 | head -1)"
+  GPU_IDLE=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
+  GPU_IDLE=${GPU_IDLE:-0}
+  echo "           peak GPU memory of the steps is shown on top of the $GPU_IDLE MiB used now"
 fi
 echo "  ffmpeg:  $(ffmpeg -version 2>&1 | head -1)"
 echo "  uv:      $(uv --version)"
@@ -224,7 +232,7 @@ if [ -n "$MAT_TEST_AUDIO" ]; then
     ${OPENAI_API_BASE:+OPENAI_API_BASE="$OPENAI_API_BASE"} \
     uv run --no-sync MAT "${ARGS[@]}"
   grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed" \
-    "$LOGS/run.log" | sed -E 's/^[0-9: ,-]+ - +[A-Z]+ +- [^:]*: //' | detail
+    "$LOGS/run.log" | grep -E " - +[A-Z]+ +- " | sed -E 's/^.* - +[A-Z]+ +- [^:]*: //' | detail
 
   run "check result" check uv run --no-sync python -W ignore - "$OUT/run" <<'PY'
 import json
@@ -253,7 +261,7 @@ print("schemas valid, files:", " ".join(sorted(str(p.relative_to(folder)) for p 
 
 result = MATResult.read(folder)
 podcast = result.podcast
-print("models:", ", ".join(f"{slot}={info.backend}/{info.model}" for slot, info in podcast.models.items()))
+print("models:", ", ".join(f"{slot} {info.backend} ({info.model})" for slot, info in podcast.models.items()))
 print(f"language {podcast.language}, duration {podcast.media.duration:.0f} s, speech {podcast.media.speech_duration:.0f} s")
 print("diarizer labels:", ", ".join(s.id for s in podcast.diarization))
 for speaker in podcast.speakers:
