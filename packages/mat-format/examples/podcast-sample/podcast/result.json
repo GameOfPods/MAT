@@ -1,0 +1,876 @@
+{
+ "schema": "mat.podcast",
+ "format": 2,
+ "models": {
+  "transcriber": {
+   "backend": "whisper",
+   "model": "large-v3-turbo",
+   "packages": {
+    "faster-whisper": "1.2.1",
+    "whisperx": "3.8.6",
+    "ctranslate2": "4.8.2"
+   }
+  },
+  "diarizer": {
+   "backend": "sortformer",
+   "model": "nvidia/diar_sortformer_4spk-v1",
+   "packages": {
+    "nemo-toolkit": "3.0.0",
+    "pyannote-audio": "4.0.7"
+   }
+  },
+  "identifier": {
+   "backend": "pyannote",
+   "model": "pyannote/embedding",
+   "packages": {
+    "pyannote-audio": "4.0.7"
+   }
+  }
+ },
+ "language": "en",
+ "media": {
+  "duration": 30.0,
+  "speech_duration": 23.616,
+  "sample_rate": 16000,
+  "max_dbfs": -9.88686733055192,
+  "rms": 701.0
+ },
+ "speakers": [
+  {
+   "id": "sprecher_0",
+   "segments": [
+    {
+     "start": 6.72,
+     "end": 7.28
+    },
+    {
+     "start": 8.4,
+     "end": 10.16
+    },
+    {
+     "start": 10.48,
+     "end": 14.8
+    },
+    {
+     "start": 18.08,
+     "end": 21.68
+    },
+    {
+     "start": 27.92,
+     "end": 29.99
+    }
+   ]
+  },
+  {
+   "id": "sprecher_1",
+   "segments": [
+    {
+     "start": 7.6,
+     "end": 8.4
+    },
+    {
+     "start": 10.0,
+     "end": 11.12
+    },
+    {
+     "start": 14.4,
+     "end": 18.48
+    },
+    {
+     "start": 21.84,
+     "end": 28.64
+    }
+   ]
+  }
+ ],
+ "diarization": [
+  {
+   "id": "sprecher_0",
+   "segments": [
+    {
+     "start": 6.72,
+     "end": 7.28
+    },
+    {
+     "start": 8.4,
+     "end": 10.16
+    },
+    {
+     "start": 10.48,
+     "end": 14.8
+    },
+    {
+     "start": 18.08,
+     "end": 21.68
+    },
+    {
+     "start": 27.92,
+     "end": 29.99
+    }
+   ]
+  },
+  {
+   "id": "sprecher_1",
+   "segments": [
+    {
+     "start": 7.6,
+     "end": 8.4
+    },
+    {
+     "start": 10.0,
+     "end": 11.12
+    },
+    {
+     "start": 14.4,
+     "end": 18.48
+    },
+    {
+     "start": 21.84,
+     "end": 28.64
+    }
+   ]
+  }
+ ],
+ "words": [
+  {
+   "start": 6.721,
+   "end": 7.062,
+   "text": "hello",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 7.624,
+   "end": 8.126,
+   "text": "hello",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 8.146,
+   "end": 8.186,
+   "text": "oh",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 8.567,
+   "end": 8.868,
+   "text": "hello",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 8.909,
+   "end": 8.949,
+   "text": "i",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 8.989,
+   "end": 9.169,
+   "text": "didn't",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 9.19,
+   "end": 9.29,
+   "text": "know",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 9.31,
+   "end": 9.39,
+   "text": "you",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 9.41,
+   "end": 9.531,
+   "text": "were",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 9.551,
+   "end": 9.792,
+   "text": "there",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 10.052,
+   "end": 10.333,
+   "text": "neither",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 10.374,
+   "end": 10.574,
+   "text": "did",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 10.795,
+   "end": 10.895,
+   "text": "i",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 10.996,
+   "end": 11.176,
+   "text": "okay",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 11.297,
+   "end": 11.357,
+   "text": "i",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 11.417,
+   "end": 11.598,
+   "text": "thought",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 11.618,
+   "end": 11.678,
+   "text": "you",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 11.798,
+   "end": 11.899,
+   "text": "know",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 11.939,
+   "end": 11.999,
+   "text": "i",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.039,
+   "end": 12.18,
+   "text": "heard",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.2,
+   "end": 12.22,
+   "text": "a",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.28,
+   "end": 12.461,
+   "text": "beep",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.521,
+   "end": 12.681,
+   "text": "this",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.741,
+   "end": 12.822,
+   "text": "is",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 12.882,
+   "end": 13.303,
+   "text": "diane",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 13.343,
+   "end": 13.403,
+   "text": "in",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 13.464,
+   "end": 13.584,
+   "text": "new",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 13.624,
+   "end": 14.146,
+   "text": "jersey",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 14.166,
+   "end": 14.487,
+   "text": "and",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 14.587,
+   "end": 14.727,
+   "text": "i'm",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 14.808,
+   "end": 15.309,
+   "text": "sheila",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 15.409,
+   "end": 15.53,
+   "text": "in",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 15.61,
+   "end": 16.252,
+   "text": "texas",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 16.392,
+   "end": 16.914,
+   "text": "originally",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 16.954,
+   "end": 17.115,
+   "text": "from",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 17.175,
+   "end": 17.756,
+   "text": "chicago",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 17.777,
+   "end": 17.817,
+   "text": "oh",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 18.479,
+   "end": 18.619,
+   "text": "i'm",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 18.659,
+   "end": 18.92,
+   "text": "originally",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 19.081,
+   "end": 19.221,
+   "text": "from",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 19.241,
+   "end": 19.743,
+   "text": "chicago",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 19.803,
+   "end": 20.104,
+   "text": "also",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 20.144,
+   "end": 20.245,
+   "text": "i'm",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 20.285,
+   "end": 20.345,
+   "text": "in",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 20.385,
+   "end": 20.506,
+   "text": "new",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 20.526,
+   "end": 20.927,
+   "text": "jersey",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 20.968,
+   "end": 21.148,
+   "text": "now",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 21.208,
+   "end": 21.449,
+   "text": "though",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 21.911,
+   "end": 22.292,
+   "text": "well",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 22.393,
+   "end": 22.573,
+   "text": "there",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 22.634,
+   "end": 22.794,
+   "text": "isn't",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 22.814,
+   "end": 23.015,
+   "text": "that",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 23.055,
+   "end": 23.276,
+   "text": "much",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 23.396,
+   "end": 23.918,
+   "text": "difference",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 24.039,
+   "end": 24.119,
+   "text": "at",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 24.159,
+   "end": 24.34,
+   "text": "least",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 24.962,
+   "end": 25.062,
+   "text": "you",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 25.103,
+   "end": 25.223,
+   "text": "know",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 25.263,
+   "end": 25.384,
+   "text": "they",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 25.444,
+   "end": 25.584,
+   "text": "all",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 25.645,
+   "end": 25.926,
+   "text": "call",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 25.966,
+   "end": 26.146,
+   "text": "me",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 26.207,
+   "end": 26.267,
+   "text": "a",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 26.347,
+   "end": 26.789,
+   "text": "yankee",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 26.829,
+   "end": 27.09,
+   "text": "down",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.15,
+   "end": 27.331,
+   "text": "here",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.351,
+   "end": 27.391,
+   "text": "so",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.451,
+   "end": 27.531,
+   "text": "what",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.551,
+   "end": 27.632,
+   "text": "can",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.652,
+   "end": 27.692,
+   "text": "i",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 27.712,
+   "end": 27.893,
+   "text": "say",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 28.114,
+   "end": 28.274,
+   "text": "oh",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 28.495,
+   "end": 28.535,
+   "text": "i",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 28.575,
+   "end": 28.736,
+   "text": "don't",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 28.776,
+   "end": 28.937,
+   "text": "hear",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 28.977,
+   "end": 29.117,
+   "text": "that",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 29.177,
+   "end": 29.298,
+   "text": "new",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 29.318,
+   "end": 29.679,
+   "text": "jersey",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 29.719,
+   "end": 29.8,
+   "text": "now",
+   "speakers": [
+    "sprecher_0"
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "start": 6.721,
+   "end": 7.062,
+   "text": "hello",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 7.624,
+   "end": 8.186,
+   "text": "hello oh",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 8.567,
+   "end": 9.792,
+   "text": "hello i didn't know you were there",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 10.052,
+   "end": 10.574,
+   "text": "neither did",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 10.795,
+   "end": 10.895,
+   "text": "i",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 10.996,
+   "end": 14.487,
+   "text": "okay i thought you know i heard a beep this is diane in new jersey and",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 14.587,
+   "end": 14.727,
+   "text": "i'm",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 14.808,
+   "end": 17.817,
+   "text": "sheila in texas originally from chicago oh",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 18.479,
+   "end": 21.449,
+   "text": "i'm originally from chicago also i'm in new jersey now though",
+   "speakers": [
+    "sprecher_0"
+   ]
+  },
+  {
+   "start": 21.911,
+   "end": 27.893,
+   "text": "well there isn't that much difference at least you know they all call me a yankee down here so what can i say",
+   "speakers": [
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 28.114,
+   "end": 28.535,
+   "text": "oh i",
+   "speakers": [
+    "sprecher_0",
+    "sprecher_1"
+   ]
+  },
+  {
+   "start": 28.575,
+   "end": 29.8,
+   "text": "don't hear that new jersey now",
+   "speakers": [
+    "sprecher_0"
+   ]
+  }
+ ],
+ "summary": null,
+ "events": [],
+ "entities": []
+}

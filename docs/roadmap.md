@@ -114,6 +114,15 @@ Found on the way:
 - [x] The console script exited with code 1 on success, because `main` returned a list of result folders. `MAT` now returns a real exit code (1 if a file failed, 2 for config errors).
 - [x] Logs went to stdout and got mixed into command output. They go to stderr now, so `MAT config init > mat.toml` gives a clean file.
 
+Result format definition (other programs like Mosaicast, which is Java, need to read results without MAT):
+
+- [x] `packages/mat-format`: uv workspace package with the pydantic data model of format 2, the reader and the JSON schemas. Only needs pydantic, MAT's writer uses it, `MAT.reader` re-exports it.
+- [x] JSON schemas (draft 2020-12) generated from the models with `python -m mat_format.schema`. Tests fail when the committed schemas don't match the models and check writer output and the example results against them.
+- [x] `docs/result-format.md`: layout (folder or zip), versioning rules (readers ignore unknown fields, `format` only changes on breaking changes), every field, the convenience files, how to read it from other languages.
+- [x] Real example results (30 second podcast sample, smoke test EPUB) in `packages/mat-format/examples/`.
+- [x] Cleaned up the format before documenting it: speakers and time ranges are objects, `language` only once, `duration_after_vad` is `speech_duration`, `events` and `entities` have a defined shape, loudness of silence is `null` instead of `-Infinity`.
+- [ ] Decide the license of `mat-format`. It's GPL-3.0 like MAT for now. A more permissive license (MIT or Apache 2.0) would let projects with other licenses use the reader and the schemas without GPL obligations.
+
 ## Stage 5: benchmark suite
 
 We have no reference transcripts of our own episodes, so the suite uses public datasets for quality and our episodes for speed and for comparing backends with each other.
@@ -157,7 +166,7 @@ Transcript quality (seen on the first real German episode):
   - The summary is Markdown but gets saved as `summary.txt`
   - Decide what a good summary of an episode should contain (structure, length, topics, speakers, spoilers) and check results against a few episodes, together with the stage 5 benchmark
 - [ ] Speaker names from the transcript when there are no gold clips: send the first minutes and some lines per speaker to the LLM, get name guesses with the lines that support them
-- [ ] Optional speaker library: keep embeddings of named speakers and match them automatically in later episodes
+- [ ] Optional speaker library: keep embeddings of named speakers and match them automatically in later episodes. This gives stable speaker ids across episodes, which Mosaicast needs for per speaker stats. Add them as new fields on `Speaker` in `mat-format` (for example `name`, `library_id`), so the format version stays 2.
 - [ ] NER on transcripts with GLiNER2: entities with speaker and timestamp, summed up per episode
 - [ ] Audio events: AudioSet tagger (AST or BEATs) for music, laughter and applause, CLAP for custom labels like "jingle". Mark them in the transcript, optionally skip music before transcription and diarization.
 

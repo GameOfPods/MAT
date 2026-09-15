@@ -65,9 +65,9 @@ def main():
     folder = Writer().store(file=str(audio), output=str(out / "results"), pipeline_results=[result])
     zipped = shutil.make_archive(folder, "zip", folder)
     for path in (folder, zipped):
-        podcast = MATResult.read(path).podcast
-        assert podcast is not None and len(podcast.transcript) > 0, f"could not read back {path}"
-        assert podcast.models["transcriber"]["backend"] == "whisper", f"models missing in {path}"
+        read_back = MATResult.read(path)
+        assert read_back.podcast is not None and read_back.transcript(), f"could not read back {path}"
+        assert read_back.podcast.models["transcriber"].backend == "whisper", f"models missing in {path}"
     assert len(result.diarization_matched.speaker) >= 2, "expected at least two speakers in the sample"
     print("SMOKE PODCAST OK")
 

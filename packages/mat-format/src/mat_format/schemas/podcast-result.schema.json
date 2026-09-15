@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/podcast-result.schema.json",
+  "$comment": "MAT result format 2, describes podcast/result.json. Generated from mat_format/models.py, don't edit by hand.",
+  "$defs": {
+    "Event": {
+      "description": "A sound event like music or laughter. Not filled yet, planned for a later MAT version.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "title": "End",
+          "type": "number"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confidence between 0 and 1, if the model gives one.",
+          "title": "Score"
+        }
+      },
+      "required": [
+        "label",
+        "start",
+        "end"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "Media": {
+      "description": "Technical data of the audio file.",
+      "properties": {
+        "duration": {
+          "description": "Length in seconds.",
+          "title": "Duration",
+          "type": "number"
+        },
+        "speech_duration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Seconds of speech after voice activity detection.",
+          "title": "Speech Duration"
+        },
+        "sample_rate": {
+          "description": "Samples per second of the decoded audio.",
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "max_dbfs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Loudest sample in dBFS, null for silent audio.",
+          "title": "Max Dbfs"
+        },
+        "rms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Root mean square of the samples.",
+          "title": "Rms"
+        }
+      },
+      "required": [
+        "duration",
+        "speech_duration",
+        "sample_rate",
+        "max_dbfs",
+        "rms"
+      ],
+      "title": "Media",
+      "type": "object"
+    },
+    "ModelInfo": {
+      "additionalProperties": true,
+      "description": "Which backend and model produced a step, and the versions of the Python packages it used.",
+      "properties": {
+        "backend": {
+          "description": "MAT backend name, for example whisper or sortformer.",
+          "title": "Backend",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Model the backend used, if it has one.",
+          "title": "Model"
+        },
+        "packages": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Python package name to version.",
+          "title": "Packages",
+          "type": "object"
+        }
+      },
+      "required": [
+        "backend"
+      ],
+      "title": "ModelInfo",
+      "type": "object"
+    },
+    "Speaker": {
+      "description": "A speaker and when they talk.",
+      "properties": {
+        "id": {
+          "description": "Speaker label. The gold label name (for example alice) if the speaker was matched to a gold label clip, otherwise the diarizer label (for example sprecher_0). Only unique inside one result, not across episodes.",
+          "title": "Id",
+          "type": "string"
+        },
+        "segments": {
+          "description": "Time ranges this speaker talks, sorted by start.",
+          "items": {
+            "$ref": "#/$defs/TimeRange"
+          },
+          "title": "Segments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "segments"
+      ],
+      "title": "Speaker",
+      "type": "object"
+    },
+    "TimeRange": {
+      "description": "Seconds from the start of the audio file.",
+      "properties": {
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "title": "End",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeRange",
+      "type": "object"
+    },
+    "TranscriptEntity": {
+      "description": "A named entity found in the transcript. Not filled yet, planned for a later MAT version.",
+      "properties": {
+        "label": {
+          "description": "Entity type, for example PERSON.",
+          "title": "Label",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds from the start of the audio file.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds from the start of the audio file.",
+          "title": "End"
+        },
+        "speakers": {
+          "description": "Speaker ids that said it.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Speakers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "text"
+      ],
+      "title": "TranscriptEntity",
+      "type": "object"
+    },
+    "Word": {
+      "description": "A word or, in segments, several words of the same speakers merged into one line.",
+      "properties": {
+        "start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Seconds from the start of the audio file, null if unknown.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Seconds from the start of the audio file, null if unknown.",
+          "title": "End"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "speakers": {
+          "description": "Speaker ids talking during this word. Empty if nobody matched, more than one if speakers overlap.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Speakers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "text",
+        "speakers"
+      ],
+      "title": "Word",
+      "type": "object"
+    }
+  },
+  "description": "Content of podcast/result.json.",
+  "properties": {
+    "schema": {
+      "const": "mat.podcast",
+      "default": "mat.podcast",
+      "title": "Schema",
+      "type": "string"
+    },
+    "format": {
+      "const": 2,
+      "default": 2,
+      "description": "Result format version.",
+      "title": "Format",
+      "type": "integer"
+    },
+    "models": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelInfo"
+      },
+      "description": "Step name (transcriber, diarizer, identifier, summarizer) to the backend that ran it. Steps that were skipped are missing.",
+      "title": "Models",
+      "type": "object"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Detected language as ISO 639-1 code, for example de.",
+      "title": "Language"
+    },
+    "media": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Media"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "speakers": {
+      "description": "Speakers after matching them to gold label clips. This is the list to use.",
+      "items": {
+        "$ref": "#/$defs/Speaker"
+      },
+      "title": "Speakers",
+      "type": "array"
+    },
+    "diarization": {
+      "description": "Speakers as the diarizer found them, before matching.",
+      "items": {
+        "$ref": "#/$defs/Speaker"
+      },
+      "title": "Diarization",
+      "type": "array"
+    },
+    "words": {
+      "description": "Every transcribed word, in order.",
+      "items": {
+        "$ref": "#/$defs/Word"
+      },
+      "title": "Words",
+      "type": "array"
+    },
+    "segments": {
+      "description": "Consecutive words with the same speakers merged into lines.",
+      "items": {
+        "$ref": "#/$defs/Word"
+      },
+      "title": "Segments",
+      "type": "array"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Summary as Markdown, null if the summary was skipped or failed.",
+      "title": "Summary"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/Event"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/TranscriptEntity"
+      },
+      "title": "Entities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "models",
+    "language",
+    "media",
+    "speakers",
+    "diarization",
+    "words",
+    "segments",
+    "summary",
+    "events",
+    "entities"
+  ],
+  "title": "PodcastResult",
+  "type": "object"
+}

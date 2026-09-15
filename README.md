@@ -183,31 +183,23 @@ results/
         └── diarization.rttm
 ```
 
-`meta.json` has the result format (`2`), the MAT version, the input file with its SHA-1 and the pipelines that ran. An EPUB gets a `book/` folder with a `result.json` instead.
+`meta.json` has the result format (`2`), the MAT version, the input file with its SHA-1 and the pipelines that ran. An EPUB gets a `book/` folder with a `result.json` instead. `result.json` holds all data: the models and package versions that were used, media info, speakers with their time ranges, every word, the merged lines and the summary. The other files are convenience copies.
 
-`podcast/result.json` has:
-
-- `models`: backend, model and package versions of every step that ran
-- `media` and `language`
-- `speakers`: time ranges per speaker after matching to gold labels, `diarization`: what the diarizer found
-- `words`: every word with start, end and speakers, `segments`: the words merged into lines
-- `summary`
-- `events` and `entities`, still empty, planned for later
-
-`book/result.json` has `models`, `title`, `language` and the chapters with their paragraphs and sentences. Every sentence has its lemma counts and entities.
-
-Results from MAT 0.2 and older use a different layout and can't be read anymore.
+The format is described in [docs/result-format.md](docs/result-format.md), with JSON schemas for other languages and example results in `packages/mat-format/`. Results from MAT 0.2.0 and older use a different layout and can't be read anymore.
 
 ## Reading results in Python
 
+The reader is a separate small package, `mat-format` in `packages/mat-format`. It only needs pydantic, so other projects can read results without installing MAT and its ML libraries.
+
 ```python
-from MAT import MATResult
+from mat_format import MATResult
 
 result = MATResult.read("results/episode_2026-09-14_20-15-02.zip")  # folder or zip
 
 if result.podcast:
-    print(result.podcast.speaker_names)
-    print(result.podcast.transcript)
+    for speaker in result.podcast.speakers:
+        print(speaker.id, sum(s.end - s.start for s in speaker.segments), "seconds")
+    print(result.transcript())
     print(result.podcast.summary)
 
 if result.book:
@@ -215,7 +207,9 @@ if result.book:
         print(chapter.heading, len(chapter.sentences))
 ```
 
-Importing `MAT` loads torch, so this takes a few seconds.
+Inside MAT the same classes are available as `from MAT import MATResult`.
+
+If you change the data model in `packages/mat-format/src/mat_format/models.py`, regenerate the schemas with `uv run python -m mat_format.schema` and update `docs/result-format.md`. Adding a field is fine within a format version, renaming, removing or changing a field needs a new one.
 
 ## Development
 

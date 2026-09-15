@@ -1,0 +1,24 @@
+[project]
+name = "mat-format"
+# the major version follows the result format version
+version = "2.0.0"
+description = "Data model, JSON schemas and reader for MAT (Media Analytics Toolset) results"
+readme = "README.md"
+license = "GPL-3.0"
+authors = [
+    { name="RedRem", email="alex@gameofpods.de"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2",
+]
+
+[project.urls]
+Homepage = "https://github.com/GameOfPods/MAT"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mat_format"]
