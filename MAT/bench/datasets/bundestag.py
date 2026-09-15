@@ -30,8 +30,9 @@ URL = "https://opendata.iisys.de/opendata/Datasets/Bundestag/asr_bundestag_{subs
 class BundestagOptions(DatasetOptions):
     subset: Literal["clean", "dirty"] = Field("clean", description="clean or dirty.")
     split: str = Field("test", description="Folder with the lists in the archive: test, train_dev or train_nodev.")
-    limit: Optional[int] = Field(200, ge=1, description="Number of snippets. They're sorted by session and time, so "
-                                                        "snippets of one speech end up next to each other.")
+    limit: Optional[int] = Field(200, ge=-1, description="Number of snippets, 0 or -1 uses all of them. They're sorted "
+                                                         "by session and time, so snippets of one speech end up next "
+                                                         "to each other.")
     pack_minutes: float = Field(10, gt=0, description="Snippets are joined into files of up to this many minutes.")
 
 
@@ -88,7 +89,7 @@ class Bundestag(Dataset):
         texts = parse_kaldi(text_file.read_text(encoding="utf-8"))
         scp = parse_kaldi(scp_file.read_text(encoding="utf-8")) if scp_file.is_file() else {}
         clips = []
-        for utterance in sorted(texts, key=utterance_key)[:self.options.limit]:
+        for utterance in sorted(texts, key=utterance_key)[:self.limit]:
             name = wav_name(utterance, scp.get(utterance))
             if folder is not None and (folder / "wavs" / name).is_file():
                 audio = folder / "wavs" / name
@@ -98,8 +99,9 @@ class Bundestag(Dataset):
                     self._extract(f"{prefix}/wavs/{name}", audio)
             clips.append(Clip(id=utterance, audio=audio, text=texts[utterance]))
         packed = pack(clips, self.cache / "packed", f"{subset}-{split}", self.options.pack_minutes * 60)
-        for index, (audio, turns) in enumerate(packed, start=1):
-            yield Item(dataset=self.name, id=f"{subset}-{split}-{index:02d}", audio=audio, language="de",
+        for audio, turns in packed:
+            # the file name has a key of the picked snippets, so another limit doesn't reuse old results
+            yield Item(dataset=self.name, id=audio.stem, audio=audio, language="de",
                        turns=turns, has_words=True, has_speakers=False)
 
     def _folder(self) -> Optional[Path]:

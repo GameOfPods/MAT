@@ -16,7 +16,6 @@ result) plus `bench.json` (time, step times, GPU memory, error). Runs that finis
 aborted benchmark continues where it stopped. Metrics are always computed from the stored results.
 """
 import importlib.util
-import itertools
 import json
 import logging
 import os
@@ -164,12 +163,14 @@ def system_config(system: SystemSettings, base_dir: Path) -> Config:
 
 
 def prepare(datasets: Sequence[Dataset], limit: Optional[int] = None) -> List[Tuple[Dataset, List[Item]]]:
-    """Items of every dataset, downloading what's missing."""
+    """Items of every dataset, downloading what's missing. A limit replaces the limits of the bench file (samples per
+    dataset, per language where there are several), 0 or -1 uses everything, None keeps the bench file's limits."""
     prepared = []
     for dataset in datasets:
-        _LOGGER.info(f"Preparing dataset {dataset.name} ({dataset.type})")
-        items = dataset.items()
-        prepared.append((dataset, list(itertools.islice(items, limit) if limit else items)))
+        dataset.limit_override = limit
+        _LOGGER.info(f"Preparing dataset {dataset.name} ({dataset.type}), "
+                     f"{'all samples' if dataset.limit is None else f'limit {dataset.limit}'}")
+        prepared.append((dataset, list(dataset.items())))
     return prepared
 
 

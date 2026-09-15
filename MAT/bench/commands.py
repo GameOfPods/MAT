@@ -36,7 +36,10 @@ def add_bench_parser(commands) -> None:
                                 help="Where results, results.csv and report.md go")
         parser.add_argument("--dataset", action="append", default=[], metavar="NAME",
                             help="Only this dataset, can be given more than once")
-        parser.add_argument("--limit", type=int, metavar="N", help="Only the first N files of every dataset")
+        parser.add_argument("--limit", type=int, metavar="N",
+                            help="Samples per dataset (sentences, files, meetings or snippets, per language for "
+                                 "FLEURS), replaces the limits of the bench file. 0 or -1 uses everything. "
+                                 "Default: the limits of the bench file")
         parser.add_argument("--cache", metavar="FOLDER",
                             help="Dataset cache, overrides the bench file and $MAT_BENCH_CACHE")
         parser.add_argument("--verbose", action="store_true", help="Debug logging")
@@ -90,6 +93,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
     from MAT.bench.runner import BenchFile, collect_rows, prepare, run_benchmark
 
+    if args.limit is not None and args.limit < -1:
+        raise ConfigError("--limit has to be a positive number, or 0 or -1 for everything")
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     bench = BenchFile.load(args.config, cache=os.path.abspath(args.cache) if args.cache else None)

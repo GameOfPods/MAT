@@ -46,6 +46,19 @@ def test_bench_file_defaults(tmp_path):
         bench.pick(systems=["x"])
 
 
+def test_limits(tmp_path):
+    datasets = [{"type": "fleurs"}, {"type": "voxconverse", "limit": 2}, {"type": "ami", "limit": 0},
+                {"type": "bundestag", "limit": -1}, {"type": "reference", "path": "x"}]
+    fleurs, vox, ami, bundestag, own = BenchFile.from_dict({"dataset": datasets}, base_dir=tmp_path).datasets
+    assert [d.limit for d in (fleurs, vox, ami, bundestag, own)] == [100, 2, None, None, None]
+    for override, expected in ((3, 3), (0, None), (-1, None)):
+        for dataset in (fleurs, vox, ami, bundestag, own):
+            dataset.limit_override = override
+            assert dataset.limit == expected
+    with pytest.raises(ConfigError, match="limit"):
+        BenchFile.from_dict({"dataset": [{"type": "fleurs", "limit": -2}]}, base_dir=tmp_path)
+
+
 def test_collar_defaults_and_overrides(tmp_path):
     datasets = [{"type": "fleurs"}, {"type": "reference", "path": "x"},
                 {"type": "reference", "name": "strict", "path": "x", "collar": 0}]

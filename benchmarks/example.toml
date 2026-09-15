@@ -20,6 +20,8 @@ set = ["whisper.model=large-v3-turbo"]
 name = "large-v3"
 set = ["whisper.model=large-v3"]
 
+# `limit` counts samples: sentences per language (fleurs), files (voxconverse), meetings (ami), snippets (bundestag).
+# 0 or -1 uses everything. `MAT bench run --limit N` replaces all of them, `--limit 1` for a quick try.
 [[dataset]]
 type = "fleurs"
 languages = ["de", "en"]
