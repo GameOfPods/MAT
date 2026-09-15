@@ -11,7 +11,7 @@
 import logging
 import os.path
 from collections import defaultdict
-from typing import Dict, Optional, Sequence, Tuple, List
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 from pydantic import Field
@@ -33,6 +33,31 @@ class SortformerOptions(Options):
                                                            "once. Longer audio is cut at a quiet spot and the "
                                                            "speakers are linked between pieces. Lower it if the GPU "
                                                            "runs out of memory.")
+    link_threshold: float = Field(0.3, description="Minimum similarity of the pyannote speaker embeddings for a "
+                                                   "speaker of one audio piece to be linked to a speaker of an "
+                                                   "earlier piece. Below it the speaker counts as new.")
+
+
+# Similarity function for linking: gold speaker -> their audio from earlier pieces, audios of the new piece ->
+# (gold speaker names, similarity matrix with one row per audio and one column per gold speaker)
+Similarity = Callable[[Dict[str, List[Any]], List[Any]], Tuple[List[str], Any]]
+
+
+def link_speakers(similarity, local: Sequence[str], known: Sequence[str],
+                  threshold: float) -> Dict[str, Optional[str]]:
+    """Maps the speakers of a new piece to known speakers, one to one with the highest total similarity. Pairs at or
+    below the threshold stay unmatched (None)."""
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+
+    mapping: Dict[str, Optional[str]] = {speaker: None for speaker in local}
+    matrix = np.nan_to_num(np.asarray(similarity, dtype=float), nan=-1.0)
+    if not local or not known or matrix.size == 0:
+        return mapping
+    for row, column in zip(*linear_sum_assignment(matrix, maximize=True)):
+        if matrix[row, column] > threshold:
+            mapping[local[row]] = known[column]
+    return mapping
 
 
 @register("diarizer", "sortformer", description="NVIDIA NeMo Sortformer, up to 4 speakers per audio piece")
@@ -95,40 +120,52 @@ class DiarizerNEMO(DiarizationTool):
         combinations = [self.combine(segments=segments, mono_file=mono_file) for segments, mono_file in
                         zip(clean_segments, mono_files)]
 
-        speaker_id_template = "sprecher_{id}"
-        ret_global_id = [0]
+        def similarity(gold: Dict[str, List[AudioSegment]], audios: List[AudioSegment]):
+            from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Identifier
 
-        def get_next_speaker_id() -> str:
-            _r = speaker_id_template.format(id=ret_global_id[0])
-            ret_global_id[0] += 1
-            return _r
+            joined = {name: sum(parts[1:], parts[0]) for name, parts in gold.items()}
+            return Identifier.similarities(model="pyannote/embedding", device=device,
+                                           gold={name: (a, a.frame_rate) for name, a in joined.items()},
+                                           audios=[(a, a.frame_rate) for a in audios])
 
-        for i in range(len(combinations)):
-            combination = [(k, v) for k, v in combinations[i].items()]
-            clean_segment = clean_segments[i]
-            if i == 0:
-                identification = [None] * len(combination)
-            else:
-                gold = defaultdict(lambda: AudioSegment.empty())
-                for j in range(max(0, i - 5), i):
-                    for k, v in combinations[j].items():
-                        gold[k] += v
-                from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Identifier
-                identification = Identifier().identify(
-                    model="pyannote/embedding",
-                    gold={k: (v, v.frame_rate) for k, v in gold.items()},
-                    audios=[(x, x.frame_rate) for _, x in combination],
-                    device=device,
-                )
-            combinations[i] = {}
-            clean_segments[i] = {}
-            for new_speaker, (old_speaker, audio) in zip(identification, combination):
-                if new_speaker is None:
-                    new_speaker = get_next_speaker_id()
-                combinations[i][new_speaker] = audio
-                clean_segments[i][new_speaker] = clean_segment[old_speaker]
+        linked = self._link_pieces(clean_segments, combinations, similarity, threshold=options.link_threshold)
+        return self._merge_windows(windows, linked)
 
-        return self._merge_windows(windows, clean_segments)
+    @classmethod
+    def _link_pieces(cls, segments_per_piece: Sequence[Dict[str, List[Tuple[float, float]]]],
+                     audio_per_piece: Sequence[Dict[str, Any]], similarity: Similarity, threshold: float,
+                     history: int = 5) -> List[Dict[str, List[Tuple[float, float]]]]:
+        """Gives the local speakers of every piece global names. Speakers of later pieces are compared with the audio
+        of the speakers in up to `history` earlier pieces and linked one to one, so two local speakers never end up
+        under the same name and no segments get lost. Unmatched speakers get a new name."""
+        linked_segments: List[Dict[str, List[Tuple[float, float]]]] = []
+        linked_audio: List[Dict[str, List[Any]]] = []
+        next_id = 0
+        for index, (segments, audios) in enumerate(zip(segments_per_piece, audio_per_piece)):
+            local = list(segments)
+            mapping: Dict[str, Optional[str]] = {speaker: None for speaker in local}
+            gold: Dict[str, List[Any]] = defaultdict(list)
+            for previous in linked_audio[max(0, index - history):index]:
+                for name, parts in previous.items():
+                    gold[name].extend(parts)
+            if local and gold:
+                known, matrix = similarity(dict(gold), [audios[speaker] for speaker in local])
+                mapping = link_speakers(matrix, local, known, threshold)
+                cls._LOGGER.info(f"Linking audio piece {index + 1}: " + ", ".join(
+                    f"{speaker} -> {mapping[speaker] or 'new'}" for speaker in local))
+            piece_segments: Dict[str, List[Tuple[float, float]]] = {}
+            piece_audio: Dict[str, List[Any]] = {}
+            for speaker in local:
+                name = mapping[speaker]
+                if name is None:
+                    name = f"sprecher_{next_id}"
+                    next_id += 1
+                piece_segments.setdefault(name, []).extend(segments[speaker])
+                if speaker in audios:
+                    piece_audio.setdefault(name, []).append(audios[speaker])
+            linked_segments.append(piece_segments)
+            linked_audio.append(piece_audio)
+        return linked_segments
 
     @staticmethod
     def _merge_windows(windows: Sequence[Window],

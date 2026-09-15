@@ -77,6 +77,25 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
             similarity_threshold: float = 0.3, device: str = "cpu",
             use_hf_token: Any = True,
     ) -> List[Optional[str]]:
+        """Best gold speaker for every audio, None if no similarity is above the threshold. Several audios can get
+        the same speaker."""
+        names, matrix = SpeakerIdetificationPyannote.similarities(model=model, gold=gold, audios=audios, device=device,
+                                                                  use_hf_token=use_hf_token)
+        result = []
+        for row in matrix:
+            best = int(np.argmax(row)) if names else None
+            result.append(names[best] if best is not None and row[best] > similarity_threshold else None)
+        return result
+
+    @staticmethod
+    def similarities(
+            model: str,
+            gold: Dict[str, Tuple[Union[Tensor, np.ndarray, pydub.AudioSegment], int]],
+            audios: List[Tuple[Union[Tensor, np.ndarray, pydub.AudioSegment], int]],
+            device: str = "cpu", use_hf_token: Any = True,
+    ) -> Tuple[List[str], np.ndarray]:
+        """Gold speaker names and the cosine similarity of every audio (rows) to every gold speaker (columns). 0 where
+        no embedding could be made."""
         from pyannote.audio import Model, Inference
         from scipy.spatial.distance import cosine
         import torchaudio.transforms
@@ -111,30 +130,18 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                             return None
                 return embedding
 
-        gold_embeddings = {}
-
-        for k, (wave_form, sample_rate) in gold.items():
-            gold_embeddings[k] = _get_embedding(wave=wave_form, sample=sample_rate)
-
-        ret = []
-        for wave_form, sample_rate in audios:
+        names = list(gold)
+        gold_embeddings = [_get_embedding(wave=gold[name][0], sample=gold[name][1]) for name in names]
+        matrix = np.zeros((len(audios), len(names)))
+        for row, (wave_form, sample_rate) in enumerate(audios):
             test_embedding = _get_embedding(wave=wave_form, sample=sample_rate)
-            similarity_scores = []
-            for k, gold_embedding in gold_embeddings.items():
-                if test_embedding is None or gold_embedding is None:
-                    similarity_scores.append((k, 0))
-                else:
-                    similarity = 1 - cosine(test_embedding, gold_embedding)
-                    similarity_scores.append((k, similarity))
-            similarity_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
-            if similarity_scores[0][1] > similarity_threshold:
-                ret.append(similarity_scores[0][0])
-            else:
-                ret.append(None)
+            for column, gold_embedding in enumerate(gold_embeddings):
+                if test_embedding is not None and gold_embedding is not None:
+                    matrix[row, column] = 1 - cosine(test_embedding, gold_embedding)
 
         from MAT.utils.device import free_gpu_memory
         del classifier
         del pyannote_model
         free_gpu_memory()
 
-        return ret
+        return names, matrix
