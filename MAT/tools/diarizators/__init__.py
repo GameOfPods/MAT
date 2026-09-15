@@ -77,6 +77,7 @@ class DiarizationTool(Tool[DiarizerInput, DiarizationResult], ABC):
 from MAT.registry import load_optional
 
 load_optional("MAT.tools.diarizators.nemo", slot="diarizer", name="sortformer", extra="sortformer")
+load_optional("MAT.tools.diarizators.nemo", slot="diarizer", name="sortformer-streaming", extra="sortformer")
 load_optional("MAT.tools.diarizators.pyannote", slot="diarizer", name="pyannote-diarization", extra="pyannote")
 
 __all__ = ["DiarizationResult", "DiarizerInput", "DiarizationTool"]

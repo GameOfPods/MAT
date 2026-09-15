@@ -5,6 +5,7 @@ Uses the 30 second two speaker sample that ships with pyannote.audio unless you 
 The summary step is skipped unless you pass --summary (needs OPENAI_API_KEY or OPENAI_API_BASE).
 
     uv run python scripts/smoke_podcast.py --device cuda
+    uv run python scripts/smoke_podcast.py --device cuda --transcriber parakeet --diarizer pyannote-diarization
 """
 import argparse
 import shutil
@@ -18,6 +19,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--audio", type=Path, default=None, help="Audio file, default: pyannote sample.wav")
     parser.add_argument("--device", default=None, help="cpu or cuda, default: cuda if available")
+    parser.add_argument("--transcriber", default="whisper", help="Transcriber backend, default: %(default)s")
+    parser.add_argument("--diarizer", default="sortformer", help="Diarizer backend, default: %(default)s")
     parser.add_argument("--whisper-model", default=None, help="Override the whisper model")
     parser.add_argument("--summary", action="store_true", help="Run the real LLM summary instead of a fake one")
     parser.add_argument("--out", type=Path, default=None, help="Output folder, default: a temp folder")
@@ -40,8 +43,10 @@ def main():
     assert PodcastPipeline in Pipeline.get_pipelines(f=str(audio)), "PodcastPipeline did not accept the audio file"
 
     values = {
-        "podcast": {"summarizer": "llm" if args.summary else "none"},
-        "whisper": {"device": device}, "sortformer": {"device": device}, "pyannote": {"device": device},
+        "podcast": {"summarizer": "llm" if args.summary else "none", "transcriber": args.transcriber,
+                    "diarizer": args.diarizer},
+        "whisper": {"device": device}, "parakeet": {"device": device}, "sortformer": {"device": device},
+        "pyannote-diarization": {"device": device}, "pyannote": {"device": device},
     }
     if args.whisper_model:
         values["whisper"]["model"] = args.whisper_model
@@ -67,7 +72,8 @@ def main():
     for path in (folder, zipped):
         read_back = MATResult.read(path)
         assert read_back.podcast is not None and read_back.transcript(), f"could not read back {path}"
-        assert read_back.podcast.models["transcriber"].backend == "whisper", f"models missing in {path}"
+        assert read_back.podcast.models["transcriber"].backend == args.transcriber, f"models missing in {path}"
+        assert read_back.podcast.models["diarizer"].backend == args.diarizer, f"models missing in {path}"
     assert len(result.diarization_matched.speaker) >= 2, "expected at least two speakers in the sample"
     print("SMOKE PODCAST OK")
 

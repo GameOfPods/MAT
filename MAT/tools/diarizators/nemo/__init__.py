@@ -104,6 +104,7 @@ class DiarizerNEMO(DiarizationTool):
             retries=5,
         )
         diar_model.eval()
+        self._configure_model(diar_model, options)
 
         predicted_segments, predicted_probs = diar_model.diarize(
             audio=mono_files, batch_size=1, include_tensor_outputs=True
@@ -192,3 +193,30 @@ class DiarizerNEMO(DiarizationTool):
             for f, t in times:
                 combined[speaker] += orig[f * 1000:t * 1000]
         return combined
+
+    def _configure_model(self, model, options: SortformerOptions) -> None:
+        """Called after loading the model, subclasses change model settings here."""
+
+
+class StreamingSortformerOptions(SortformerOptions):
+    model: str = Field("nvidia/diar_streaming_sortformer_4spk-v2.1", description="NeMo streaming Sortformer model.")
+    segment_length: int = Field(4 * 3600, ge=30, description="Longest piece of audio in seconds. The streaming model "
+                                                             "keeps a speaker cache and handles hours of audio in one "
+                                                             "piece, so only very long files get cut and linked.")
+    chunk_len: int = Field(340, ge=1, description="Frames (80 ms each) processed at once. 340 with the other "
+                                                  "defaults is NVIDIA's high latency setting.")
+    chunk_right_context: int = Field(40, ge=0, description="Frames after each chunk the model looks ahead.")
+    fifo_len: int = Field(40, ge=0, description="Recent frames kept in the FIFO queue.")
+    spkcache_update_period: int = Field(300, ge=1, description="Frames between updates of the speaker cache.")
+    spkcache_len: int = Field(188, ge=1, description="Frames in the speaker cache.")
+
+
+@register("diarizer", "sortformer-streaming",
+          description="NVIDIA streaming Sortformer v2.1, up to 4 speakers, long audio in one piece")
+class DiarizerStreamingSortformer(DiarizerNEMO):
+    Options = StreamingSortformerOptions
+
+    def _configure_model(self, model, options: StreamingSortformerOptions) -> None:
+        modules = model.sortformer_modules
+        for name in ("chunk_len", "chunk_right_context", "fifo_len", "spkcache_update_period", "spkcache_len"):
+            setattr(modules, name, getattr(options, name))
