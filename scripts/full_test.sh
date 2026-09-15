@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Full test of a MAT checkout: install, unit tests, schema check, both smoke scripts and one complete run on a real
-# audio file, which gets read back and validated against the result schemas. Works with a CUDA GPU and on CPU only
-# machines (on CPU the complete run takes a long time for long audio).
+# Full test of a MAT checkout: install, unit tests, schema check, both smoke scripts, a tiny `MAT bench` run on the
+# smoke result and one complete run on a real audio file, which gets read back and validated against the result
+# schemas. Works with a CUDA GPU and on CPU only machines (on CPU the complete run takes a long time for long audio).
 #
 #   bash scripts/full_test.sh 2>&1 | tee full_test.log
 #
@@ -216,6 +216,26 @@ run "smoke podcast" smoke_podcast uv run --no-sync python scripts/smoke_podcast.
 
 run "smoke book" smoke_book uv run --no-sync python scripts/smoke_book.py --out "$OUT/smoke_book" \
   && grep -E "^took" "$LOGS/smoke_book.log" | detail
+
+# The smoke result as its own reference: MAT bench runs the same system again, so WER should be about 0 and DER a
+# few percent (reference lines only cover the words, the diarizer also marks the pauses around them)
+BENCH=$OUT/bench
+SMOKE_RESULT=$(find "$OUT/smoke_podcast/results" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)
+mkdir -p "$BENCH"
+cat > "$BENCH/bench.toml" <<'TOML'
+[bench]
+cache = "cache"
+
+[[dataset]]
+type = "reference"
+name = "smoke"
+path = "reference"
+TOML
+run "bench reference" bench_reference uv run --no-sync MAT bench reference "${SMOKE_RESULT:-missing}" \
+  -o "$BENCH/reference/sample"
+run "bench run" bench uv run --no-sync MAT bench run -c "$BENCH/bench.toml" -o "$BENCH/results" \
+  && awk '/^## smoke/ {found = 1; next} found && /^\|/ {print} found && /^## / {exit}' "$BENCH/results/report.md" \
+  | detail
 
 if [ -n "$MAT_TEST_AUDIO" ]; then
   # -i takes glob patterns, so [ ] * ? in the file name get escaped

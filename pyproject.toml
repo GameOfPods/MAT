@@ -71,7 +71,9 @@ llm = [
 spacy = ["spacy", "spacy-download", "spacy-transformers", "pip"]
 # 2.0 moved torch/transformers/peft into the "local" extra
 gliner = ["gliner", "gliner2[local]>=2"]
-all = ["mat[whisper,sortformer,pyannote,llm,spacy,gliner]"]
+# `MAT bench`: WER with jiwer, DER with pyannote.metrics. Not a backend, but `all` includes it
+bench = ["jiwer>=4", "pyannote-metrics>=4"]
+all = ["mat[whisper,sortformer,pyannote,llm,spacy,gliner,bench]"]
 
 [dependency-groups]
 dev = [

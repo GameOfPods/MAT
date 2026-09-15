@@ -258,3 +258,5 @@ fabric.properties
 **/.MAT.*
 
 .idea/
+# MAT bench output, has transcripts of everything that ran
+bench-results/

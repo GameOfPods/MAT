@@ -1,0 +1,49 @@
+# Example bench file:
+#   MAT bench run -c benchmarks/example.toml -o bench-results
+# docs/benchmarks.md explains everything. Relative paths are relative to this file.
+
+[bench]
+# Where datasets get downloaded. Default: $MAT_BENCH_CACHE or ~/.cache/mat/bench
+# cache = "/mnt/nas/mat-datasets"
+# Seconds around reference speaker changes that DER doesn't count. Default: 0.25 for own references (their line
+# times only cover the words), 0 for the public datasets. A [[dataset]] can also set its own collar.
+# collar = 0.25
+
+# Every system runs on every dataset. `set` takes the same values as `MAT run --set`, `config` a MAT config file.
+# Summaries never run in a benchmark and the identifier is off unless a system sets podcast.identifier.
+# Without any [[system]] one system called "default" with MAT's defaults runs.
+[[system]]
+name = "turbo"
+set = ["whisper.model=large-v3-turbo"]
+
+[[system]]
+name = "large-v3"
+set = ["whisper.model=large-v3"]
+
+[[dataset]]
+type = "fleurs"
+languages = ["de", "en"]
+limit = 100
+
+[[dataset]]
+type = "voxconverse"
+limit = 5
+
+[[dataset]]
+type = "ami"
+limit = 2
+
+[[dataset]]
+type = "bundestag"
+limit = 200
+
+# Your own corrected transcripts, see docs/benchmarks.md
+# [[dataset]]
+# type = "reference"
+# path = "/path/to/references"
+
+# Episodes without references: speed, memory, speaker count and agreement between the systems
+# [[dataset]]
+# type = "audio"
+# files = ["/path/to/episodes/*.mp3"]
+# limit = 3

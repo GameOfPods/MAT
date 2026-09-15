@@ -57,6 +57,8 @@ class Pipeline(Configurable, ABC):
     def __init__(self):
         # slot -> Tool.describe() of the backends that ran, ends up in the result
         self.models: Dict[str, Dict[str, Any]] = {}
+        # step name -> seconds it took in the last process() call, `MAT bench` reports them
+        self.step_seconds: Dict[str, float] = {}
 
     @classmethod
     def name(cls) -> str:
@@ -113,6 +115,7 @@ class Pipeline(Configurable, ABC):
 
     def process(self, file: str, config: Config) -> PipelineResult:
         self.models = {}
+        self.step_seconds = {}
         step_results: Dict[str, PipelineStepResult] = {}
         self.__class__._LOGGER.info(f"Running pipeline {self.section} on {file}")
         all_steps = list(self._get_steps())
@@ -121,6 +124,7 @@ class Pipeline(Configurable, ABC):
             res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
             step_results[res.name] = res
             t2 = perf_counter_ns() / 1e+6
+            self.step_seconds[res.name] = (t2 - t1) / 1000
             self.__class__._LOGGER.info(f"Step {i + 1}/{len(all_steps)} done: {res.name} in "
                                         f"{f'{t2 - t1:.3f}ms' if t2 - t1 < 1000 else str(timedelta(milliseconds=int(t2 - t1)))}")
         return self._finalize_result(step_results=step_results)

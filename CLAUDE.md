@@ -58,6 +58,10 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
   After changing `mat_format/models.py`: run `.venv/bin/python -m mat_format.schema`, update the spec, and remember
   that renaming/removing/retyping a field needs a new format version (adding fields doesn't). Other programs
   (Mosaicast, Java) read results through the schemas, so don't break the format casually.
+- Benchmarks: `MAT/bench` (`MAT bench`, docs in `docs/benchmarks.md`). Dataset types subclass
+  `MAT/bench/datasets/base.py:Dataset` and get `@register`, they download into the cache or read an existing copy
+  (`path`). Summaries never run in benchmarks. Unit tests use fake `process` functions and tiny generated files, no
+  models or downloads. Results of the user's own episodes stay local, never commit them.
 - Helpers for backends: `MAT/utils/device.py` (`resolve_device`, `ct2_compute_type`, `torch_dtype`, `free_gpu_memory`),
   `MAT/utils/audio.py` (`plan_windows` cuts long audio at quiet spots, `Window.owns` decides who keeps results in overlaps).
 

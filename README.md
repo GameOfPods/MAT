@@ -233,6 +233,17 @@ The podcast script skips the summary unless you pass `--summary`. The first run 
 bash scripts/full_test.sh 2>&1 | tee full_test.log
 ```
 
+### Benchmarks
+
+`MAT bench` runs podcast systems (backends and their settings) on datasets and compares speed, GPU memory, WER, cpWER and DER. It downloads FLEURS, VoxConverse, AMI and ASR Bundestag into a cache folder, and it can use your own corrected transcripts as references. Summaries never run in a benchmark.
+
+```bash
+uv run MAT bench datasets
+uv run MAT bench run -c benchmarks/example.toml -o bench-results --limit 1
+```
+
+See [docs/benchmarks.md](docs/benchmarks.md) for the bench file, the datasets and how to make a reference from one of your episodes.
+
 GitHub Actions run on every pull request and push to `master` (`.github/workflows/ci.yml`):
 
 - **Tests (all backends, CPU)**: unit tests of MAT and mat-format, schema check, a quick check of the command line

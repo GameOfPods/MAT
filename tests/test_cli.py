@@ -15,6 +15,23 @@ def test_run_help_stays_short(capsys):
     assert len(out.splitlines()) < 80
 
 
+def test_bench_help_and_datasets(capsys):
+    with pytest.raises(SystemExit):
+        main(["bench", "run", "-h"])
+    out = capsys.readouterr().out
+    assert "--rerun" in out and "--cache" in out
+    assert main(["bench", "datasets"]) == 0
+    out = capsys.readouterr().out
+    for name in ("reference", "audio", "fleurs", "voxconverse", "ami", "bundestag"):
+        assert f"{name}: " in out
+    assert "pack-minutes" in out
+
+
+def test_bench_errors_exit_with_2(tmp_path, capsys):
+    assert main(["bench", "download", "-c", str(tmp_path / "missing.toml")]) == 2
+    assert "doesn't exist" in capsys.readouterr().err
+
+
 def test_backends_list(capsys):
     assert main(["backends"]) == 0
     out = capsys.readouterr().out
