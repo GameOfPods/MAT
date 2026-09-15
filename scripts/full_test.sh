@@ -16,11 +16,13 @@
 #   OPENAI_API_BASE     OpenAI compatible endpoint, empty uses the OpenAI API
 #   MAT_TEST_LLM_MODEL  model for the summary, empty uses MAT's default
 #
+# The settings of a run (without tokens) end up in $MAT_TEST_OUT/full_test.env, `source` it to skip the questions.
 # Output of the tools goes to log files in $MAT_TEST_OUT/logs, the console only shows the steps and their results.
 # Tokens are never printed or written to a file.
 
 set -uo pipefail
-cd "$(dirname "$0")/.." || exit 2
+START_DIR=$PWD
+REPO=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 
 die() {
   echo "full_test: $*" >&2
@@ -32,13 +34,29 @@ ask() {
   local name=$1 question=$2 secret=${3:-} value=""
   [ -n "${!name+x}" ] && return
   { : </dev/tty; } 2>/dev/null || die "$name isn't set and there's no terminal to ask for it"
-  printf '%s: ' "$question" >/dev/tty
+  printf '%s [%s]: ' "$question" "$name" >/dev/tty
   if [ "$secret" = secret ]; then
     read -rs value </dev/tty
     echo >/dev/tty
   else
     read -r value </dev/tty
   fi
+  printf -v "$name" '%s' "$value"
+}
+
+# clean_path NAME   turns the path in NAME into an absolute one: removes surrounding spaces and quotes and "\ " escapes
+# (dragging a file into the terminal adds those), expands ~ and makes relative paths start at the folder the script
+# was started from
+clean_path() {
+  local name=$1 value=${!1} single="^'(.*)'$" double='^"(.*)"$'
+  value=$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' <<< "$value")
+  if [[ $value =~ $single || $value =~ $double ]]; then
+    value=${BASH_REMATCH[1]}
+  else
+    value=$(sed -E 's/\\(.)/\1/g' <<< "$value")
+  fi
+  [[ $value == "~" || $value == "~/"* ]] && value=$HOME${value:1}
+  [ -n "$value" ] && [[ $value != /* ]] && value=$START_DIR/$value
   printf -v "$name" '%s' "$value"
 }
 
@@ -49,19 +67,21 @@ case "$MAT_TEST_DEVICE" in
   *) die "MAT_TEST_DEVICE has to be cuda or cpu, got '$MAT_TEST_DEVICE'" ;;
 esac
 
-ask MAT_TEST_OUT "Output folder for logs and results (empty or new)"
+ask MAT_TEST_OUT "Output folder for logs and results, empty or new"
+clean_path MAT_TEST_OUT
 [ -n "$MAT_TEST_OUT" ] || die "MAT_TEST_OUT is needed"
-[ -e "$MAT_TEST_OUT" ] && [ ! -d "$MAT_TEST_OUT" ] && die "$MAT_TEST_OUT isn't a folder"
-[ -d "$MAT_TEST_OUT" ] && [ -n "$(ls -A "$MAT_TEST_OUT")" ] && die "$MAT_TEST_OUT isn't empty"
+[ -e "$MAT_TEST_OUT" ] && [ ! -d "$MAT_TEST_OUT" ] && die "MAT_TEST_OUT isn't a folder: '$MAT_TEST_OUT'"
+[ -d "$MAT_TEST_OUT" ] && [ -n "$(ls -A "$MAT_TEST_OUT")" ] && die "MAT_TEST_OUT isn't empty: '$MAT_TEST_OUT'"
 
-ask MAT_TEST_AUDIO "Audio file for the complete run (Enter skips it)"
-[ -z "$MAT_TEST_AUDIO" ] || [ -f "$MAT_TEST_AUDIO" ] || die "audio file not found: $MAT_TEST_AUDIO"
+ask MAT_TEST_AUDIO "Audio file for the complete run, Enter skips it"
+clean_path MAT_TEST_AUDIO
+[ -z "$MAT_TEST_AUDIO" ] || [ -f "$MAT_TEST_AUDIO" ] || die "MAT_TEST_AUDIO file not found: '$MAT_TEST_AUDIO'"
 
-ask HF_TOKEN "Hugging Face token (Enter uses a saved login)" secret
-ask OPENAI_API_KEY "LLM API key (Enter runs without a summary)" secret
+ask HF_TOKEN "Hugging Face token, Enter uses a saved login" secret
+ask OPENAI_API_KEY "LLM API key, Enter runs without a summary" secret
 if [ -n "$OPENAI_API_KEY" ]; then
-  ask OPENAI_API_BASE "LLM endpoint, OpenAI compatible (Enter uses the OpenAI API)"
-  ask MAT_TEST_LLM_MODEL "LLM model (Enter uses MAT's default)"
+  ask OPENAI_API_BASE "LLM endpoint, OpenAI compatible, Enter uses the OpenAI API"
+  ask MAT_TEST_LLM_MODEL "LLM model, Enter uses MAT's default"
 else
   OPENAI_API_BASE=${OPENAI_API_BASE:-}
   MAT_TEST_LLM_MODEL=${MAT_TEST_LLM_MODEL:-}
@@ -70,6 +90,27 @@ fi
 mkdir -p "$MAT_TEST_OUT/logs" || die "can't create $MAT_TEST_OUT"
 OUT=$(cd "$MAT_TEST_OUT" && pwd)
 LOGS=$OUT/logs
+
+# the settings without tokens, `source` this file to skip the questions next time
+ENV_FILE=$OUT/full_test.env
+{
+  echo "# Settings of the MAT full test from $(date '+%F %H:%M'). Load them before the next run with:"
+  echo "#   source $(printf '%q' "$ENV_FILE")"
+  echo "# MAT_TEST_OUT has to be an empty folder, change it before the next run."
+  printf 'export %s=%q\n' MAT_TEST_DEVICE "$MAT_TEST_DEVICE" MAT_TEST_OUT "$OUT" MAT_TEST_AUDIO "$MAT_TEST_AUDIO"
+  if [ -n "$OPENAI_API_KEY" ]; then
+    printf 'export %s=%q\n' OPENAI_API_BASE "$OPENAI_API_BASE" MAT_TEST_LLM_MODEL "$MAT_TEST_LLM_MODEL"
+  else
+    echo "# This run had no summary. With an API key these two get asked for as well:"
+    echo "# export OPENAI_API_BASE="
+    echo "# export MAT_TEST_LLM_MODEL="
+  fi
+  echo "# Tokens aren't saved. Export them yourself, set them to \"\" to skip them, or leave them out to get asked:"
+  echo "# export HF_TOKEN="
+  echo "# export OPENAI_API_KEY="
+} > "$ENV_FILE"
+
+cd "$REPO" || exit 2
 
 if [ "$MAT_TEST_DEVICE" = cpu ]; then
   SYNC=(uv sync --locked --no-default-groups --group dev --group cpu --group backends)
@@ -124,10 +165,15 @@ fi
 echo "  ffmpeg:  $(ffmpeg -version 2>&1 | head -1)"
 echo "  uv:      $(uv --version)"
 echo "  memory:  $(free -g | awk '/^Mem:/ {print $2 " GB RAM, " $7 " GB available"}')"
-echo "  audio:   $([ -n "$MAT_TEST_AUDIO" ] && basename "$MAT_TEST_AUDIO" || echo "none, skipping the complete run")"
-echo "  HF token given: $([ -n "$HF_TOKEN" ] && echo yes || echo no), saved login: $([ -f "$HOME/.cache/huggingface/token" ] && echo yes || echo no)"
-echo "  summary: $([ -n "$OPENAI_API_KEY" ] && echo "yes, model ${MAT_TEST_LLM_MODEL:-default}" || echo no)"
-echo "  logs:    $LOGS"
+echo "  settings, saved without tokens to $ENV_FILE:"
+printf '    %-19s %s\n' \
+  MAT_TEST_DEVICE "$MAT_TEST_DEVICE" \
+  MAT_TEST_OUT "$OUT" \
+  MAT_TEST_AUDIO "${MAT_TEST_AUDIO:-(empty, no complete run)}" \
+  HF_TOKEN "$([ -n "$HF_TOKEN" ] && echo set || echo "empty, saved login: $([ -f "$HOME/.cache/huggingface/token" ] && echo yes || echo no)")" \
+  OPENAI_API_KEY "$([ -n "$OPENAI_API_KEY" ] && echo set || echo "empty, no summary")" \
+  OPENAI_API_BASE "${OPENAI_API_BASE:-(empty)}" \
+  MAT_TEST_LLM_MODEL "${MAT_TEST_LLM_MODEL:-(empty, MAT default)}"
 echo
 
 # ---------------------------------------------------------------- steps
@@ -164,7 +210,8 @@ run "smoke book" smoke_book uv run --no-sync python scripts/smoke_book.py --out 
   && grep -E "^took" "$LOGS/smoke_book.log" | detail
 
 if [ -n "$MAT_TEST_AUDIO" ]; then
-  ARGS=(run --yes --export-config -o "$OUT/run" -i "$MAT_TEST_AUDIO")
+  # -i takes glob patterns, so [ ] * ? in the file name get escaped
+  ARGS=(run --yes --export-config -o "$OUT/run" -i "$(sed 's/[][*?]/[&]/g' <<< "$MAT_TEST_AUDIO")")
   if [ -z "$OPENAI_API_KEY" ]; then
     ARGS+=(--summarizer none)
   elif [ -n "$MAT_TEST_LLM_MODEL" ]; then
