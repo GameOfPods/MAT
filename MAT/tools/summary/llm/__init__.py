@@ -17,7 +17,7 @@ from pydantic import Field, field_validator
 
 from MAT.registry import register, require
 
-require("langchain_classic", "langchain_core", "langchain_openai", "langchain_text_splitters", "tiktoken", extra="llm")
+require("langchain_core", "langchain_openai", "langchain_text_splitters", "tiktoken", extra="llm")
 
 from MAT.utils.config import Config, Options  # noqa: E402
 from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult  # noqa: E402
@@ -109,7 +109,7 @@ class LLMOptions(Options):
 @register("summarizer", "llm", description="LangChain refine summary with an OpenAI compatible model")
 class SummaryLLM(SummaryTool):
     Options = LLMOptions
-    packages = ("langchain-classic", "langchain-openai")
+    packages = ("langchain-core", "langchain-openai")
     _LOGGER = logging.getLogger(__name__)
 
     def describe(self, config: Config) -> Dict[str, Any]:
@@ -120,9 +120,7 @@ class SummaryLLM(SummaryTool):
         return info
 
     def process(self, origin_data: SummaryInput, config: Config) -> Optional[SummaryResult]:
-        from langchain_classic.chains.summarize import load_summarize_chain
-        from langchain_core.prompts import PromptTemplate
-        from langchain_core.documents import Document
+        from langchain_core.messages import HumanMessage, SystemMessage
 
         options = config.options(self)
         return_summaries: List[str] = []
@@ -142,47 +140,37 @@ class SummaryLLM(SummaryTool):
         len_fun = self._get_len_fun()
         splitter = self._get_splitter(options.chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
 
+        metadata = "\n".join(f"{k}: {v}" for k, v in origin_data.additional_metadata.items())
+        system = self._fill(options.system_message, metadata=metadata)
+        if metadata and "{additional_metadata}" not in options.system_message:
+            system = f"{system}\n\nAdditional information about the source:\n{metadata}"
+
         for text in origin_data.text:
-            doc = Document(text)
-            split_doc = splitter.split_documents([doc])
-            self.__class__._LOGGER.info(
-                f"Split text into {len(split_doc)} documents. "
-                f"Original text length: {len_fun(doc.page_content)}. "
-                f"Chunk size: {options.chunk_size}"
-            )
-            chain = load_summarize_chain(
-                llm,
-                chain_type="refine",
-                question_prompt=PromptTemplate.from_template(
-                    self._build_template(options.system_message, options.prompt)
-                ),
-                refine_prompt=PromptTemplate.from_template(
-                    self._build_template(options.system_message, options.prompt_refine)
-                ),
-                return_intermediate_steps=True,
-                input_key="input_documents",
-                output_key="output_text",
-            )
-
-            additional_metadata = "\n".join(
-                f"{k}: {v}" for k, v in origin_data.additional_metadata.items()
-            ) if len(origin_data.additional_metadata) > 0 else ""
-
-            summary = chain.invoke({
-                "input_documents": split_doc,
-                "additional_metadata": additional_metadata,
-            }, config={"max_concurrency": 1})
-            return_summaries.append(summary["output_text"])
+            chunks = splitter.split_text(text)
+            self.__class__._LOGGER.info(f"Summarizing {len_fun(text)} tokens in {len(chunks)} chunk(s) of at most "
+                                        f"{options.chunk_size} tokens")
+            summary: Optional[str] = None
+            for number, chunk in enumerate(chunks, start=1):
+                if summary is None:
+                    prompt = self._fill(options.prompt, text=chunk, metadata=metadata)
+                else:
+                    self.__class__._LOGGER.info(f"Refining the summary with chunk {number} of {len(chunks)}")
+                    prompt = self._fill(options.prompt_refine, text=chunk, metadata=metadata, existing_answer=summary)
+                # the instructions go in as a real system message, not glued in front of the transcript
+                answer = llm.invoke([SystemMessage(system), HumanMessage(prompt)])
+                summary = str(getattr(answer, "content", answer) or "").strip()
+            return_summaries.append(summary or "")
 
         return SummaryResult(*return_summaries)
 
     @staticmethod
-    def _build_template(system_message: str, prompt: str) -> str:
-        # The default langchain prompts only know {text} (and {existing_answer}), so the metadata we pass into the
-        # chain was silently dropped. Add it unless the prompt already uses it.
-        if "{additional_metadata}" in system_message or "{additional_metadata}" in prompt:
-            return f"{system_message}\n\n{prompt}"
-        return f"{system_message}\n\nAdditional information about the source:\n{{additional_metadata}}\n\n{prompt}"
+    def _fill(template: str, text: str = "", metadata: str = "", existing_answer: str = "") -> str:
+        """Fills the placeholders of a prompt. Replacing instead of str.format, so braces in a transcript or in a
+        prompt of your own don't blow up the run."""
+        for name, value in (("{text}", text), ("{additional_metadata}", metadata),
+                            ("{existing_answer}", existing_answer)):
+            template = template.replace(name, value)
+        return template
 
     @classmethod
     def _get_len_fun(cls):
