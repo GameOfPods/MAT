@@ -33,15 +33,20 @@ class SortformerOptions(Options):
                                                            "once. Longer audio is cut at a quiet spot and the "
                                                            "speakers are linked between pieces. Lower it if the GPU "
                                                            "runs out of memory.")
-    link_threshold: float = Field(0.3, description="Minimum similarity of the pyannote speaker embeddings for a "
-                                                   "speaker of one audio piece to be linked to a speaker of an "
-                                                   "earlier piece. Below it the speaker counts as new.")
-    embedding_model: str = Field("pyannote/embedding", description="pyannote speaker embedding model for linking "
-                                                                   "speakers between pieces.")
+    link_threshold: float = Field(0.1, description="Minimum similarity of the speaker embeddings for a speaker of "
+                                                   "one audio piece to be linked to a speaker of an earlier piece. "
+                                                   "Below it the speaker counts as new. 0.1 came out best on AMI "
+                                                   "meetings with the WeSpeaker embeddings, the older "
+                                                   "pyannote/embedding needs about 0.4.")
+    embedding_model: str = Field("pyannote/wespeaker-voxceleb-resnet34-LM",
+                                 description="Speaker embedding model for linking speakers between pieces. WeSpeaker "
+                                             "beat the older pyannote/embedding on AMI (DER 17.6 % against 19.6 %) "
+                                             "and needs no Hugging Face login.")
     merge_threshold: Optional[float] = Field(None, description="After linking, speakers whose audio is at least this "
                                                                "similar get merged (average linkage over up to 2 "
-                                                               "minutes of audio per speaker). Fixes one person "
-                                                               "split into several speakers. Off when not set.")
+                                                               "minutes of audio per speaker). Off by default: on AMI "
+                                                               "meetings every value either changed nothing or merged "
+                                                               "different people.")
 
 
 # Similarity function for linking: gold speaker -> their audio from earlier pieces, audios of the new piece ->

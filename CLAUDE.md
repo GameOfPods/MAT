@@ -68,7 +68,7 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 ## Machines
 
 - The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
-- No `OPENAI_API_KEY` and no Hugging Face token here. Keep `--summarizer none` (the smoke script does that) and keep audio under 5 minutes so Sortformer doesn't need the gated `pyannote/embedding` model to link audio pieces.
+- No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models (pyannote community-1) work. The defaults need no login: WeSpeaker is not gated.
 - Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. spaCy models are pip-installed at runtime by `spacy_download` and removed again by every `uv sync` (exact sync), so the book smoke script downloads `en_core_web_sm` again after a sync.
 - Real runs and benchmarks happen on a separate GPU box with a GTX 1080 Ti (Pascal, compute capability 6.1, 11 GB), set up with uv. Claude can't reach it, the user runs GPU smoke tests and `MAT bench` there and shares the results.
   Known setup: driver 580.178.04, FFmpeg 9.0.1 (too new for torchcodec 0.7), the desktop already uses about 930 MiB of GPU memory. It has an HF token and API keys. Stage 2 smoke numbers are in `docs/roadmap.md`.
