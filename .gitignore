@@ -261,6 +261,9 @@ fabric.properties
 # MAT bench output, has transcripts of everything that ran
 bench-results/
 
-# external backend environments (envs/<name>), built by MAT external install
-envs/*/.venv/
-envs/diarizen/DiariZen/
+# external backend environments (envs/<name>): everything an install script builds or clones stays out,
+# only the files we write ourselves are tracked
+envs/*/*
+!envs/*/install.sh
+!envs/*/run.py
+!envs/*/README.md
