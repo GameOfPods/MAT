@@ -58,6 +58,13 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
   After changing `mat_format/models.py`: run `.venv/bin/python -m mat_format.schema`, update the spec, and remember
   that renaming/removing/retyping a field needs a new format version (adding fields doesn't). Other programs
   (Mosaicast, Java) read results through the schemas, so don't break the format casually.
+- Backends with dependencies that clash with ours live in `envs/<name>` with their own venv and are started as a
+  process (`MAT/utils/external.py`, `MAT external install NAME`, docs in `docs/external-environments.md`). The
+  backend module calls `require_environment(name)` instead of `require(...)`, so a missing environment skips the
+  backend like a missing extra. Requests and answers are plain JSON plus a wav path, nothing else.
+- Console noise: `MAT/utils/quiet.py`. Noisy loggers get a level, NeMo's own logger loses its handlers and is
+  routed into Python logging (so `--log-file` gets it), and NeMo calls get `verbose=False`. `--verbose` undoes it.
+  When a new dependency prints past Python logging, handle it there.
 - Benchmarks: `MAT/bench` (`MAT bench`, docs in `docs/benchmarks.md`). Dataset types subclass
   `MAT/bench/datasets/base.py:Dataset` and get `@register`, they download into the cache or read an existing copy
   (`path`). Summaries never run in benchmarks. Unit tests use fake `process` functions and tiny generated files, no

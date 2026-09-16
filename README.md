@@ -74,6 +74,16 @@ You can also install only the backends you need. Each one is an extra:
 uv sync --no-default-groups --group cu126 --extra whisper --extra sortformer --extra pyannote
 ```
 
+A few backends can't share these dependencies. [DiariZen](https://github.com/BUTSpeechFIT/DiariZen) pins torch 2.1.1 and its own pyannote fork, so it gets its own environment and MAT runs it as a separate process:
+
+```bash
+uv run MAT external list
+uv run MAT external install diarizen
+uv run MAT run -i episode.mp3 -o out --diarizer diarizen
+```
+
+Without that environment the backend is just skipped, like a missing extra. See [docs/external-environments.md](docs/external-environments.md), also for adding more of them. DiariZen's weights are non-commercial (CC BY-NC 4.0).
+
 Backends that aren't installed are skipped. `MAT backends` shows what is installed and what to install for the rest.
 
 On a machine without an NVIDIA GPU you can use the smaller CPU build of torch. uv doesn't remember that choice, so the flags go on every `uv sync` and `uv run`:

@@ -79,5 +79,7 @@ from MAT.registry import load_optional
 load_optional("MAT.tools.diarizators.nemo", slot="diarizer", name="sortformer", extra="sortformer")
 load_optional("MAT.tools.diarizators.nemo", slot="diarizer", name="sortformer-streaming", extra="sortformer")
 load_optional("MAT.tools.diarizators.pyannote", slot="diarizer", name="pyannote-diarization", extra="pyannote")
+# runs in its own environment, `MAT external install diarizen` builds it
+load_optional("MAT.tools.diarizators.diarizen", slot="diarizer", name="diarizen", extra="diarizen")
 
 __all__ = ["DiarizationResult", "DiarizerInput", "DiarizationTool"]

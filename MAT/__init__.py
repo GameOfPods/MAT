@@ -25,6 +25,11 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 
+from MAT.utils.quiet import quiet_dependencies
+
+# libraries that log a lot get turned down, `MAT run --verbose` undoes it
+quiet_dependencies()
+
 del os
 del logging
 del sys

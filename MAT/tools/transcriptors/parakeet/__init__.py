@@ -102,6 +102,9 @@ class TranscriptorParakeet(TransciptionTool):
         from nemo.collections.asr.models import ASRModel
 
         from MAT.utils import timeout_retry
+        from MAT.utils.quiet import quiet_nemo
+
+        quiet_nemo()
 
         model = timeout_retry(func=ASRModel.from_pretrained, func_args=(options.model,),
                               func_kwargs={"map_location": device}, time_out=60, retries=5)
