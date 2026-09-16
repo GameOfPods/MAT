@@ -35,6 +35,9 @@ class DiarizenOptions(Options):
     model: str = Field("BUT-FIT/diarizen-wavlm-large-s80-md",
                        description="DiariZen model. The weights are non-commercial (CC BY-NC 4.0).")
     device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
+    batch_size: int = Field(8, ge=1, description="Audio chunks the model sees at once. DiariZen's own config asks "
+                                                 "for 32, which runs out of memory on an 11 GB card. Lower it if it "
+                                                 "still does, raise it on a bigger card for speed.")
     timeout: float = Field(3600, gt=0, description="Seconds to wait for the DiariZen process before giving up.")
 
 
@@ -62,8 +65,8 @@ class DiarizerDiariZen(DiarizationTool):
 
         self._LOGGER.info(f"Diarizing {sound.duration_seconds:.0f} s with {options.model} in the diarizen "
                           f"environment on {device}")
-        answer = run_external("diarizen", {"audio": audio_file, "model": options.model, "device": device},
-                              timeout=options.timeout)
+        answer = run_external("diarizen", {"audio": audio_file, "model": options.model, "device": device,
+                                           "batch_size": options.batch_size}, timeout=options.timeout)
         return self._to_result(answer)
 
     @staticmethod

@@ -32,7 +32,9 @@ The environment takes about 2 GB with the CPU torch build and more with the CUDA
 TORCH_INDEX=https://download.pytorch.org/whl/cpu bash envs/diarizen/install.sh
 ```
 
-Options: `diarizen.model` (`BUT-FIT/diarizen-wavlm-large-s80-md`, `...-v2`, or the `base` model), `diarizen.device`, `diarizen.timeout`. `MAT backends show diarizen` prints them.
+Options: `diarizen.model` (`BUT-FIT/diarizen-wavlm-large-s80-md`, `...-v2`, or the `base` model), `diarizen.device`, `diarizen.batch-size`, `diarizen.timeout`.
+
+`batch-size` matters: DiariZen's own config asks for 32 chunks at once, which needs more than the 11 GB of a 1080 Ti and fails with `MemoryError: batch_size (32) is probably too large`. MAT sets 8 instead. Lower it if it still happens, raise it on a bigger card. `MAT backends show diarizen` prints them.
 
 Without the environment the backend is simply skipped, like an extra that isn't installed. `MAT backends` then shows it as not installed with the install hint.
 

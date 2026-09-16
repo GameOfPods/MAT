@@ -4,7 +4,8 @@ answer goes. Keep it in sync with MAT/tools/diarizators/diarizen/__init__.py.
 
     python run.py request.json result.json
 
-Request:  {"audio": "/path/file.wav", "model": "BUT-FIT/diarizen-wavlm-large-s80-md", "device": "cuda"}
+Request:  {"audio": "/path/file.wav", "model": "BUT-FIT/diarizen-wavlm-large-s80-md", "device": "cuda",
+           "batch_size": 8}
 Answer:   {"speakers": {"SPEAKER_00": [[start, end], ...]}}
 """
 import json
@@ -30,6 +31,16 @@ def main() -> int:
         except AttributeError:
             # older pipelines are moved by their own config
             pass
+
+    # The model config asks for 32, which needs more than 11 GB. Both names exist in their pyannote fork:
+    # segmentation_batch_size is a property writing into the Inference object, embedding_batch_size a plain attribute.
+    batch_size = request.get("batch_size")
+    if batch_size:
+        for name in ("segmentation_batch_size", "embedding_batch_size"):
+            try:
+                setattr(pipeline, name, int(batch_size))
+            except AttributeError:
+                print(f"could not set {name}", file=sys.stderr)
 
     annotation = pipeline(request["audio"])
     speakers = {}
