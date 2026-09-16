@@ -51,6 +51,9 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
     packages = ("pyannote-audio",)
     _LOGGER = logging.getLogger(__name__)
 
+    def can_match(self, config: Config) -> bool:
+        return config.options(self).gold_labels is not None
+
     def process(self, origin_data: SpeakerIdentificationInput, config: Config) -> Optional[SpeakerIdentificationResult]:
         import pathlib
         from MAT.utils.device import resolve_device

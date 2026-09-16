@@ -36,6 +36,11 @@ class SpeakerIdentificationInput(ToolInput):
 
 
 class SpeakerIdentificationTool(Tool[SpeakerIdentificationInput, SpeakerIdentificationResult], ABC):
+    def can_match(self, config: Config) -> bool:
+        """Whether this backend can match anything at all. When it can't (no gold labels), the pipeline skips the
+        step instead of concatenating hours of audio for an answer that is None anyway."""
+        return True
+
     @abstractmethod
     def process(self, origin_data: SpeakerIdentificationInput, config: Config) -> Optional[SpeakerIdentificationResult]:
         pass
