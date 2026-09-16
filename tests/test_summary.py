@@ -28,6 +28,81 @@ def test_splitter_rejects_bad_overlap(overlap):
         SummaryLLM._get_splitter(20, len, chunk_overlap=overlap)
 
 
+def _options(**kwargs):
+    from MAT.tools.summary.llm import LLMOptions
+
+    return LLMOptions(**kwargs)
+
+
+def test_explicit_chunk_size_wins(monkeypatch):
+    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: 200_000))
+    assert SummaryLLM._resolve_chunk_size(_options(**{"chunk-size": 5000}), reserved=100, len_fun=len) == 5000
+
+
+def test_auto_chunk_size_fills_the_server_context(monkeypatch):
+    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: 32768))
+    size = SummaryLLM._resolve_chunk_size(_options(**{"max-tokens": 16384}), reserved=1000, len_fun=len)
+    assert size == int((32768 - 16384 - 1000) * 0.9)
+
+
+def test_auto_chunk_size_is_capped_and_uses_the_table(monkeypatch):
+    from MAT.tools.summary.llm import MAX_CHUNK_SIZE
+
+    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: None))
+    # deepseek reports nothing, the table says a million, the cap keeps it sane
+    assert SummaryLLM._resolve_chunk_size(_options(model="deepseek-flash"), reserved=100, len_fun=len) == MAX_CHUNK_SIZE
+
+
+def test_auto_chunk_size_falls_back_for_unknown_models(monkeypatch):
+    from MAT.tools.summary.llm import FALLBACK_CHUNK_SIZE
+
+    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: None))
+    assert SummaryLLM._resolve_chunk_size(_options(model="something-local"), reserved=100,
+                                          len_fun=len) == FALLBACK_CHUNK_SIZE
+
+
+def test_server_context_reads_llama_cpp_and_model_listings(monkeypatch):
+    import requests
+
+    answers = {}
+
+    class Response:
+        def __init__(self, payload):
+            self.payload, self.ok = payload, payload is not None
+
+        def json(self):
+            return self.payload
+
+    monkeypatch.setenv("OPENAI_API_BASE", "http://server:8080/v1")
+    monkeypatch.setattr(requests, "get", lambda url, **kwargs: Response(answers.get(url.rsplit("/", 1)[-1])))
+
+    # llama.cpp: what the server really loaded
+    answers.clear()
+    answers["props"] = {"default_generation_settings": {"n_ctx": 8192}}
+    assert SummaryLLM._server_context("any") == 8192
+
+    # a listing that reports the context of the model
+    answers.clear()
+    answers["models"] = {"data": [{"id": "other", "context_length": 999}, {"id": "mine", "max_model_len": 40960}]}
+    assert SummaryLLM._server_context("mine") == 40960
+
+    answers.clear()
+    answers["models"] = {"data": [{"id": "mine", "meta": {"n_ctx_train": 131072}}]}
+    assert SummaryLLM._server_context("mine") == 131072
+
+    # nothing useful, and a server that errors, both give None instead of breaking the run
+    answers.clear()
+    answers["models"] = {"data": [{"id": "mine"}]}
+    assert SummaryLLM._server_context("mine") is None
+    monkeypatch.setattr(requests, "get", lambda url, **kwargs: (_ for _ in ()).throw(OSError("no server")))
+    assert SummaryLLM._server_context("mine") is None
+
+
+def test_no_api_base_means_no_probe(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    assert SummaryLLM._server_context("mine") is None
+
+
 def test_fill_replaces_placeholders_and_leaves_the_rest_alone():
     filled = SummaryLLM._fill("{additional_metadata}|{text}|{existing_answer}|{unknown}",
                               text="T", metadata="M", existing_answer="E")
@@ -61,6 +136,8 @@ def test_prompts_keep_the_model_inside_the_transcript(monkeypatch):
 def test_short_transcript_is_one_call_without_the_refine_prompt(monkeypatch):
     llm = RecordingLLM(responses=["the only summary"] * 5)
     monkeypatch.setattr(LLM, "get_llm", lambda self, **kwargs: llm)
+    # chunk-size is "auto" by default, don't ask a server that someone's environment happens to point at
+    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: None))
 
     result = SummaryLLM().process(SummaryInput("sprecher_0 [0.0 - 1.0]: short episode about nothing.",
                                                additional_metadata={}), config=Config({}))

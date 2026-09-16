@@ -8,7 +8,7 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Literal, Optional, List, Union
 import os
 from enum import Enum, auto as enum_auto
 import logging
@@ -22,6 +22,14 @@ require("langchain_core", "langchain_openai", "langchain_text_splitters", "tikto
 from MAT.utils.config import Config, Options  # noqa: E402
 from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult  # noqa: E402
 from MAT.tools.summary.llm.prompts import SYSTEM_MESSAGE, PROMPT, REFINE_PROMPT  # noqa: E402
+
+# Used for "auto" when the server doesn't report a context size. Providers that don't say: DeepSeek (1M tokens for
+# deepseek-flash and deepseek-pro since V4, prompt and answer share it), OpenAI doesn't report it either.
+KNOWN_CONTEXTS: Dict[str, int] = {"deepseek": 1_000_000}
+# Very long inputs make summaries worse in the middle, so we don't fill a million tokens even when we could
+MAX_CHUNK_SIZE = 100_000
+MIN_CHUNK_SIZE = 2_000
+FALLBACK_CHUNK_SIZE = 32_000
 
 
 class LLM(Enum):
@@ -76,9 +84,11 @@ class LLMOptions(Options):
                                                            "models reject it.")
     max_tokens: int = Field(16384, ge=1, description="Maximum tokens per answer. For reasoning models this includes "
                                                      "the thinking tokens.")
-    chunk_size: int = Field(32000, ge=1, description="The transcript is split into chunks of this many tokens. The "
-                                                     "first chunk is summarized, the summary is then refined with "
-                                                     "each following chunk.")
+    chunk_size: Union[int, Literal["auto"]] = Field("auto", description="Tokens per chunk. One chunk means one call, "
+                                                                        "more chunks are refined one after another. "
+                                                                        '"auto" asks the server for the context size '
+                                                                        "and fills it, so a transcript that fits is "
+                                                                        "summarized in a single call.")
     chunk_overlap: Optional[int] = Field(None, ge=0, description="Tokens shared by neighboring chunks. Not set: 10% "
                                                                  "of the chunk size, at most 200.")
     reasoning_effort: Optional[str] = Field("low", description='How much a reasoning model may think. low, medium '
@@ -138,17 +148,20 @@ class SummaryLLM(SummaryTool):
         self.__class__._LOGGER.info(f'Loaded {options.service} as summarization LLM with model {options.model}')
 
         len_fun = self._get_len_fun()
-        splitter = self._get_splitter(options.chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
-
         metadata = "\n".join(f"{k}: {v}" for k, v in origin_data.additional_metadata.items())
         system = self._fill(options.system_message, metadata=metadata)
         if metadata and "{additional_metadata}" not in options.system_message:
             system = f"{system}\n\nAdditional information about the source:\n{metadata}"
 
+        # the instructions and the answer have to fit next to the transcript
+        reserved = len_fun(system) + max(len_fun(options.prompt), len_fun(options.prompt_refine))
+        chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun)
+        splitter = self._get_splitter(chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
+
         for text in origin_data.text:
             chunks = splitter.split_text(text)
             self.__class__._LOGGER.info(f"Summarizing {len_fun(text)} tokens in {len(chunks)} chunk(s) of at most "
-                                        f"{options.chunk_size} tokens")
+                                        f"{chunk_size} tokens")
             summary: Optional[str] = None
             for number, chunk in enumerate(chunks, start=1):
                 if summary is None:
@@ -171,6 +184,61 @@ class SummaryLLM(SummaryTool):
                             ("{existing_answer}", existing_answer)):
             template = template.replace(name, value)
         return template
+
+    @classmethod
+    def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun) -> int:
+        """Tokens per chunk. An explicit number wins, "auto" asks the server, then the table, then the fallback."""
+        if options.chunk_size != "auto":
+            return int(options.chunk_size)
+        context, source = cls._server_context(options.model), "the server"
+        if context is None:
+            context = next((size for name, size in KNOWN_CONTEXTS.items() if options.model.startswith(name)), None)
+            source = "our table of known models"
+        if context is None:
+            cls._LOGGER.info(f"{options.model} doesn't say how much context it has, using {FALLBACK_CHUNK_SIZE} "
+                             f"tokens per chunk. Set llm.chunk-size if you know better.")
+            return FALLBACK_CHUNK_SIZE
+        # 10 % for the tokenizer counting differently than the model does
+        room = int((context - options.max_tokens - reserved) * 0.9)
+        chunk = max(MIN_CHUNK_SIZE, min(room, MAX_CHUNK_SIZE))
+        cls._LOGGER.info(f"{options.model} has {context} tokens of context according to {source}, "
+                         f"using {chunk} tokens per chunk")
+        return chunk
+
+    @staticmethod
+    def _server_context(model: str) -> Optional[int]:
+        """Context size an OpenAI compatible server reports for the model, None when it doesn't. Never raises, a
+        summary shouldn't fail because a server answers something unexpected."""
+        base = os.environ.get("OPENAI_API_BASE")
+        if not base:
+            return None
+        import requests
+
+        base = base.rstrip("/")
+        headers = {"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"} if "OPENAI_API_KEY" in os.environ else {}
+
+        def get(url):
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                return response.json() if response.ok else None
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"Could not ask {url}: {e}")
+                return None
+
+        # llama.cpp reports what it really loaded, which can be smaller than what the model could do
+        loaded = ((get(f"{base}/props") or {}).get("default_generation_settings") or {}).get("n_ctx")
+        if isinstance(loaded, int) and loaded > 0:
+            return loaded
+        for entry in (get(f"{base}/models") or {}).get("data") or []:
+            if not isinstance(entry, dict) or entry.get("id") != model:
+                continue
+            meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
+            # names used by OpenRouter, vLLM and llama.cpp
+            for value in (entry.get("context_length"), entry.get("max_model_len"), entry.get("max_context_length"),
+                          meta.get("n_ctx"), meta.get("n_ctx_train")):
+                if isinstance(value, int) and value > 0:
+                    return value
+        return None
 
     @classmethod
     def _get_len_fun(cls):
