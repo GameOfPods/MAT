@@ -22,7 +22,9 @@ uv run MAT external install diarizen     # clone, build the environment, check t
 uv run MAT run -i episode.mp3 -o out --diarizer diarizen
 ```
 
-About 6 GB on disk. `install.sh` uses the CUDA 12.1 torch build, which works on GTX 10xx cards. For a machine without a GPU:
+The environment takes about 2 GB with the CPU torch build and more with the CUDA one, plus the cloned repository and the model weights in the Hugging Face cache. A run pays for the process start and loading the model: the 30 second sample took 62 seconds on CPU, so this is worth it for episodes, not for clips.
+
+`install.sh` uses the CUDA 12.1 torch build, which works on GTX 10xx cards. For a machine without a GPU:
 
 ```bash
 TORCH_INDEX=https://download.pytorch.org/whl/cpu bash envs/diarizen/install.sh
