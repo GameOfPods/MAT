@@ -108,6 +108,12 @@ class PodcastPipeline(Pipeline):
             identifier = self.backend("identifier", step_input.config)
             if identifier is None:
                 return PipelineStepResult(name="Speaker Matching", data=diarization_result)
+            if not identifier.can_match(step_input.config):
+                # without gold labels the identifier answers None for every speaker, and building its audio would
+                # decode and copy the whole episode first
+                self._LOGGER.info(f"{identifier.backend_name} has nothing to match against, keeping the diarizer names")
+                self.models.pop("identifier", None)
+                return PipelineStepResult(name="Speaker Matching", data=diarization_result)
             a = pydub.AudioSegment.from_file(step_input.file)
             matched_speaker = diarization_result.speaker_matching(identifier=identifier, audio=a,
                                                                   config=step_input.config)
