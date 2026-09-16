@@ -32,7 +32,9 @@ class PyannoteOptions(Options):
                                                          "kept.")
     no_hf_token: bool = Field(False, description="Don't send your Hugging Face token when loading the model.")
     device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
-    model: str = Field("pyannote/embedding", description="pyannote speaker embedding model.")
+    model: str = Field("pyannote/wespeaker-voxceleb-resnet34-LM",
+                       description="Speaker embedding model. WeSpeaker needs no Hugging Face login and separated "
+                                   "speakers better than the older pyannote/embedding in our tests.")
     similarity_threshold: float = Field(0.3, description="Minimum cosine similarity to a gold label clip for a match.")
 
     @field_validator("gold_labels")
