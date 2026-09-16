@@ -26,12 +26,14 @@ def test_process_hands_over_a_wav_and_maps_the_speakers(audio, tmp_path, monkeyp
         return {"speakers": {"SPEAKER_01": [[1.0, 2.0]], "SPEAKER_00": [[0.0, 0.5], [2.5, 3.0]]}}
 
     monkeypatch.setattr("MAT.utils.external.run_external", fake_run)
-    config = Config({"diarizen": {"device": "cpu", "timeout": 60}}, work_directory=str(tmp_path / "work"))
+    config = Config({"diarizen": {"device": "cpu", "timeout": 60, "batch-size": 4}},
+                    work_directory=str(tmp_path / "work"))
     result = DiarizerDiariZen().process(DiarizerInput(str(audio)), config=config)
 
     assert seen["name"] == "diarizen" and seen["timeout"] == 60
     assert seen["request"]["model"] == "BUT-FIT/diarizen-wavlm-large-s80-md"
     assert seen["request"]["device"] == "cpu"
+    assert seen["request"]["batch_size"] == 4
     assert seen["request"]["audio"].endswith(".wav") and os.path.isfile(seen["request"]["audio"])
     assert result.to_dict() == {"sprecher_0": [(0.0, 0.5), (2.5, 3.0)], "sprecher_1": [(1.0, 2.0)]}
 
