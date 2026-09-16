@@ -47,3 +47,19 @@ limit = 4
 [[dataset]]
 type = "bundestag"
 limit = 200
+
+# Your own episodes have no reference, so they give speed, GPU memory, speaker count and how far the systems are
+# apart. Real lengths (an hour or more) are the only way to see what the pipeline costs on a whole episode.
+# Keep your paths out of git: copy this file somewhere outside the repository and put them there.
+# [[dataset]]
+# type = "audio"
+# name = "episodes"
+# files = ["/path/to/episodes/*.mp3"]
+# limit = 1
+#
+# Once a part of an episode is corrected (MAT bench reference), the same episode gives real WER, cpWER and DER.
+# The systems still run on the whole file and are scored on the corrected part.
+# [[dataset]]
+# type = "reference"
+# name = "own"
+# path = "/path/to/references"
