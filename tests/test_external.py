@@ -30,6 +30,16 @@ def test_round_trip(environment):
     assert run_external("echo", {"audio": "x.wav", "model": "m"}) == {"echo": {"audio": "x.wav", "model": "m"}}
 
 
+def test_environment_variables_reach_the_process(environment, monkeypatch):
+    # the other environment has to see HF_HOME and HF_TOKEN, otherwise it downloads the models a second time
+    (environment / "run.py").write_text(
+        "import json, os, sys\nfrom pathlib import Path\n"
+        "Path(sys.argv[2]).write_text(json.dumps({name: os.environ.get(name) for name in ('HF_HOME', 'MAT_TEST_VAR')}))\n")
+    monkeypatch.setenv("HF_HOME", "/somewhere/huggingface")
+    monkeypatch.setenv("MAT_TEST_VAR", "passed along")
+    assert run_external("echo", {}) == {"HF_HOME": "/somewhere/huggingface", "MAT_TEST_VAR": "passed along"}
+
+
 def test_missing_environment(tmp_path, monkeypatch):
     monkeypatch.setenv(external.ENVS_DIR_VAR, str(tmp_path))
     monkeypatch.delenv("MAT_EXTERNAL_PYTHON_DIARIZEN", raising=False)

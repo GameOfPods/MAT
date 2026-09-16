@@ -12,6 +12,8 @@ envs/diarizen/
 
 MAT decodes the audio, writes a wav, and starts `envs/<name>/.venv/bin/python envs/<name>/run.py request.json result.json`. That's the whole protocol: two files, one process, no server. Models are loaded in that process, so only one of the two environments holds GPU memory at a time.
 
+The process inherits MAT's environment variables, so `HF_HOME`, `HF_HUB_CACHE`, `HF_TOKEN`, `CUDA_VISIBLE_DEVICES` and proxy settings apply to it as well and both environments share one model cache. The install script inherits them too. A test keeps it that way, so don't hand `subprocess.run` its own environment.
+
 ## DiariZen
 
 DiariZen ([BUT Brno](https://github.com/BUTSpeechFIT/DiariZen)) is WavLM plus Conformer on a pyannote style pipeline and has the best open diarization numbers (AMI-SDM 14.0 %, VoxConverse 9.2 % in their README). **The weights are CC BY-NC 4.0, so no commercial use.**
