@@ -260,3 +260,7 @@ fabric.properties
 .idea/
 # MAT bench output, has transcripts of everything that ran
 bench-results/
+
+# external backend environments (envs/<name>), built by MAT external install
+envs/*/.venv/
+envs/diarizen/DiariZen/

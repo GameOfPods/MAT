@@ -91,6 +91,9 @@ class DiarizerNEMO(DiarizationTool):
         from nemo.collections.asr.models import SortformerEncLabelModel
         from pydub import AudioSegment
 
+        from MAT.utils.quiet import quiet_nemo
+
+        quiet_nemo()
         options = config.options(self)
         device = resolve_device(options.device)
 
@@ -122,7 +125,7 @@ class DiarizerNEMO(DiarizationTool):
         self._configure_model(diar_model, options)
 
         predicted_segments, predicted_probs = diar_model.diarize(
-            audio=mono_files, batch_size=1, include_tensor_outputs=True
+            audio=mono_files, batch_size=1, include_tensor_outputs=True, verbose=False
         )
 
         del diar_model

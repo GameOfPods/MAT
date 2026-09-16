@@ -147,6 +147,15 @@ def build_parser() -> argparse.ArgumentParser:
     from MAT.bench.commands import add_bench_parser
 
     add_bench_parser(commands)
+
+    external = commands.add_parser(
+        "external", help="Environments for backends that need their own dependencies",
+        description="Some backends can't share MAT's dependencies, for example DiariZen with torch 2.1.1. They live "
+                    "in envs/<name> and run as their own process. See docs/external-environments.md.")
+    external_commands = external.add_subparsers(dest="external_command", required=True, metavar="ACTION")
+    external_commands.add_parser("list", help="Show the environments and whether they are built")
+    external_install = external_commands.add_parser("install", help="Build an environment")
+    external_install.add_argument("name", help="Environment name, `MAT external list` shows them")
     return parser
 
 
@@ -207,6 +216,22 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_external(args: argparse.Namespace) -> int:
+    from MAT.utils.config import ConfigError
+    from MAT.utils.external import ENVIRONMENTS, environment_folder, install, is_available
+
+    if args.external_command == "list":
+        width = max((len(name) for name in ENVIRONMENTS), default=0)
+        for name, environment in sorted(ENVIRONMENTS.items()):
+            print(f"  {name:<{width}}  {'built' if is_available(name) else 'not built':<9}  "
+                  f"{environment.description}")
+            print(f"  {'':<{width}}  {environment_folder(name)}")
+        return 0
+    if args.name not in ENVIRONMENTS:
+        raise ConfigError(f'Unknown environment "{args.name}". Known: {", ".join(sorted(ENVIRONMENTS))}')
+    return install(args.name)
+
+
 def _find_inputs(patterns: Sequence[str], recursive: bool) -> List[str]:
     files = set()
     for pattern in patterns:
@@ -234,7 +259,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     from MAT.utils.progress import Progress
     from MAT.writer import Writer
 
-    logging.getLogger("pytorch_lightning.utilities.migration.utils").setLevel(logging.WARN)
+    from MAT.utils.quiet import quiet_dependencies
+
+    quiet_dependencies(verbose=args.verbose)
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     if args.log_file:
@@ -315,6 +342,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             from MAT.bench.commands import cmd_bench
 
             return cmd_bench(args)
+        if args.command == "external":
+            return cmd_external(args)
         return cmd_config(args)
     except (ConfigError, BackendError) as e:
         sys.stderr.write(f"MAT: {e}\n")
