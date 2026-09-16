@@ -25,6 +25,12 @@ set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=
 name = "parakeet-community1"
 set = ["podcast.transcriber=parakeet", "podcast.diarizer=pyannote-diarization"]
 
+# Needs its own environment first: uv run MAT external install diarizen
+# The weights are non-commercial (CC BY-NC 4.0), see docs/external-environments.md
+[[system]]
+name = "whisper-diarizen"
+set = ["podcast.diarizer=diarizen"]
+
 [[dataset]]
 type = "fleurs"
 languages = ["de", "en"]
