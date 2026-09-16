@@ -64,7 +64,6 @@ pyannote = ["pyannote-audio>=4"]
 parakeet = ["nemo-toolkit[asr]>=3"]
 llm = [
     "langchain>=1",
-    "langchain-classic>=1",
     "langchain-core>=1",
     "langchain-openai>=1",
     "langchain-text-splitters>=1",
