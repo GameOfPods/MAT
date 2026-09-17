@@ -34,13 +34,28 @@ def _options(**kwargs):
     return LLMOptions(**kwargs)
 
 
+def test_preset_fills_what_you_did_not_set():
+    filled = SummaryLLM._apply_preset(_options(preset="ollama"))
+    assert filled.service == "Ollama"
+    assert (filled.max_tokens, filled.reasoning_effort, filled.idle_timeout) == (4096, "none", 300.0)
+
+    # your own values win over the preset
+    mine = SummaryLLM._apply_preset(_options(preset="ollama", **{"max-tokens": 99, "reasoning-effort": "high"}))
+    assert (mine.max_tokens, mine.reasoning_effort, mine.service) == (99, "high", "Ollama")
+
+
+def test_no_preset_changes_nothing():
+    plain = _options(model="x")
+    assert SummaryLLM._apply_preset(plain) is plain
+
+
 def test_explicit_chunk_size_wins(monkeypatch):
-    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: 200_000))
+    monkeypatch.setattr(SummaryLLM, "_server_context", classmethod(lambda cls, options: 200_000))
     assert SummaryLLM._resolve_chunk_size(_options(**{"chunk-size": 5000}), reserved=100, len_fun=len) == 5000
 
 
 def test_auto_chunk_size_fills_the_server_context(monkeypatch):
-    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: 32768))
+    monkeypatch.setattr(SummaryLLM, "_server_context", classmethod(lambda cls, options: 32768))
     size = SummaryLLM._resolve_chunk_size(_options(**{"max-tokens": 16384}), reserved=1000, len_fun=len)
     assert size == int((32768 - 16384 - 1000) * 0.9)
 
@@ -48,7 +63,7 @@ def test_auto_chunk_size_fills_the_server_context(monkeypatch):
 def test_auto_chunk_size_is_capped_and_uses_the_table(monkeypatch):
     from MAT.tools.summary.llm import MAX_CHUNK_SIZE
 
-    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: None))
+    monkeypatch.setattr(SummaryLLM, "_server_context", classmethod(lambda cls, options: None))
     # deepseek reports nothing, the table says a million, the cap keeps it sane
     assert SummaryLLM._resolve_chunk_size(_options(model="deepseek-flash"), reserved=100, len_fun=len) == MAX_CHUNK_SIZE
 
@@ -56,7 +71,7 @@ def test_auto_chunk_size_is_capped_and_uses_the_table(monkeypatch):
 def test_auto_chunk_size_falls_back_for_unknown_models(monkeypatch):
     from MAT.tools.summary.llm import FALLBACK_CHUNK_SIZE
 
-    monkeypatch.setattr(SummaryLLM, "_server_context", staticmethod(lambda model: None))
+    monkeypatch.setattr(SummaryLLM, "_server_context", classmethod(lambda cls, options: None))
     assert SummaryLLM._resolve_chunk_size(_options(model="something-local"), reserved=100,
                                           len_fun=len) == FALLBACK_CHUNK_SIZE
 
@@ -76,31 +91,70 @@ def test_server_context_reads_llama_cpp_and_model_listings(monkeypatch):
     monkeypatch.setenv("OPENAI_API_BASE", "http://server:8080/v1")
     monkeypatch.setattr(requests, "get", lambda url, **kwargs: Response(answers.get(url.rsplit("/", 1)[-1])))
 
+    mine = _options(model="mine")
+
     # llama.cpp: what the server really loaded
     answers.clear()
     answers["props"] = {"default_generation_settings": {"n_ctx": 8192}}
-    assert SummaryLLM._server_context("any") == 8192
+    assert SummaryLLM._server_context(mine) == 8192
 
     # a listing that reports the context of the model
     answers.clear()
     answers["models"] = {"data": [{"id": "other", "context_length": 999}, {"id": "mine", "max_model_len": 40960}]}
-    assert SummaryLLM._server_context("mine") == 40960
+    assert SummaryLLM._server_context(mine) == 40960
 
     answers.clear()
     answers["models"] = {"data": [{"id": "mine", "meta": {"n_ctx_train": 131072}}]}
-    assert SummaryLLM._server_context("mine") == 131072
+    assert SummaryLLM._server_context(mine) == 131072
 
     # nothing useful, and a server that errors, both give None instead of breaking the run
     answers.clear()
     answers["models"] = {"data": [{"id": "mine"}]}
-    assert SummaryLLM._server_context("mine") is None
+    assert SummaryLLM._server_context(mine) is None
     monkeypatch.setattr(requests, "get", lambda url, **kwargs: (_ for _ in ()).throw(OSError("no server")))
-    assert SummaryLLM._server_context("mine") is None
+    assert SummaryLLM._server_context(mine) is None
 
 
 def test_no_api_base_means_no_probe(monkeypatch):
     monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-    assert SummaryLLM._server_context("mine") is None
+    assert SummaryLLM._server_context(_options(model="mine")) is None
+
+
+def test_ollama_context_comes_from_api_show(monkeypatch):
+    import requests
+
+    seen = {}
+
+    class Response:
+        ok = True
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(url=url, body=json)
+        return Response({"model_info": {"general.architecture": "qwen3", "qwen3.context_length": 40960}})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    options = _options(service="Ollama", model="qwen3:8b")
+
+    assert SummaryLLM._server_context(options) == 40960
+    assert seen["url"] == "http://localhost:11434/api/show"
+    assert seen["body"] == {"model": "qwen3:8b"}
+
+
+def test_ollama_url_takes_option_then_environment(monkeypatch):
+    from MAT.tools.summary.llm import ollama_url
+
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    assert ollama_url() == "http://localhost:11434"
+    monkeypatch.setenv("OLLAMA_HOST", "gpu-box:11434")
+    assert ollama_url() == "http://gpu-box:11434"
+    assert ollama_url("https://somewhere/") == "https://somewhere"
 
 
 def test_fill_replaces_placeholders_and_leaves_the_rest_alone():
