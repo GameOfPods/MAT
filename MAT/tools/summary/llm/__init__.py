@@ -31,14 +31,65 @@ MAX_CHUNK_SIZE = 100_000
 MIN_CHUNK_SIZE = 2_000
 FALLBACK_CHUNK_SIZE = 32_000
 
+# Ollama wants a yes or no for thinking, we have OpenAI's scale. "low" means "think as little as possible" for us.
+REASONING_TO_THINKING: Dict[str, bool] = {"none": False, "low": False, "medium": True, "high": True, "xhigh": True,
+                                          "max": True}
+
+# Starting points for the two ways to run this. Anything set in the config or with --set wins over them.
+PRESETS: Dict[str, Dict[str, Any]] = {
+    # a hosted API: queues can be long, thinking models are common, answers may be big
+    "openai": {"service": "OpenAI", "reasoning_effort": "low", "max_tokens": 16384, "chunk_size": "auto",
+               "first_token_timeout": 900.0, "idle_timeout": 120.0},
+    # Ollama on your own machine: no queue, but a GTX 1080 Ti chews on a long prompt for minutes
+    "ollama": {"service": "Ollama", "reasoning_effort": "none", "max_tokens": 4096, "chunk_size": "auto",
+               "first_token_timeout": 1800.0, "idle_timeout": 300.0},
+    # llama.cpp and vLLM speak the OpenAI API, point OPENAI_API_BASE at them
+    "llamacpp": {"service": "OpenAI", "reasoning_effort": "unset", "max_tokens": 4096, "chunk_size": "auto",
+                 "first_token_timeout": 1800.0, "idle_timeout": 300.0},
+}
+
+
+def ollama_url(base_url: Optional[str] = None) -> str:
+    """Where Ollama listens: the option, then $OLLAMA_HOST, then the default. A bare host:port gets a scheme."""
+    url = (base_url or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").strip().rstrip("/")
+    return url if url.startswith(("http://", "https://")) else f"http://{url}"
+
 
 class LLM(Enum):
     OpenAI = enum_auto()
+    Ollama = enum_auto()
 
     def get_llm(self, model: str, max_tokens: int, temperature: float = None, reasoning_effort: Optional[str] = None,
                 extra_body: Optional[dict] = None, first_token_timeout: float = 900.0, idle_timeout: float = 120.0,
-                max_retries: int = 2):
+                max_retries: int = 2, base_url: Optional[str] = None, num_ctx: Optional[int] = None):
         from MAT.tools.summary.llm.robust import StreamingChatModel
+
+        if self == self.Ollama:
+            from logging import WARNING
+            logging.getLogger("httpx").setLevel(WARNING)
+            try:
+                from langchain_ollama import ChatOllama
+            except ImportError as e:
+                raise ImportError("The Ollama service needs langchain-ollama, install the llm extra") from e
+
+            kwargs: Dict[str, Any] = {"model": model, "num_predict": max_tokens,
+                                      "base_url": ollama_url(base_url)}
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            # Ollama loads a context of its own choosing unless we say otherwise, and cuts the prompt silently
+            if num_ctx is not None:
+                kwargs["num_ctx"] = num_ctx
+            thinking = REASONING_TO_THINKING.get(reasoning_effort)
+            if thinking is not None:
+                kwargs["reasoning"] = thinking
+            logging.getLogger("LLM-Service").info(f"Using ollama at {kwargs['base_url']}"
+                                                  + (f" with a context of {num_ctx} tokens" if num_ctx else ""))
+
+            def ollama_factory(_http_async_client):
+                return ChatOllama(**kwargs)
+
+            return StreamingChatModel(factory=ollama_factory, first_token_timeout=first_token_timeout,
+                                      idle_timeout=idle_timeout, max_retries=max_retries)
 
         if self == self.OpenAI:
             from logging import WARNING
@@ -77,8 +128,16 @@ class LLM(Enum):
 
 
 class LLMOptions(Options):
+    preset: Literal["none", "openai", "ollama", "llamacpp"] = Field(
+        "none", description="Starting point for the other options: openai for a hosted API, ollama for a local "
+                            "Ollama, llamacpp for a local OpenAI compatible server. Everything you set yourself "
+                            "wins over it.")
     service: str = Field("OpenAI", description="LLM provider. OpenAI works with every OpenAI compatible API, point "
-                                               "OPENAI_API_BASE at it.")
+                                               "OPENAI_API_BASE at it. Ollama talks to Ollama directly, which is the "
+                                               "only way to know and set its context size.")
+    base_url: Optional[str] = Field(None, description="Where Ollama listens. Default: $OLLAMA_HOST, else "
+                                                      "http://localhost:11434. The OpenAI service uses "
+                                                      "$OPENAI_API_BASE instead.")
     model: str = Field("gpt-5.6-terra", description="Model name at the provider.")
     temperature: Optional[float] = Field(None, description="Sampling temperature. Not sent by default, reasoning "
                                                            "models reject it.")
@@ -116,7 +175,7 @@ class LLMOptions(Options):
         return value
 
 
-@register("summarizer", "llm", description="LangChain refine summary with an OpenAI compatible model")
+@register("summarizer", "llm", description="Summary from an OpenAI compatible API or a local Ollama")
 class SummaryLLM(SummaryTool):
     Options = LLMOptions
     packages = ("langchain-core", "langchain-openai")
@@ -132,20 +191,8 @@ class SummaryLLM(SummaryTool):
     def process(self, origin_data: SummaryInput, config: Config) -> Optional[SummaryResult]:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        options = config.options(self)
+        options = self._apply_preset(config.options(self))
         return_summaries: List[str] = []
-
-        llm = LLM.parse_str(name=options.service).get_llm(
-            model=options.model,
-            max_tokens=options.max_tokens,
-            temperature=options.temperature,
-            reasoning_effort=options.reasoning_effort,
-            extra_body=options.extra_body,
-            first_token_timeout=options.first_token_timeout,
-            idle_timeout=options.idle_timeout,
-            max_retries=options.max_retries,
-        )
-        self.__class__._LOGGER.info(f'Loaded {options.service} as summarization LLM with model {options.model}')
 
         len_fun = self._get_len_fun()
         metadata = "\n".join(f"{k}: {v}" for k, v in origin_data.additional_metadata.items())
@@ -157,6 +204,22 @@ class SummaryLLM(SummaryTool):
         reserved = len_fun(system) + max(len_fun(options.prompt), len_fun(options.prompt_refine))
         chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun)
         splitter = self._get_splitter(chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
+
+        # Ollama needs to be told how much context to load, the others take what the prompt brings
+        num_ctx = chunk_size + options.max_tokens + reserved if options.service == "Ollama" else None
+        llm = LLM.parse_str(name=options.service).get_llm(
+            model=options.model,
+            max_tokens=options.max_tokens,
+            temperature=options.temperature,
+            reasoning_effort=options.reasoning_effort,
+            extra_body=options.extra_body,
+            first_token_timeout=options.first_token_timeout,
+            idle_timeout=options.idle_timeout,
+            max_retries=options.max_retries,
+            base_url=options.base_url,
+            num_ctx=num_ctx,
+        )
+        self.__class__._LOGGER.info(f'Loaded {options.service} as summarization LLM with model {options.model}')
 
         for text in origin_data.text:
             chunks = splitter.split_text(text)
@@ -186,11 +249,24 @@ class SummaryLLM(SummaryTool):
         return template
 
     @classmethod
+    def _apply_preset(cls, options: "LLMOptions") -> "LLMOptions":
+        """Fills the options a preset knows about, except the ones set in the config or with --set."""
+        values = PRESETS.get(options.preset)
+        if not values:
+            return options
+        update = {name: value for name, value in values.items() if name not in options.model_fields_set}
+        if not update:
+            return options
+        cls._LOGGER.info(f"Preset {options.preset} sets " + ", ".join(f"{k.replace('_', '-')}={v}"
+                                                                      for k, v in sorted(update.items())))
+        return options.model_copy(update=update)
+
+    @classmethod
     def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun) -> int:
         """Tokens per chunk. An explicit number wins, "auto" asks the server, then the table, then the fallback."""
         if options.chunk_size != "auto":
             return int(options.chunk_size)
-        context, source = cls._server_context(options.model), "the server"
+        context, source = cls._server_context(options), "the server"
         if context is None:
             context = next((size for name, size in KNOWN_CONTEXTS.items() if options.model.startswith(name)), None)
             source = "our table of known models"
@@ -205,32 +281,47 @@ class SummaryLLM(SummaryTool):
                          f"using {chunk} tokens per chunk")
         return chunk
 
-    @staticmethod
-    def _server_context(model: str) -> Optional[int]:
-        """Context size an OpenAI compatible server reports for the model, None when it doesn't. Never raises, a
-        summary shouldn't fail because a server answers something unexpected."""
-        base = os.environ.get("OPENAI_API_BASE")
-        if not base:
-            return None
+    @classmethod
+    def _server_context(cls, options: "LLMOptions") -> Optional[int]:
+        """Context size the server reports for the model, None when it doesn't say. Never raises, a summary
+        shouldn't fail because a server answers something unexpected."""
         import requests
 
-        base = base.rstrip("/")
-        headers = {"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"} if "OPENAI_API_KEY" in os.environ else {}
-
-        def get(url):
+        def ask(url, payload=None, headers=None):
             try:
-                response = requests.get(url, headers=headers, timeout=10)
+                if payload is None:
+                    response = requests.get(url, headers=headers or {}, timeout=10)
+                else:
+                    response = requests.post(url, json=payload, headers=headers or {}, timeout=10)
                 return response.json() if response.ok else None
             except Exception as e:
                 logging.getLogger(__name__).debug(f"Could not ask {url}: {e}")
                 return None
+
+        if options.service == "Ollama":
+            shown = ask(f"{ollama_url(options.base_url)}/api/show", payload={"model": options.model}) or {}
+            # the key is named after the architecture, for example llama.context_length
+            for key, value in (shown.get("model_info") or {}).items():
+                if key.endswith(".context_length") and isinstance(value, int) and value > 0:
+                    return value
+            length = (shown.get("details") or {}).get("context_length")
+            return length if isinstance(length, int) and length > 0 else None
+
+        base = os.environ.get("OPENAI_API_BASE")
+        if not base:
+            return None
+        base = base.rstrip("/")
+        headers = {"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"} if "OPENAI_API_KEY" in os.environ else {}
+
+        def get(url):
+            return ask(url, headers=headers)
 
         # llama.cpp reports what it really loaded, which can be smaller than what the model could do
         loaded = ((get(f"{base}/props") or {}).get("default_generation_settings") or {}).get("n_ctx")
         if isinstance(loaded, int) and loaded > 0:
             return loaded
         for entry in (get(f"{base}/models") or {}).get("data") or []:
-            if not isinstance(entry, dict) or entry.get("id") != model:
+            if not isinstance(entry, dict) or entry.get("id") != options.model:
                 continue
             meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
             # names used by OpenRouter, vLLM and llama.cpp

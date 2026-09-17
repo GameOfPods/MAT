@@ -170,7 +170,19 @@ The order is: defaults, then the config file, then `--set`. Unknown sections, mi
 
 ### Summaries
 
-The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at another OpenAI compatible server (DeepSeek, Ollama, llama.cpp) the model name is whatever that server calls the model.
+The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at another OpenAI compatible server (DeepSeek, llama.cpp, vLLM) the model name is whatever that server calls the model.
+
+`llm.preset` sets the options that usually go together, and anything you set yourself wins over it:
+
+```bash
+uv run MAT run -i episode.mp3 -o results --yes --set llm.preset=ollama --set llm.model=qwen3:8b
+```
+
+- `openai`: a hosted API. Long queues are normal, so MAT waits up to 15 minutes for the first token.
+- `ollama`: talks to Ollama directly instead of through its OpenAI endpoint, which is the only way to learn the context size of a model and to send `num_ctx`. Through `/v1` Ollama quietly uses its own small default and cuts off the rest of the transcript. Server: `llm.base-url`, else `$OLLAMA_HOST`, else `http://localhost:11434`.
+- `llamacpp`: a local OpenAI compatible server. Point `OPENAI_API_BASE` at it, MAT asks it how much context it loaded.
+
+How much transcript goes into one call is `llm.chunk-size`, `auto` by default: MAT asks the server for the context size and fills it, so an episode that fits is summarized in a single call instead of chunk by chunk.
 
 Answers are streamed. If no first token arrives within 15 minutes (`llm.first-token-timeout`, covers the provider queue) or tokens stop for 2 minutes (`llm.idle-timeout`), the call is cancelled and tried again after 30 seconds, then 2 minutes (`llm.max-retries`, default 2). If the summary still fails, the episode is written without it and the error is in the log.
 

@@ -194,8 +194,9 @@ Transcript quality (seen on the first real German episode):
 
 ## Stage 7: podcast extras
 
-- [ ] LLM settings for either the OpenAI API or a local OpenAI compatible server (Ollama, llama.cpp). Document a few model picks that fit on the 1080 Ti.
-- [ ] Ollama as its own provider (`langchain-ollama`). Chat through Ollama's OpenAI compatible `/v1` endpoint already works, but only the native API (`/api/show`, `/api/chat`) exposes the context size and lets us set `num_ctx` per request. Through `/v1` the server default applies (often 2048 or 4096 tokens) and Ollama cuts longer prompts without an error.
+- [x] LLM settings for either the OpenAI API or a local server: `llm.preset` is `openai`, `ollama` or `llamacpp` and fills service, thinking, answer length and the timeouts (a hosted API queues, a local card chews on a long prompt for minutes). Anything set in the config or with `--set` wins over the preset.
+- [ ] Document a few local model picks that fit on the 1080 Ti, with the context they can hold.
+- [x] Ollama as its own provider (`llm.service = "Ollama"`, `langchain-ollama`). It asks `/api/show` for the context length of the model and sends `num_ctx` with every call, so Ollama loads what we actually need instead of its default (often 2048 or 4096 tokens) and cutting the prompt without saying so. `llm.base-url`, else `$OLLAMA_HOST`, else localhost.
 - [x] `chunk-size = auto`, now the default: explicit value wins, then ask the server (llama.cpp `meta.n_ctx` in `/v1/models`, vLLM `max_model_len`, OpenRouter `context_length`, Ollama `/api/show`), then a small built-in table of known API models (OpenAI and DeepSeek don't report it), then 32000. Chunk size = context - `max-tokens` - prompt size - 10% margin (MAT counts with OpenAI's tokenizer, other models count German text differently), capped at 100000 tokens because very long inputs make summaries worse in the middle. With 1M context API models a 2 hour episode then fits into one call.
 - [ ] Review and rework the summary pipeline, including the prompts. Known so far:
   - [done] The "system message" was pasted into the user prompt instead of being sent as a system message
