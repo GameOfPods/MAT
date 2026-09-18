@@ -25,10 +25,12 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 
-from MAT.utils.quiet import quiet_dependencies
+from MAT.utils.quiet import colorize_console, quiet_dependencies
 
 # libraries that log a lot get turned down, `MAT run --verbose` undoes it
 quiet_dependencies()
+# warnings and errors get a color when you're looking at a terminal, log files stay plain
+colorize_console()
 
 del os
 del logging

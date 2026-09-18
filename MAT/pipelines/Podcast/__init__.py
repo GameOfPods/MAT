@@ -18,6 +18,7 @@ from MAT.pipelines import Pipeline, PipelineResult, PipelineStepInput, PipelineS
 from MAT.tools import (
     TranscriptionInput, TranscriptionResult, TranscribeDiarizeTool, WordTupleSpeaker,
     DiarizerInput, DiarizationResult,
+    SpeakerNamingInput,
     SummaryInput, SummaryResult
 )
 from MAT.utils.config import Options
@@ -62,6 +63,8 @@ class PodcastOptions(Options):
                                                     "does the diarization.")
     identifier: str = Field("pyannote", description='Matches speakers to gold label clips. "none" keeps the '
                                                     'diarizer labels.')
+    namer: str = Field("none", description='Names the speakers that the identifier left unnamed, from what is said '
+                                           'in the transcript. "none" skips it. Gold labels always win.')
     summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
 
 
@@ -70,7 +73,7 @@ class PodcastPipeline(Pipeline):
     description = "Transcript, speakers and summary for audio files (anything ffmpeg can decode)."
     Options = PodcastOptions
     slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
-             "summarizer": Slot(optional=True)}
+             "namer": Slot(optional=True), "summarizer": Slot(optional=True)}
 
     @classmethod
     def accept(cls, f: str) -> bool:
@@ -129,10 +132,63 @@ class PodcastPipeline(Pipeline):
             full_transcript = "\n".join(word_speaker_to_transcript(word_speaker=squished_speaker))
             return PipelineStepResult(name="Finalizing transcript", data=(word_speaker, squished_speaker, full_transcript))
 
+        def name_speakers(step_input: PipelineStepInput) -> PipelineStepResult:
+            transcripts = step_input.data("Finalizing transcript")
+            matched: DiarizationResult = step_input.data("Speaker Matching")
+            if transcripts is None or matched is None:
+                return PipelineStepResult(name="Speaker Names", data=None)
+            namer = self.backend("namer", step_input.config)
+            if namer is None:
+                return PipelineStepResult(name="Speaker Names", data=None)
+
+            word_speaker, squished_speaker, full_transcript = transcripts
+            raw: DiarizationResult = step_input.data("Diarization")
+            # whatever the identifier matched to a gold clip keeps its name, those speakers aren't called sprecher_N
+            # any more. Everything still carrying a diarizer label is up for naming.
+            unnamed = matched.speaker & (raw.speaker if raw is not None else matched.speaker)
+            transcription: TranscriptionResult = step_input.data("Transcription")
+            try:
+                found = namer.process(
+                    origin_data=SpeakerNamingInput(lines=full_transcript.splitlines(),
+                                                   speakers=sorted(matched.speaker),
+                                                   language=getattr(transcription, "language", None)),
+                    config=step_input.config,
+                )
+            except Exception as e:
+                self.__class__._LOGGER.exception("Naming the speakers failed, keeping the names we have", exc_info=e)
+                return PipelineStepResult(name="Speaker Names", data=None)
+
+            renames = {}
+            for name in (found.names if found is not None else []):
+                if name.speaker in unnamed:
+                    renames[name.speaker] = name.name
+                elif name.speaker != name.name:
+                    self.__class__._LOGGER.warning(
+                        f'The transcript calls {name.speaker} "{name.name}" ({name.evidence}), but the gold labels '
+                        f"matched that voice to {name.speaker}. Keeping the gold label.")
+            if not renames:
+                return PipelineStepResult(name="Speaker Names", data=None)
+
+            def rename(words):
+                return [WordTupleSpeaker(word=w.word, speaker={renames.get(s, s) for s in w.speaker}) for w in words]
+
+            renamed = DiarizationResult({renames.get(s, s): matched.get_diarization(speaker=s)
+                                         for s in matched.speaker})
+            new_squished = rename(squished_speaker)
+            self.__class__._LOGGER.info("Named " + ", ".join(f"{old} -> {new}" for old, new in renames.items()))
+            return PipelineStepResult(name="Speaker Names", data=(
+                renamed, rename(word_speaker), new_squished,
+                "\n".join(word_speaker_to_transcript(word_speaker=new_squished)),
+            ))
+
         def summarize_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
             from os.path import basename
+            named = step_input.data("Speaker Names")
             transcripts = step_input.data("Finalizing transcript")
-            full_transcript = transcripts[2] if transcripts is not None else None
+            if named is not None:
+                full_transcript = named[3]
+            else:
+                full_transcript = transcripts[2] if transcripts is not None else None
             if full_transcript is None:
                 return PipelineStepResult(name="Summarize transcript", data=None)
             summarizer = self.backend("summarizer", step_input.config)
@@ -166,7 +222,8 @@ class PodcastPipeline(Pipeline):
                 )
             )
 
-        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, summarize_transcript, media_infos]
+        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, name_speakers,
+                summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
@@ -176,11 +233,16 @@ class PodcastPipeline(Pipeline):
 
         transcripts = _try_get("Finalizing transcript")
         word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcripts
+        matched = _try_get("Speaker Matching")
+        # the naming step returns everything again with the new names
+        named = _try_get("Speaker Names")
+        if named is not None:
+            matched, word_speaker, squished_speaker, full_transcript = named
 
         return PodcastOutput(
             media_info=_try_get("Media Info"),
             transcription=_try_get("Transcription"),
-            diarization=_try_get("Diarization"), diarization_matched=_try_get("Speaker Matching"),
+            diarization=_try_get("Diarization"), diarization_matched=matched,
             word_speaker=word_speaker, squished_speaker=squished_speaker, full_transcript=full_transcript,
             summary=_try_get("Summarize transcript"),
             models=dict(self.models),

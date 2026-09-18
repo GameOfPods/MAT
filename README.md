@@ -21,9 +21,10 @@ Used for any file ffmpeg can decode.
 1. **Transcription** (`whisper` or `parakeet`): [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with `large-v3-turbo` by default. If [whisperx](https://github.com/m-bain/whisperX) has an alignment model for the detected language, it aligns the words. If not, whisper's own word timestamps are used. Or NVIDIA [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), 25 European languages with word timestamps from the model itself. It doesn't report the language, so MAT guesses it from the transcript.
 2. **Diarization** (`sortformer`, `sortformer-streaming` or `pyannote-diarization`): NVIDIA NeMo Sortformer (`nvidia/diar_sortformer_4spk-v1`). Audio longer than 5 minutes is cut into pieces at quiet spots to keep memory use down, and the speakers of neighboring pieces are linked with WeSpeaker embeddings. Or [pyannote community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), which has no speaker limit, takes the whole file at once and can give an exclusive diarization (one speaker at a time). Or [streaming Sortformer v2.1](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2.1) (NVIDIA Open Model License, trained mostly on English), which keeps a speaker cache and handles hours of audio without cutting it into pieces.
 3. **Speaker names** (`pyannote`, optional): give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
-4. **Transcript**: every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
-5. **Summary** (`llm`, optional): an OpenAI compatible model through LangChain. Long transcripts are split into chunks and the summary gets refined chunk by chunk.
-6. **Media info**: duration, sample rate, loudness, language.
+4. **Speaker names from the transcript** (`llm-names`, off by default): asks an LLM who is who, based on what is said ("Danke, Alex"). It only runs for speakers the clips didn't match, needs a quoted line as proof and high confidence, and a gold clip always wins. Turn it on with `--namer llm-names`.
+5. **Transcript**: every word gets the speaker with the most time overlap, then words are merged into lines like `alice [12.3 - 15.8]: ...`.
+6. **Summary** (`llm`, optional): an OpenAI compatible API or a local Ollama. A transcript that fits into the model's context is summarized in one call, a longer one is split into chunks and refined chunk by chunk.
+7. **Media info**: duration, sample rate, loudness, language.
 
 ### Books
 
