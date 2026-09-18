@@ -54,6 +54,46 @@ WARNINGS = [
 ]
 
 
+COLORS = {"WARNING": "\033[33m", "ERROR": "\033[31m", "CRITICAL": "\033[31;1m"}
+RESET = "\033[0m"
+
+
+def use_colors() -> bool:
+    """Colors only for a terminal. Piped into a file or with NO_COLOR set (https://no-color.org) they'd be noise."""
+    if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
+        return False
+    return bool(getattr(sys.stderr, "isatty", lambda: False)())
+
+
+class ColorFormatter(logging.Formatter):
+    """Paints the level of a record, so a warning stands out between hundreds of info lines."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        color = COLORS.get(record.levelname)
+        if not color:
+            return super().format(record)
+        original = record.levelname
+        try:
+            record.levelname = f"{color}{original}{RESET}"
+            return super().format(record)
+        finally:
+            record.levelname = original
+
+
+def colorize_console() -> None:
+    """Gives the handlers that write to a terminal a coloring formatter. The log file keeps plain text."""
+    if not use_colors():
+        return
+    for handler in logging.getLogger().handlers:
+        stream = getattr(handler, "stream", None)
+        if stream is None or not getattr(stream, "isatty", lambda: False)():
+            continue
+        current = handler.formatter
+        if current is None or isinstance(current, ColorFormatter):
+            continue
+        handler.setFormatter(ColorFormatter(fmt=current._fmt, datefmt=current.datefmt, style="{"))
+
+
 def quiet_dependencies(verbose: bool = False) -> None:
     """Turns down libraries that log a lot. Called when MAT is imported, `--verbose` undoes it."""
     if verbose:
