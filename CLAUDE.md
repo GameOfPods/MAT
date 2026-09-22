@@ -65,6 +65,11 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 - Console noise: `MAT/utils/quiet.py`. Noisy loggers get a level, NeMo's own logger loses its handlers and is
   routed into Python logging (so `--log-file` gets it), and NeMo calls get `verbose=False`. `--verbose` undoes it.
   When a new dependency prints past Python logging, handle it there.
+- Speakers get their names in three steps, in this order of authority: gold label clips (`identifier`), then the
+  speaker library (`MAT/utils/speaker_library.py`, one JSON file with voice prints, off unless
+  `podcast.speaker-library` is set), then the transcript (`namer`). Later steps never rename what an earlier one
+  decided, and a disagreement is logged. `_rename_speakers` in the podcast pipeline renames in the diarization, the
+  words and the transcript at once.
 - Summaries: `MAT/tools/summary/llm`. No langchain chain any more, `process` splits the transcript and calls the
   model itself, instructions go in as a system message and the prompts live in `prompts.py`. `chunk-size = auto`
   asks the server for its context (llama.cpp `/props`, model listings, Ollama `/api/show`) and fills it, so a

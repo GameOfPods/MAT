@@ -145,6 +145,32 @@
           "title": "Id",
           "type": "string"
         },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real name of the person, when MAT knows one: from a gold label clip, from the transcript or from the speaker library. Null when only the diarizer label is known.",
+          "title": "Name"
+        },
+        "library_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of this voice in the speaker library. Stays the same in every episode the voice shows up in, which makes statistics per person possible. Null when no library was used.",
+          "title": "Library Id"
+        },
         "segments": {
           "description": "Time ranges this speaker talks, sorted by start.",
           "items": {

@@ -1,7 +1,7 @@
 [project]
 name = "mat-format"
 # the major version follows the result format version
-version = "2.0.0"
+version = "2.1.0"
 description = "Data model, JSON schemas and reader for MAT (Media Analytics Toolset) results"
 readme = "README.md"
 # Apache 2.0, unlike the rest of MAT (GPL-3.0), so programs under any license can use the reader and the schemas
