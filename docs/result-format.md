@@ -80,7 +80,12 @@ episode_2026-09-15_20-15-02/        or episode_2026-09-15_20-15-02.zip
 | `events` | list | Sound events (`label`, `start`, `end`, `score`). Always empty in MAT 0.2, planned. |
 | `entities` | list | Named entities in the transcript (`label`, `text`, `start`, `end`, `speakers`). Always empty in MAT 0.2, planned. |
 
-A **speaker** is `{"id": "alice", "segments": [{"start": 6.72, "end": 7.28}, ...]}`. The id is the gold label name when the speaker was matched, otherwise the diarizer label like `sprecher_0`. Segments are sorted by start.
+A **speaker** is `{"id": "alice", "name": "Alice", "library_id": "alice-9f2c1a", "segments": [{"start": 6.72, "end": 7.28}, ...]}`. The id is the gold label name when the speaker was matched, otherwise the diarizer label like `sprecher_0`. Segments are sorted by start.
+
+`name` and `library_id` came with mat-format 2.1 and are null in older results, so treat them as optional:
+
+- `name`: the person's name when MAT knows one, from a gold label clip, from the transcript or from the speaker library.
+- `library_id`: the id of that voice in the speaker library. It stays the same in every episode that voice appears in, which is what you need to count speaking time per person across episodes. Null when no library was used or the voice is new.
 
 A **word** is `{"start": 6.73, "end": 6.86, "text": "Hello?", "speakers": ["alice"]}`. `start` and `end` can be null if the aligner couldn't place the word. `speakers` is empty when no speaker talks at that time and has more than one entry when speakers overlap.
 

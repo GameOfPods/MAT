@@ -67,6 +67,12 @@ class Speaker(_Model):
     id: str = Field(description="Speaker label. The gold label name (for example alice) if the speaker was matched "
                                 "to a gold label clip, otherwise the diarizer label (for example sprecher_0). Only "
                                 "unique inside one result, not across episodes.")
+    name: Optional[str] = Field(None, description="Real name of the person, when MAT knows one: from a gold label "
+                                                  "clip, from the transcript or from the speaker library. Null when "
+                                                  "only the diarizer label is known.")
+    library_id: Optional[str] = Field(None, description="Id of this voice in the speaker library. Stays the same in "
+                                                        "every episode the voice shows up in, which makes statistics "
+                                                        "per person possible. Null when no library was used.")
     segments: List[TimeRange] = Field(description="Time ranges this speaker talks, sorted by start.")
 
 

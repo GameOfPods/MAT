@@ -10,7 +10,7 @@
 #  GNU General Public License for more details.
 import os.path
 from dataclasses import dataclass, field, asdict as dataclass_as_dict
-from typing import Any, List, Dict, Iterable, Callable
+from typing import Any, List, Dict, Iterable, Callable, Literal, Optional, Set, Tuple
 
 from pydantic import Field
 
@@ -52,9 +52,36 @@ class PodcastOutput(PipelineResult):
     full_transcript: str
     summary: SummaryResult
     models: Dict[str, Any] = field(default_factory=dict)
+    # speaker id -> {"name": ..., "library_id": ...} for speakers the library knows
+    speaker_library: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
     def as_dict(self):
         return dataclass_as_dict(self)
+
+
+def _rename_speakers(renames: Dict[str, str], diarization: DiarizationResult,
+                     word_speaker: List[WordTupleSpeaker], squished: List[WordTupleSpeaker]):
+    """Gives speakers new names everywhere: in the diarization, in the words and in the transcript lines."""
+    def rename(words: List[WordTupleSpeaker]) -> List[WordTupleSpeaker]:
+        return [WordTupleSpeaker(word=w.word, speaker={renames.get(s, s) for s in w.speaker}) for w in words]
+
+    renamed_squished = rename(squished)
+    renamed_diarization = DiarizationResult({renames.get(s, s): diarization.get_diarization(speaker=s)
+                                             for s in diarization.speaker})
+    return (renamed_diarization, rename(word_speaker), renamed_squished,
+            "\n".join(word_speaker_to_transcript(word_speaker=renamed_squished)))
+
+
+def _speaker_audio(audio, diarization: DiarizationResult, speaker: str, seconds: float):
+    """Up to `seconds` of what one speaker says, enough for an embedding without copying a whole episode."""
+    import pydub
+
+    collected = pydub.AudioSegment.empty()
+    for start, end in sorted(diarization.get_diarization(speaker=speaker)):
+        collected += audio[start * 1000:end * 1000]
+        if collected.duration_seconds >= seconds:
+            break
+    return collected
 
 
 class PodcastOptions(Options):
@@ -65,6 +92,16 @@ class PodcastOptions(Options):
                                                     'diarizer labels.')
     namer: str = Field("none", description='Names the speakers that the identifier left unnamed, from what is said '
                                            'in the transcript. "none" skips it. Gold labels always win.')
+    speaker_library: Optional[str] = Field(None, description="Folder with the speaker library. A voice that got a "
+                                                             "name once is recognized in later episodes and keeps "
+                                                             "the same id. Not set: no library.")
+    speaker_library_threshold: float = Field(0.6, ge=0, le=1, description="How similar a voice has to be to a known "
+                                                                          "one to count as the same person.")
+    speaker_library_seconds: float = Field(120.0, gt=0, description="Seconds of a speaker the library listens to "
+                                                                    "when it makes their voice print.")
+    speaker_library_learns: Literal["gold", "all", "never"] = Field(
+        "gold", description='What the library learns: "gold" only names that came from gold label clips, "all" also '
+                            'names the transcript gave us, "never" only reads and writes nothing.')
     summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
 
 
@@ -169,23 +206,95 @@ class PodcastPipeline(Pipeline):
             if not renames:
                 return PipelineStepResult(name="Speaker Names", data=None)
 
-            def rename(words):
-                return [WordTupleSpeaker(word=w.word, speaker={renames.get(s, s) for s in w.speaker}) for w in words]
-
-            renamed = DiarizationResult({renames.get(s, s): matched.get_diarization(speaker=s)
-                                         for s in matched.speaker})
-            new_squished = rename(squished_speaker)
             self.__class__._LOGGER.info("Named " + ", ".join(f"{old} -> {new}" for old, new in renames.items()))
-            return PipelineStepResult(name="Speaker Names", data=(
-                renamed, rename(word_speaker), new_squished,
-                "\n".join(word_speaker_to_transcript(word_speaker=new_squished)),
-            ))
+            return PipelineStepResult(name="Speaker Names",
+                                      data=_rename_speakers(renames, matched, word_speaker, squished_speaker))
+
+        def speaker_library(step_input: PipelineStepInput) -> PipelineStepResult:
+            options = step_input.config.options(self)
+            matched: DiarizationResult = step_input.data("Speaker Matching")
+            transcripts = step_input.data("Finalizing transcript")
+            if not options.speaker_library or matched is None or transcripts is None:
+                return PipelineStepResult(name="Speaker Library", data=None)
+            try:
+                from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Embedder
+            except ImportError as e:
+                self.__class__._LOGGER.warning(f"The speaker library needs the pyannote extra, skipping it: {e}")
+                return PipelineStepResult(name="Speaker Library", data=None)
+            import pydub
+
+            from MAT.utils.device import resolve_device
+            from MAT.utils.speaker_library import SpeakerLibrary
+
+            named = step_input.data("Speaker Names")
+            diarization, word_speaker, squished, transcript = named if named is not None else (
+                matched, transcripts[0], transcripts[1], transcripts[2])
+            raw: DiarizationResult = step_input.data("Diarization")
+            labels = raw.speaker if raw is not None else set()
+            # the identifier renamed whatever it matched, so those names are gone from the diarizer labels
+            from_gold = matched.speaker - labels
+
+            library = SpeakerLibrary.open(options.speaker_library)
+            audio = pydub.AudioSegment.from_file(step_input.file)
+            speakers = sorted(diarization.speaker)
+            clips = [_speaker_audio(audio, diarization, speaker, options.speaker_library_seconds)
+                     for speaker in speakers]
+            identifier_options = step_input.config.options(Embedder)
+            vectors = Embedder.embeddings(model=identifier_options.model,
+                                          audios=[(clip, clip.frame_rate) for clip in clips],
+                                          device=resolve_device(identifier_options.device),
+                                          use_hf_token=not identifier_options.no_hf_token)
+
+            episode = os.path.basename(step_input.file)
+            renames: Dict[str, str] = {}
+            known_speakers: Dict[str, Dict[str, str]] = {}
+            changed = False
+            for speaker, vector in zip(speakers, vectors):
+                if vector is None:
+                    continue
+                # a gold clip beats the library, that voice keeps the name the clips gave it
+                found = None if speaker in from_gold else library.match(vector, options.speaker_library_threshold)
+                if found is not None:
+                    entry, score = found
+                    self.__class__._LOGGER.info(f"The library knows {speaker} as {entry.name} ({score:.2f})")
+                    if entry.name != speaker:
+                        renames[speaker] = entry.name
+                    known_speakers[entry.name] = {"name": entry.name, "library_id": entry.library_id}
+                    if options.speaker_library_learns != "never":
+                        library.remember(entry.name, vector, source=entry.source, episode=episode)
+                        changed = True
+                    continue
+                if speaker in labels:
+                    continue  # still a diarizer label, there is no name to remember
+                source = "gold" if speaker in from_gold else "llm"
+                if options.speaker_library_learns == "never" or (
+                        source == "llm" and options.speaker_library_learns != "all"):
+                    self.__class__._LOGGER.info(f"Not putting {speaker} into the library, the name came from the "
+                                                f"{'transcript' if source == 'llm' else 'gold labels'} and "
+                                                f"speaker-library-learns is {options.speaker_library_learns}")
+                    continue
+                entry = library.remember(speaker, vector, source=source, episode=episode)
+                known_speakers[speaker] = {"name": entry.name, "library_id": entry.library_id}
+                changed = True
+
+            if renames:
+                diarization, word_speaker, squished, transcript = _rename_speakers(renames, diarization,
+                                                                                   word_speaker, squished)
+            if changed:
+                self.__class__._LOGGER.info(f"Speaker library saved to {library.save()}")
+            return PipelineStepResult(name="Speaker Library", data={
+                "diarization": diarization, "word_speaker": word_speaker, "squished": squished,
+                "transcript": transcript, "speakers": known_speakers,
+            })
 
         def summarize_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
             from os.path import basename
+            library = step_input.data("Speaker Library")
             named = step_input.data("Speaker Names")
             transcripts = step_input.data("Finalizing transcript")
-            if named is not None:
+            if library is not None:
+                full_transcript = library["transcript"]
+            elif named is not None:
                 full_transcript = named[3]
             else:
                 full_transcript = transcripts[2] if transcripts is not None else None
@@ -222,7 +331,7 @@ class PodcastPipeline(Pipeline):
                 )
             )
 
-        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, name_speakers,
+        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, name_speakers, speaker_library,
                 summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
@@ -238,6 +347,11 @@ class PodcastPipeline(Pipeline):
         named = _try_get("Speaker Names")
         if named is not None:
             matched, word_speaker, squished_speaker, full_transcript = named
+        # and the library step after it, with the names it recognized from earlier episodes
+        library = _try_get("Speaker Library")
+        if library is not None:
+            matched, word_speaker = library["diarization"], library["word_speaker"]
+            squished_speaker, full_transcript = library["squished"], library["transcript"]
 
         return PodcastOutput(
             media_info=_try_get("Media Info"),
@@ -246,6 +360,7 @@ class PodcastPipeline(Pipeline):
             word_speaker=word_speaker, squished_speaker=squished_speaker, full_transcript=full_transcript,
             summary=_try_get("Summarize transcript"),
             models=dict(self.models),
+            speaker_library={} if library is None else library["speakers"],
         )
 
 

@@ -10,6 +10,7 @@
 #  GNU General Public License for more details.
 import logging
 import os
+from contextlib import contextmanager
 from typing import Dict, Any, Tuple, List, Union, Optional
 
 import numpy as np
@@ -101,8 +102,31 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
     ) -> Tuple[List[str], np.ndarray]:
         """Gold speaker names and the cosine similarity of every audio (rows) to every gold speaker (columns). 0 where
         no embedding could be made."""
-        from pyannote.audio import Model, Inference
         from scipy.spatial.distance import cosine
+
+        names = list(gold)
+        with SpeakerIdetificationPyannote._embedder(model, device=device, use_hf_token=use_hf_token) as embed:
+            gold_embeddings = [embed(gold[name][0], gold[name][1]) for name in names]
+            matrix = np.zeros((len(audios), len(names)))
+            for row, (wave_form, sample_rate) in enumerate(audios):
+                test_embedding = embed(wave_form, sample_rate)
+                for column, gold_embedding in enumerate(gold_embeddings):
+                    if test_embedding is not None and gold_embedding is not None:
+                        matrix[row, column] = 1 - cosine(test_embedding, gold_embedding)
+        return names, matrix
+
+    @staticmethod
+    def embeddings(model: str, audios: List[Tuple[Union[Tensor, np.ndarray, pydub.AudioSegment], int]],
+                   device: str = "cpu", use_hf_token: Any = True) -> List[Optional[np.ndarray]]:
+        """One vector per audio, None where the model couldn't make one. The speaker library stores these."""
+        with SpeakerIdetificationPyannote._embedder(model, device=device, use_hf_token=use_hf_token) as embed:
+            return [embed(wave, sample_rate) for wave, sample_rate in audios]
+
+    @staticmethod
+    @contextmanager
+    def _embedder(model: str, device: str = "cpu", use_hf_token: Any = True):
+        """Loads the embedding model once and hands out embed(audio, sample_rate). Frees the GPU on the way out."""
+        from pyannote.audio import Model, Inference
         import torchaudio.transforms
         import torch
 
@@ -135,18 +159,10 @@ class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
                             return None
                 return embedding
 
-        names = list(gold)
-        gold_embeddings = [_get_embedding(wave=gold[name][0], sample=gold[name][1]) for name in names]
-        matrix = np.zeros((len(audios), len(names)))
-        for row, (wave_form, sample_rate) in enumerate(audios):
-            test_embedding = _get_embedding(wave=wave_form, sample=sample_rate)
-            for column, gold_embedding in enumerate(gold_embeddings):
-                if test_embedding is not None and gold_embedding is not None:
-                    matrix[row, column] = 1 - cosine(test_embedding, gold_embedding)
-
-        from MAT.utils.device import free_gpu_memory
-        del classifier
-        del pyannote_model
-        free_gpu_memory()
-
-        return names, matrix
+        try:
+            yield _get_embedding
+        finally:
+            from MAT.utils.device import free_gpu_memory
+            del classifier
+            del pyannote_model
+            free_gpu_memory()

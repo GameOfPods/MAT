@@ -39,11 +39,15 @@ def _finite(value: Optional[float]) -> Optional[float]:
     return float(value) if value is not None and math.isfinite(value) else None
 
 
-def _speakers(diarization: Optional[DiarizationResult]) -> List[Speaker]:
+def _speakers(diarization: Optional[DiarizationResult],
+              library: Optional[Dict[str, Dict[str, str]]] = None) -> List[Speaker]:
     if diarization is None:
         return []
-    return [Speaker(id=speaker, segments=[TimeRange(start=start, end=end)
-                                          for start, end in sorted(diarization.get_diarization(speaker))])
+    library = library or {}
+    return [Speaker(id=speaker, name=(library.get(speaker) or {}).get("name"),
+                    library_id=(library.get(speaker) or {}).get("library_id"),
+                    segments=[TimeRange(start=start, end=end)
+                              for start, end in sorted(diarization.get_diarization(speaker))])
             for speaker in sorted(diarization.speaker)]
 
 
@@ -65,7 +69,7 @@ def podcast_result(output: PodcastOutput) -> PodcastResult:
             duration=media.duration, speech_duration=_finite(media.duration_after_vad),
             sample_rate=media.sample_rate, max_dbfs=_finite(media.max_dbfs), rms=_finite(media.rms),
         ),
-        speakers=_speakers(output.diarization_matched),
+        speakers=_speakers(output.diarization_matched, getattr(output, "speaker_library", None)),
         diarization=_speakers(output.diarization),
         words=_words(output.word_speaker),
         segments=_words(output.squished_speaker),

@@ -169,6 +169,20 @@ gold-labels = "speakers/"
 
 The order is: defaults, then the config file, then `--set`. Unknown sections, misspelled options and wrong types stop the run before any file is processed. Sections for backends that aren't installed only give a warning.
 
+### Speaker library
+
+MAT can remember voices between episodes. Point it at a folder and every speaker whose name it knows gets a voice print stored there:
+
+```bash
+uv run MAT run -i episode.mp3 -o results --yes \
+  --set podcast.speaker-library=~/mat-speakers \
+  --set pyannote.gold-labels=speakers/
+```
+
+In the next episode the same voices are recognized without clips, keep their names, and keep the same `library_id` in `result.json`, so you can count speaking time per person across a whole season.
+
+By default only names that came from gold clips are learned (`podcast.speaker-library-learns = "gold"`). `"all"` also stores names that the LLM read out of the transcript, `"never"` only reads. The library is a single `speakers.json` you can open, fix by hand or delete.
+
 ### Summaries
 
 The summary uses `gpt-5.6-terra` by default. `gpt-5.6-luna` is a lot cheaper and fine for most episodes. With `OPENAI_API_BASE` pointing at another OpenAI compatible server (DeepSeek, llama.cpp, vLLM) the model name is whatever that server calls the model.
