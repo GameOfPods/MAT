@@ -68,6 +68,8 @@ class TranscriptorParakeet(TransciptionTool):
 
         options = config.options(self)
         device = resolve_device(options.device)
+        if origin_data.vocabulary:
+            self._LOGGER.info("Parakeet doesn't use the vocabulary, only whisper and the summary do")
         sound = AudioSegment.from_file(origin_data.input_file).set_channels(1).set_frame_rate(16000)
         sound = sound.set_sample_width(2)
         windows = plan_windows(np.frombuffer(sound.raw_data, dtype=np.int16), sound.frame_rate,

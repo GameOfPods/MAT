@@ -59,12 +59,19 @@ class TranscriptionResult(ToolResult):
 
 
 class TranscriptionInput(ToolInput):
-    def __init__(self, input_file: str):
+    def __init__(self, input_file: str, vocabulary: Optional[List[str]] = None):
         self._input_file = input_file
+        self._vocabulary = list(vocabulary or [])
 
     @property
     def input_file(self) -> str:
         return self._input_file
+
+    @property
+    def vocabulary(self) -> List[str]:
+        """Names and words of the show that the model should expect (podcast.vocabulary). Backends that can't use
+        them say so and go on without."""
+        return self._vocabulary
 
 
 class TransciptionTool(Tool[TranscriptionInput, TranscriptionResult], ABC):

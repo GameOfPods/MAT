@@ -10,7 +10,7 @@
 #  GNU General Public License for more details.
 import os.path
 from dataclasses import dataclass, field, asdict as dataclass_as_dict
-from typing import Any, List, Dict, Iterable, Callable, Literal, Optional, Set, Tuple
+from typing import Any, List, Dict, Iterable, Callable, Literal, Optional, Sequence, Set, Tuple, Union
 
 from pydantic import Field
 
@@ -21,7 +21,7 @@ from MAT.tools import (
     SpeakerNamingInput,
     SummaryInput, SummaryResult
 )
-from MAT.utils.config import Options
+from MAT.utils.config import Config, ConfigError, Options
 from MAT.utils.diarization import (
     align_diarization_with_transcription, assign_speakers, squish_word_speaker, word_speaker_to_transcript
 )
@@ -72,6 +72,20 @@ def _rename_speakers(renames: Dict[str, str], diarization: DiarizationResult,
             "\n".join(word_speaker_to_transcript(word_speaker=renamed_squished)))
 
 
+def load_vocabulary(value: Union[None, str, Sequence[str]]) -> List[str]:
+    """podcast.vocabulary as a list: the list itself, or the lines of a text file without comments and blanks."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        path = os.path.expanduser(os.path.expandvars(value))
+        if not os.path.isfile(path):
+            raise ConfigError(f"podcast.vocabulary: {value} is no file. Give a file or a list of words.")
+        with open(path, encoding="utf-8") as f:
+            lines = [line.split("#", 1)[0].strip() for line in f]
+        return [line for line in lines if line]
+    return [str(word).strip() for word in value if str(word).strip()]
+
+
 def _speaker_state(data: Callable[[str], Any]) -> Optional[Dict[str, Any]]:
     """The speakers as far as the pipeline got: after naming, after the library, or straight from the transcript.
     A dict with diarization, word_speaker, squished, transcript and speakers (name -> {"name", "library_id"} for
@@ -110,6 +124,10 @@ class PodcastOptions(Options):
                                                     'diarizer labels.')
     namer: str = Field("none", description='Names the speakers that the identifier left unnamed, from what is said '
                                            'in the transcript. "none" skips it. Gold labels always win.')
+    vocabulary: Optional[Union[List[str], str]] = Field(
+        None, description="Names and words of the show that get misheard, as a list or a text file with one per "
+                          "line (# starts a comment). Whisper expects them while transcribing and the summary "
+                          "spells them that way. Keep it short, whisper reads about 600 characters.")
     word_speakers: Literal["single", "overlap"] = Field(
         "single", description='"single" gives every word the one speaker who talks longest during it and fills small '
                               'gaps from the words around it. "overlap" gives a word every speaker who talks during '
@@ -142,6 +160,11 @@ class PodcastPipeline(Pipeline):
              "namer": Slot(optional=True), "summarizer": Slot(optional=True)}
 
     @classmethod
+    def preflight(cls, config: Config) -> None:
+        load_vocabulary(config.options(cls).vocabulary)  # a missing file stops the run before the first episode
+        super().preflight(config)
+
+    @classmethod
     def accept(cls, f: str) -> bool:
         from pydub import AudioSegment
         # noinspection PyBroadException
@@ -158,7 +181,9 @@ class PodcastPipeline(Pipeline):
         def transcribe(step_input: PipelineStepInput) -> PipelineStepResult:
             transcriber = self.backend("transcriber", step_input.config)
             used["transcriber"] = transcriber
-            d = transcriber.process(origin_data=TranscriptionInput(step_input.file), config=step_input.config)
+            vocabulary = load_vocabulary(step_input.config.options(self).vocabulary)
+            d = transcriber.process(origin_data=TranscriptionInput(step_input.file, vocabulary=vocabulary),
+                                    config=step_input.config)
             return PipelineStepResult(name="Transcription", data=d)
 
         def diarize(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -353,10 +378,12 @@ class PodcastPipeline(Pipeline):
             # A failing summary (API down, provider queue timeout, no key) must not throw away the transcript and
             # diarization we already have, so log it and write the episode without a summary.
             try:
-                summary = summarizer.process(
-                    origin_data=SummaryInput(full_transcript, additional_metadata={"filename": basename(step_input.file)}),
-                    config=step_input.config
-                )
+                metadata = {"filename": basename(step_input.file)}
+                vocabulary = load_vocabulary(step_input.config.options(self).vocabulary)
+                if vocabulary:
+                    metadata["names and words of the show, spelled right"] = ", ".join(vocabulary)
+                summary = summarizer.process(origin_data=SummaryInput(full_transcript, additional_metadata=metadata),
+                                             config=step_input.config)
             except Exception as e:
                 self.__class__._LOGGER.exception(f"Summary failed for {basename(step_input.file)}, "
                                                  f"writing the results without a summary", exc_info=e)

@@ -67,3 +67,13 @@ def test_language_without_alignment_model_asks_whisper_for_words(fake_whisper, m
     assert call["language"] == "xx" and call["word_timestamps"] is True
     assert result.language == "xx"
     assert result.word_timings == [WordTuple(0.1, 0.4, " hello"), WordTuple(0.5, 0.9, " there")]
+
+
+def test_the_vocabulary_becomes_hotwords(fake_whisper, monkeypatch):
+    FakeWhisperModel.language = "xx"
+    TransciptorWhisper().process(TranscriptionInput("episode.mp3", vocabulary=["Samwell", "Azor Ahai"]),
+                                 config=fake_whisper)
+    assert FakeWhisperModel.transcribe_calls[0]["hotwords"] == "Samwell, Azor Ahai"
+
+    TransciptorWhisper().process(TranscriptionInput("episode.mp3"), config=fake_whisper)
+    assert FakeWhisperModel.transcribe_calls[1]["hotwords"] is None

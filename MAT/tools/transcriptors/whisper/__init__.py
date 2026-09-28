@@ -65,8 +65,15 @@ class TransciptorWhisper(TransciptionTool):
         self._LOGGER.info(f"Detected language {language} ({language_probability:.0%}). "
                           f"{'Aligning words with whisperx' if has_align_model else 'No whisperx alignment model, using whisper word timestamps'}")
 
+        # the show's names go in front of every 30 s window, whisper keeps at most about 220 tokens of them
+        hotwords = ", ".join(origin_data.vocabulary) or None
+        if hotwords:
+            self._LOGGER.info(f"Expecting {len(origin_data.vocabulary)} words from the vocabulary")
+            if len(hotwords) > 600:
+                self._LOGGER.warning(f"The vocabulary has {len(hotwords)} characters, whisper only reads about the "
+                                     f"first 600. Keep it to the names it gets wrong.")
         segments, info = model.transcribe(audio, language=language, beam_size=options.beam_size, vad_filter=True,
-                                          word_timestamps=not has_align_model)
+                                          word_timestamps=not has_align_model, hotwords=hotwords)
 
         segment_lengths = []
         segments_as_dict = []

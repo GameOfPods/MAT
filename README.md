@@ -169,6 +169,16 @@ gold-labels = "speakers/"
 
 The order is: defaults, then the config file, then `--set`. Unknown sections, misspelled options and wrong types stop the run before any file is processed. Sections for backends that aren't installed only give a warning.
 
+### Show vocabulary
+
+Names that whisper gets wrong ("Samuel" for Samwell) can go into a vocabulary, as a list or a text file with one name per line:
+
+```bash
+uv run MAT run -i episode.mp3 -o results --yes --set podcast.vocabulary=~/shows/game-of-pods.txt
+```
+
+Whisper expects these words in every 30 second window and the summary spells them that way. Parakeet ignores the list. Keep it to the names that actually go wrong, whisper reads about 600 characters of it.
+
 ### Speaker library
 
 MAT can remember voices between episodes. Point it at a folder and every speaker whose name it knows gets a voice print stored there:
