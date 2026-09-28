@@ -2,7 +2,7 @@
 
 Known problems and what we want to do about them. Stage 1 is done on the `fix/restore-v0.2` branch. Every later stage gets its own branch.
 
-**Next up:** the rest of stage 7. Parakeet as the default transcriber waits for the corrected German reference.
+**Next up:** a GPU box run of what stage 7 added (full_test turns entities and sound events on), then the summary comparison (refine, map-reduce, one call) and stage 8. Parakeet as the default transcriber waits for the corrected German reference.
 
 Target hardware for real runs is a separate box with a GTX 1080 Ti (11 GB). Development and unit tests happen on a CPU-only machine. The notes on models and hardware at the bottom explain most of the choices below.
 
