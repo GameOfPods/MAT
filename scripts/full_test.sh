@@ -130,12 +130,13 @@ detail() { sed 's/^/      /'; }
 
 # run NAME LOG COMMAND...   output goes to $LOGS/LOG.log, prints time, peak GPU memory and the log tail on failure
 run() {
-  local name=$1 log=$LOGS/$2.log sampler="" rc start seconds peak=""
+  # the GPU file is named here, before the shift: after it $2 is part of the command, which can be a token
+  local name=$1 log=$LOGS/$2.log gpu=$LOGS/$2.gpu sampler="" rc start seconds peak=""
   shift 2
   STEPS=$((STEPS + 1))
   printf '%s  %-24s ' "$(date +%H:%M)" "$name"
   if [ "$MAT_TEST_DEVICE" = cuda ] && command -v nvidia-smi >/dev/null; then
-    nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 500 > "$LOGS/$2.gpu" 2>/dev/null &
+    nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 500 > "$gpu" 2>/dev/null &
     sampler=$!
   fi
   start=$(date +%s.%N)
@@ -145,7 +146,7 @@ run() {
   if [ -n "$sampler" ]; then
     kill "$sampler" 2>/dev/null
     wait "$sampler" 2>/dev/null
-    peak=$(sort -n "$LOGS/$2.gpu" | tail -1)
+    peak=$(sort -n "$gpu" | tail -1)
     if [ -n "$peak" ]; then
       peak=", peak GPU memory +$(( peak > GPU_IDLE ? peak - GPU_IDLE : 0 )) MiB"
     fi
