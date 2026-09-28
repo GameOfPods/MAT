@@ -21,7 +21,7 @@ require("langchain_core", "langchain_openai", "langchain_text_splitters", "tikto
 
 from MAT.utils.config import Config, Options  # noqa: E402
 from MAT.tools.summary import SummaryTool, SummaryInput, SummaryResult  # noqa: E402
-from MAT.tools.summary.llm.prompts import SYSTEM_MESSAGE, PROMPT, REFINE_PROMPT  # noqa: E402
+from MAT.tools.summary.llm.prompts import MAP_PROMPT, PROMPT, REDUCE_PROMPT, REFINE_PROMPT, SYSTEM_MESSAGE  # noqa: E402
 
 # Used for "auto" when the server doesn't report a context size. Providers that don't say: DeepSeek (1M tokens for
 # deepseek-flash and deepseek-pro since V4, prompt and answer share it), OpenAI doesn't report it either.
@@ -193,6 +193,15 @@ class LLMOptions(Options):
     prompt: str = Field(PROMPT, description="Prompt for the first chunk, has to contain {text}.")
     prompt_refine: str = Field(REFINE_PROMPT, description="Prompt for the following chunks, has to contain "
                                                           "{existing_answer} and {text}.")
+    strategy: Literal["refine", "map-reduce"] = Field(
+        "refine", description="For transcripts that need more than one call. refine: every call rewrites the "
+                              "summary with the next chunk. map-reduce: notes per chunk, then one call that writes "
+                              "the summary from all notes, which keeps late chunks from taking over and suits small "
+                              "local models.")
+    prompt_map: str = Field(MAP_PROMPT, description="map-reduce: prompt for the notes on one chunk, has to contain "
+                                                    "{text}. {part} and {parts} are filled in too.")
+    prompt_reduce: str = Field(REDUCE_PROMPT, description="map-reduce: prompt that turns the notes into the summary, "
+                                                          "has to contain {text}.")
 
     @field_validator("service")
     @classmethod
@@ -231,7 +240,11 @@ class SummaryLLM(SummaryTool):
         # the instructions and the answer have to fit next to the transcript. A refine call also carries the summary
         # so far, which can be as long as one answer.
         reserved = len_fun(system) + len_fun(options.prompt)
-        refine_reserved = len_fun(system) + len_fun(options.prompt_refine) + options.max_tokens
+        if options.strategy == "map-reduce":
+            # a map call carries one chunk, a reduce call notes of at most one chunk's size
+            refine_reserved = len_fun(system) + max(len_fun(options.prompt_map), len_fun(options.prompt_reduce))
+        else:
+            refine_reserved = len_fun(system) + len_fun(options.prompt_refine) + options.max_tokens
         longest = max((len_fun(text) for text in origin_data.text), default=0)
         chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun,
                                               refine_reserved=refine_reserved, longest=longest)
@@ -259,6 +272,9 @@ class SummaryLLM(SummaryTool):
             chunks = splitter.split_text(text)
             self.__class__._LOGGER.info(f"Summarizing {len_fun(text)} tokens in {len(chunks)} chunk(s) of at most "
                                         f"{chunk_size} tokens")
+            if len(chunks) > 1 and options.strategy == "map-reduce":
+                return_summaries.append(self._map_reduce(llm, options, system, metadata, chunks, chunk_size, len_fun))
+                continue
             summary: Optional[str] = None
             for number, chunk in enumerate(chunks, start=1):
                 if summary is None:
@@ -273,12 +289,46 @@ class SummaryLLM(SummaryTool):
 
         return SummaryResult(*return_summaries)
 
+    @classmethod
+    def _map_reduce(cls, llm, options: "LLMOptions", system: str, metadata: str, chunks: List[str],
+                    chunk_size: int, len_fun) -> str:
+        """Notes per chunk, then the summary from the notes. Notes that don't fit into one call together are
+        reduced in groups first."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        def ask(prompt: str) -> str:
+            answer = llm.invoke([SystemMessage(system), HumanMessage(prompt)])
+            return str(getattr(answer, "content", answer) or "").strip()
+
+        notes = []
+        for number, chunk in enumerate(chunks, start=1):
+            cls._LOGGER.info(f"Notes on chunk {number} of {len(chunks)}")
+            notes.append(ask(cls._fill(options.prompt_map, text=chunk, metadata=metadata, part=str(number),
+                                       parts=str(len(chunks)))))
+
+        def joined(group: List[str]) -> str:
+            return "\n\n".join(f"Part {i}:\n{note}" for i, note in enumerate(group, start=1))
+
+        while len(notes) > 1 and len_fun(joined(notes)) > chunk_size:
+            groups: List[List[str]] = [[]]
+            for note in notes:
+                if groups[-1] and len_fun(joined(groups[-1] + [note])) > chunk_size:
+                    groups.append([])
+                groups[-1].append(note)
+            if len(groups) >= len(notes):
+                break  # every note is as big as a chunk, grouping gets nowhere
+            cls._LOGGER.info(f"The notes don't fit into one call, joining them in {len(groups)} groups first")
+            notes = [ask(cls._fill(options.prompt_reduce, text=joined(group), metadata=metadata)) for group in groups]
+        cls._LOGGER.info(f"Writing the summary from the notes on {len(chunks)} chunks")
+        return ask(cls._fill(options.prompt_reduce, text=joined(notes), metadata=metadata))
+
     @staticmethod
-    def _fill(template: str, text: str = "", metadata: str = "", existing_answer: str = "") -> str:
+    def _fill(template: str, text: str = "", metadata: str = "", existing_answer: str = "", part: str = "",
+              parts: str = "") -> str:
         """Fills the placeholders of a prompt. Replacing instead of str.format, so braces in a transcript or in a
         prompt of your own don't blow up the run."""
         for name, value in (("{text}", text), ("{additional_metadata}", metadata),
-                            ("{existing_answer}", existing_answer)):
+                            ("{existing_answer}", existing_answer), ("{part}", part), ("{parts}", parts)):
             template = template.replace(name, value)
         return template
 

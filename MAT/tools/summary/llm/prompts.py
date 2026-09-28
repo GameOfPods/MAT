@@ -15,7 +15,12 @@ Written against a real 3 hour German episode. What the old prompts did wrong the
 nobody in the episode made (the system message allowed outside knowledge), every refine step repeated things the
 summary already said, and every summary started with a sentence explaining that it is a summary.
 
-`{text}`, `{existing_answer}` and `{additional_metadata}` are filled in by the chain.
+`{text}`, `{existing_answer}`, `{part}`, `{parts}` and `{additional_metadata}` are filled in by MAT.
+
+Two ways to handle a transcript that doesn't fit into one call: refine (PROMPT for the first chunk, REFINE_PROMPT for
+every further one, each call rewrites the whole summary) or map-reduce (MAP_PROMPT writes notes per chunk
+independently, REDUCE_PROMPT turns the notes into the summary). On the GPU box a small local model appended new
+sections after its own conclusion when refining, map-reduce doesn't give it the chance.
 """
 
 SYSTEM_MESSAGE = (
@@ -66,4 +71,29 @@ REFINE_PROMPT = (
     "SUMMARY:"
 )
 
-__all__ = ["SYSTEM_MESSAGE", "PROMPT", "REFINE_PROMPT"]
+MAP_PROMPT = (
+    "Here is part {part} of {parts} of a transcript:\n"
+    "\n"
+    '"{text}"\n'
+    "\n"
+    "Write notes on this part for a summary of the whole transcript: every topic, what the speakers say about it, "
+    "and where they agree or disagree. Short bullet points under a heading per topic. Nothing about this being a "
+    "part, no introduction and no conclusion.\n"
+    "\n"
+    "NOTES:"
+)
+
+REDUCE_PROMPT = (
+    "Here are notes on the parts of one transcript, in order:\n"
+    "\n"
+    "{text}\n"
+    "\n"
+    "Write the summary of the whole transcript from them:\n"
+    "- Join what belongs together, also across parts, and say nothing twice.\n"
+    "- Give every part the room its content needs, the first one no more than the last.\n"
+    "- Don't mention the parts or the notes.\n"
+    "\n"
+    "SUMMARY:"
+)
+
+__all__ = ["SYSTEM_MESSAGE", "PROMPT", "REFINE_PROMPT", "MAP_PROMPT", "REDUCE_PROMPT"]

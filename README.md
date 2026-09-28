@@ -227,6 +227,8 @@ uv run MAT run -i episode.mp3 -o results --yes --set llm.preset=ollama --set llm
 
 How much transcript goes into one call is `llm.chunk-size`, `auto` by default: MAT asks the server for the context size and fills it, so an episode that fits is summarized in a single call instead of chunk by chunk.
 
+An episode that doesn't fit is handled by `llm.strategy`. `refine` (default) hands the summary so far plus the next chunk to every call. `map-reduce` writes notes for every chunk on its own and then the summary from all notes in one call, so late chunks can't take over and the model never gets to add sections after its own conclusion. That's worth trying with small local models.
+
 Answers are streamed. If no first token arrives within 15 minutes (`llm.first-token-timeout`, covers the provider queue) or tokens stop for 2 minutes (`llm.idle-timeout`), the call is cancelled and tried again after 30 seconds, then 2 minutes (`llm.max-retries`, default 2). If the summary still fails, the episode is written without it and the error is in the log.
 
 Reasoning models think before they answer, which costs time and tokens. MAT asks for `llm.reasoning-effort = "low"` by default. Provider specific switches go into `llm.extra-body`, for example to turn thinking off completely on DeepSeek:

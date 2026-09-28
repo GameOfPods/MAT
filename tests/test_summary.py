@@ -268,3 +268,37 @@ def test_config_show_prints_what_the_preset_fills_in():
     text = render_sections([SummaryLLM], config=Config({"llm": {"preset": "ollama", "model": "qwen3:8b"}}),
                            comments=False)
     assert 'service = "Ollama"' in text and "max-tokens = 4096" in text
+
+
+def test_map_reduce_writes_notes_per_chunk_then_one_summary(monkeypatch):
+    llm = RecordingLLM(responses=[f"notes {i}" for i in range(1, 13)] + ["the summary"])
+    llm.prompts = []
+    monkeypatch.setattr(LLM, "get_llm", lambda self, **kwargs: llm)
+
+    config = Config({"llm": {"chunk-size": 50, "strategy": "map-reduce"}})
+    text = "\n\n".join(f"sprecher_0 [{i}.0 - {i}.5]: paragraph number {i} about nothing." for i in range(12))
+    result = SummaryLLM().process(SummaryInput(text, additional_metadata={}), config=config)
+
+    maps = [p for p in llm.prompts if "Write notes on this part" in p]
+    assert len(maps) > 1 and len(maps) == len(llm.prompts) - 1
+    assert f"part 1 of {len(maps)}" in maps[0] and "The summary so far" not in "".join(llm.prompts)
+    # the last call gets every note, in order
+    final = llm.prompts[-1]
+    assert "Write the summary of the whole transcript" in final
+    assert final.index("notes 1") < final.index(f"notes {len(maps)}")
+    # the summary is the answer to that last call
+    assert list(result.text) == [llm.responses[len(llm.prompts) - 1]]
+
+
+def test_map_reduce_joins_notes_in_groups_when_they_are_too_long(monkeypatch):
+    long_note = "word " * 40
+    llm = RecordingLLM(responses=[long_note] * 40)
+    llm.prompts = []
+    monkeypatch.setattr(LLM, "get_llm", lambda self, **kwargs: llm)
+
+    config = Config({"llm": {"chunk-size": 100, "strategy": "map-reduce"}})
+    text = "\n\n".join(f"sprecher_0 [{i}.0 - {i}.5]: paragraph number {i} about nothing at all." for i in range(20))
+    SummaryLLM().process(SummaryInput(text, additional_metadata={}), config=config)
+
+    reduces = [p for p in llm.prompts if "Write the summary of the whole transcript" in p]
+    assert len(reduces) > 1  # groups first, then the final one
