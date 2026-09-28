@@ -200,13 +200,19 @@ class SummaryLLM(SummaryTool):
         if metadata and "{additional_metadata}" not in options.system_message:
             system = f"{system}\n\nAdditional information about the source:\n{metadata}"
 
-        # the instructions and the answer have to fit next to the transcript
-        reserved = len_fun(system) + max(len_fun(options.prompt), len_fun(options.prompt_refine))
-        chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun)
+        # the instructions and the answer have to fit next to the transcript. A refine call also carries the summary
+        # so far, which can be as long as one answer.
+        reserved = len_fun(system) + len_fun(options.prompt)
+        refine_reserved = len_fun(system) + len_fun(options.prompt_refine) + options.max_tokens
+        longest = max((len_fun(text) for text in origin_data.text), default=0)
+        chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun,
+                                              refine_reserved=refine_reserved, longest=longest)
         splitter = self._get_splitter(chunk_size, len_fun=len_fun, chunk_overlap=options.chunk_overlap)
 
         # Ollama needs to be told how much context to load, the others take what the prompt brings
-        num_ctx = chunk_size + options.max_tokens + reserved if options.service == "Ollama" else None
+        refines = longest > chunk_size
+        num_ctx = (chunk_size + options.max_tokens + (refine_reserved if refines else reserved)
+                   if options.service == "Ollama" else None)
         llm = LLM.parse_str(name=options.service).get_llm(
             model=options.model,
             max_tokens=options.max_tokens,
@@ -262,8 +268,11 @@ class SummaryLLM(SummaryTool):
         return options.model_copy(update=update)
 
     @classmethod
-    def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun) -> int:
-        """Tokens per chunk. An explicit number wins, "auto" asks the server, then the table, then the fallback."""
+    def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun, refine_reserved: Optional[int] = None,
+                            longest: Optional[int] = None) -> int:
+        """Tokens per chunk. An explicit number wins, "auto" asks the server, then the table, then the fallback.
+        With "auto", a transcript that fits gets one call. One that doesn't gets chunks small enough that a refine
+        call (refine_reserved: prompt plus the summary so far) still fits into the context."""
         if options.chunk_size != "auto":
             return int(options.chunk_size)
         context, source = cls._server_context(options), "the server"
@@ -274,11 +283,19 @@ class SummaryLLM(SummaryTool):
             cls._LOGGER.info(f"{options.model} doesn't say how much context it has, using {FALLBACK_CHUNK_SIZE} "
                              f"tokens per chunk. Set llm.chunk-size if you know better.")
             return FALLBACK_CHUNK_SIZE
-        # 10 % for the tokenizer counting differently than the model does
-        room = int((context - options.max_tokens - reserved) * 0.9)
-        chunk = max(MIN_CHUNK_SIZE, min(room, MAX_CHUNK_SIZE))
-        cls._LOGGER.info(f"{options.model} has {context} tokens of context according to {source}, "
-                         f"using {chunk} tokens per chunk")
+        def fitting(prompt: int) -> int:
+            # 10 % for the tokenizer counting differently than the model does
+            return max(MIN_CHUNK_SIZE, min(int((context - options.max_tokens - prompt) * 0.9), MAX_CHUNK_SIZE))
+
+        chunk = fitting(reserved)
+        if refine_reserved is not None and longest is not None and longest > chunk:
+            chunk = fitting(refine_reserved)
+            cls._LOGGER.info(f"{options.model} has {context} tokens of context according to {source}. The transcript "
+                             f"needs several calls, using {chunk} tokens per chunk to leave room for the summary so "
+                             f"far")
+        else:
+            cls._LOGGER.info(f"{options.model} has {context} tokens of context according to {source}, "
+                             f"using {chunk} tokens per chunk")
         return chunk
 
     @classmethod

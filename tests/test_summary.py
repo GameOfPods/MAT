@@ -60,6 +60,36 @@ def test_auto_chunk_size_fills_the_server_context(monkeypatch):
     assert size == int((32768 - 16384 - 1000) * 0.9)
 
 
+def test_auto_chunk_size_leaves_room_for_the_summary_when_refining(monkeypatch):
+    monkeypatch.setattr(SummaryLLM, "_server_context", classmethod(lambda cls, options: 40960))
+    options = _options(**{"max-tokens": 4096})
+    single = int((40960 - 4096 - 300) * 0.9)
+    # fits into one call: the whole context minus prompt and answer
+    assert SummaryLLM._resolve_chunk_size(options, reserved=300, len_fun=len, refine_reserved=300 + 4096,
+                                          longest=single) == single
+    # doesn't fit: every refine call also carries the summary so far
+    assert SummaryLLM._resolve_chunk_size(options, reserved=300, len_fun=len, refine_reserved=300 + 4096,
+                                          longest=single + 1) == int((40960 - 4096 - 300 - 4096) * 0.9)
+
+
+def test_ollama_context_has_room_for_the_summary_so_far(monkeypatch):
+    seen = {}
+
+    def fake_get_llm(self, **kwargs):
+        seen.update(kwargs)
+        return RecordingLLM(responses=["summary"] * 20)
+
+    monkeypatch.setattr(LLM, "get_llm", fake_get_llm)
+    config = Config({"llm": {"service": "Ollama", "chunk-size": 50, "max-tokens": 1000}})
+    text = "\n\n".join(f"sprecher_0 [{i}.0 - {i}.5]: paragraph number {i} about nothing." for i in range(12))
+    SummaryLLM().process(SummaryInput(text, additional_metadata={}), config=config)
+
+    from MAT.tools.summary.llm.prompts import REFINE_PROMPT, SYSTEM_MESSAGE
+    len_fun = SummaryLLM._get_len_fun()
+    system = SummaryLLM._fill(SYSTEM_MESSAGE, metadata="")
+    assert seen["num_ctx"] == 50 + 1000 + len_fun(system) + len_fun(REFINE_PROMPT) + 1000
+
+
 def test_auto_chunk_size_is_capped_and_uses_the_table(monkeypatch):
     from MAT.tools.summary.llm import MAX_CHUNK_SIZE
 
