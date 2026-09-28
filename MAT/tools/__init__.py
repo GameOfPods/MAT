@@ -82,10 +82,14 @@ from MAT.tools.text_splitter import __all__ as splitter_all
 from MAT.tools.speakernaming import *
 from MAT.tools.speakernaming import __all__ as speakernaming_all
 
+from MAT.tools.events import *
+from MAT.tools.events import __all__ as events_all
+
 __all__ = ["Tool", "ToolInput", "ToolResult"]
 __all__ += ner_all + summary_all + diarizators_all + speakeridentification_all + transcription_all + splitter_all
-__all__ += speakernaming_all
+__all__ += speakernaming_all + events_all
 del speakernaming_all
+del events_all
 
 del ner_all
 del summary_all

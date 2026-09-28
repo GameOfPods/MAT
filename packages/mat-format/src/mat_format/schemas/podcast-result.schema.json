@@ -4,7 +4,7 @@
   "$comment": "MAT result format 2, describes podcast/result.json. Generated from mat_format/models.py, don't edit by hand.",
   "$defs": {
     "Event": {
-      "description": "A sound event like music or laughter. Not filled yet, planned for a later MAT version.",
+      "description": "A sound event like music or laughter (MAT 0.3 with podcast.events, empty otherwise).",
       "properties": {
         "label": {
           "title": "Label",

@@ -1972,11 +1972,15 @@ all = [
     { name = "spacy-download" },
     { name = "spacy-transformers" },
     { name = "tiktoken" },
+    { name = "transformers" },
     { name = "whisperx" },
 ]
 bench = [
     { name = "jiwer" },
     { name = "pyannote-metrics" },
+]
+events = [
+    { name = "transformers" },
 ]
 gliner = [
     { name = "gliner" },
@@ -2100,11 +2104,13 @@ requires-dist = [
     { name = "torchcodec", specifier = ">=0.7,<0.8" },
     { name = "torchvision" },
     { name = "tqdm" },
+    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.40" },
+    { name = "transformers", marker = "extra == 'events'", specifier = ">=4.40" },
     { name = "whisperx", marker = "extra == 'all'", specifier = ">=3.8" },
     { name = "whisperx", marker = "extra == 'whisper'", specifier = ">=3.8" },
     { name = "xlsxwriter" },
 ]
-provides-extras = ["all", "bench", "gliner", "llm", "parakeet", "pyannote", "sortformer", "spacy", "whisper"]
+provides-extras = ["all", "bench", "events", "gliner", "llm", "parakeet", "pyannote", "sortformer", "spacy", "whisper"]
 
 [package.metadata.requires-dev]
 backends = [{ name = "mat", extras = ["all"] }]

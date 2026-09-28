@@ -24,8 +24,9 @@ Used for any file ffmpeg can decode.
 4. **Speaker names from the transcript** (`llm-names`, off by default): asks an LLM who is who, based on what is said ("Danke, Alex"). It only runs for speakers the clips didn't match, needs a quoted line as proof and high confidence, and a gold clip always wins. Turn it on with `--namer llm-names`. It talks to the same model as the summary (`[llm]`) unless you give `[llm-names]` a preset of its own. An 8B model isn't good enough for this: in our test qwen3:8b gave one of three people the wrong name, DeepSeek got all three right.
 5. **Transcript**: every word gets the one speaker who talks longest during it. Words between segments take the speaker around them, and a turn under half a second in the middle of someone else's sentence goes back to them (`podcast.min-turn`). Then words are merged into lines like `alice [12.3 - 15.8]: ...`. `podcast.word-speakers = "overlap"` keeps the old behavior with lines like `alice & bob`.
 6. **Entities** (`gliner`, off by default): people, places, organizations and dates in the transcript with the time and the speaker who said them, from [GLiNER2](https://github.com/fastino-ai/GLiNER2). Turn it on with `--entities gliner`, the labels are `gliner.labels`. `PodcastResult.entity_counts()` in mat-format adds them up per episode. On CPU it takes about 30 minutes for a 3 hour episode, on a GPU a small part of that.
-7. **Summary** (`llm`, optional): an OpenAI compatible API or a local Ollama. A transcript that fits into the model's context is summarized in one call, a longer one is split into chunks and refined chunk by chunk.
-8. **Media info**: duration, sample rate, loudness, language.
+7. **Sound events** (`audioset` or `clap`, off by default): music, laughter and applause with an [AudioSet tagger](https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593) (`--events audioset`), or anything you describe in words with [CLAP](https://huggingface.co/laion/clap-htsat-unfused) (`--events clap`, labels in `clap.labels`, like `jingle = "a short jingle or intro music"`). Both look at 10 second windows every 5 seconds, so start and end are good to a few seconds. They go into `events` in `result.json`.
+8. **Summary** (`llm`, optional): an OpenAI compatible API or a local Ollama. A transcript that fits into the model's context is summarized in one call, a longer one is split into chunks and refined chunk by chunk.
+9. **Media info**: duration, sample rate, loudness, language.
 
 ### Books
 
@@ -85,7 +86,8 @@ You can also install only the backends you need. Each one is an extra:
 | `bench` | - | `MAT bench` metrics |
 | `llm` | `llm` | summarizer |
 | `spacy` | `spacy` | splitter |
-| `gliner` | `gliner` | ner |
+| `gliner` | `gliner` | ner, entities |
+| `events` | `audioset`, `clap` | events |
 
 ```bash
 uv sync --no-default-groups --group cu126 --extra whisper --extra sortformer --extra pyannote

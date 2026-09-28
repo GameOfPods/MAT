@@ -76,7 +76,9 @@ spacy = ["spacy", "spacy-download", "spacy-transformers", "pip"]
 gliner = ["gliner", "gliner2[local]>=2"]
 # `MAT bench`: WER with jiwer, DER with pyannote.metrics. Not a backend, but `all` includes it
 bench = ["jiwer>=4", "pyannote-metrics>=4"]
-all = ["mat[whisper,sortformer,parakeet,pyannote,llm,spacy,gliner,bench]"]
+# audio events: AudioSet tagging (AST) and CLAP, both through transformers
+events = ["transformers>=4.40"]
+all = ["mat[whisper,sortformer,parakeet,pyannote,llm,spacy,gliner,bench,events]"]
 
 [dependency-groups]
 dev = [

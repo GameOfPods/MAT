@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple, Type
 
 from mat_format import (
-    BookResult, Chapter, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
+    BookResult, Chapter, Event, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
     TextEntity, TimeRange, TranscriptEntity, Word,
 )
 
@@ -85,7 +85,8 @@ def podcast_result(output: PodcastOutput) -> PodcastResult:
         words=_words(output.word_speaker),
         segments=_words(output.squished_speaker),
         summary=_summary_text(output),
-        events=[],
+        events=[Event(label=e.label, start=e.start, end=e.end, score=e.score)
+                for e in getattr(output, "events", None) or []],
         entities=[TranscriptEntity(label=e["label"], text=e["text"], start=e.get("start"), end=e.get("end"),
                                    speakers=list(e.get("speakers") or []))
                   for e in getattr(output, "entities", None) or []],

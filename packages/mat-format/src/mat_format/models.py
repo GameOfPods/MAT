@@ -97,7 +97,7 @@ class Media(_Model):
 
 
 class Event(_Model):
-    """A sound event like music or laughter. Not filled yet, planned for a later MAT version."""
+    """A sound event like music or laughter (MAT 0.3 with podcast.events, empty otherwise)."""
 
     label: str
     start: float

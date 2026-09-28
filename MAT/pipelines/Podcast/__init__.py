@@ -19,7 +19,8 @@ from MAT.tools import (
     TranscriptionInput, TranscriptionResult, TranscribeDiarizeTool, WordTupleSpeaker,
     DiarizerInput, DiarizationResult,
     SpeakerNamingInput,
-    SummaryInput, SummaryResult
+    SummaryInput, SummaryResult,
+    AudioEvent, EventInput,
 )
 from MAT.utils.config import Config, ConfigError, Options
 from MAT.utils.diarization import (
@@ -56,6 +57,8 @@ class PodcastOutput(PipelineResult):
     speaker_library: Dict[str, Dict[str, str]] = field(default_factory=dict)
     # {"label", "text", "start", "end", "speakers"} per named entity in the transcript
     entities: List[Dict[str, Any]] = field(default_factory=list)
+    # sound events like music or laughter
+    events: List[AudioEvent] = field(default_factory=list)
 
     def as_dict(self):
         return dataclass_as_dict(self)
@@ -201,6 +204,8 @@ class PodcastOptions(Options):
                             'names the transcript gave us, "never" only reads and writes nothing.')
     entities: str = Field("none", description='Named entities in the transcript (people, places, ...) with speaker '
                                               'and time. "gliner" turns it on, the labels are gliner.labels.')
+    events: str = Field("none", description='Sound events: "audioset" for music, laughter and applause, "clap" for '
+                                            'labels you describe in words (jingle, intro music). "none" skips it.')
     summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
 
 
@@ -210,7 +215,7 @@ class PodcastPipeline(Pipeline):
     Options = PodcastOptions
     slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
              "namer": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
-             "summarizer": Slot(optional=True)}
+             "events": Slot(optional=True), "summarizer": Slot(optional=True)}
 
     @classmethod
     def preflight(cls, config: Config) -> None:
@@ -464,6 +469,13 @@ class PodcastPipeline(Pipeline):
                                         f"{len({(e['label'], e['text'].casefold()) for e in entities})} different")
             return PipelineStepResult(name="Entities", data=entities)
 
+        def find_events(step_input: PipelineStepInput) -> PipelineStepResult:
+            tagger = self.backend("events", step_input.config)
+            if tagger is None:
+                return PipelineStepResult(name="Audio events", data=None)
+            result = tagger.process(origin_data=EventInput(step_input.file), config=step_input.config)
+            return PipelineStepResult(name="Audio events", data=None if result is None else result.events)
+
         def media_infos(step_input: PipelineStepInput) -> PipelineStepResult:
             transcription: TranscriptionResult = step_input.data("Transcription")
             lang = getattr(transcription, "language", None)
@@ -480,7 +492,7 @@ class PodcastPipeline(Pipeline):
             )
 
         return [transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library, name_speakers,
-                find_entities, summarize_transcript, media_infos]
+                find_entities, find_events, summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
@@ -507,6 +519,7 @@ class PodcastPipeline(Pipeline):
             models=dict(self.models),
             speaker_library=library,
             entities=_try_get("Entities") or [],
+            events=_try_get("Audio events") or [],
         )
 
 

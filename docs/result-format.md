@@ -77,7 +77,7 @@ episode_2026-09-15_20-15-02/        or episode_2026-09-15_20-15-02.zip
 | `words` | list of word | Every word in order |
 | `segments` | list of word | Consecutive words with the same speakers merged into lines |
 | `summary` | string or null | Markdown. Null if the summary was skipped or failed. |
-| `events` | list | Sound events (`label`, `start`, `end`, `score`). Always empty in MAT 0.2, planned. |
+| `events` | list | Sound events (`label`, `start`, `end`, `score`), times in seconds. Empty unless `podcast.events` is set. |
 | `entities` | list | Named entities in the transcript (`label`, `text`, `start`, `end`, `speakers`), times in seconds. Empty unless `podcast.ner` is set. `PodcastResult.entity_counts()` in mat-format sums them up per label. |
 
 A **speaker** is `{"id": "alice", "name": "Alice", "library_id": "alice-9f2c1a", "segments": [{"start": 6.72, "end": 7.28}, ...]}`. The id is the gold label name when the speaker was matched, otherwise the diarizer label like `sprecher_0`. Segments are sorted by start.
