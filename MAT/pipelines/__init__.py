@@ -47,6 +47,12 @@ class PipelineStepInput:
 class Slot:
     # "none" is allowed as backend, the step is skipped then
     optional: bool = False
+    # the registry slot its backends come from, when it isn't the slot name. The podcast pipeline's `entities` takes
+    # the same `ner` backends as the book pipeline, but needs its own flag and default.
+    kind: Optional[str] = None
+
+    def backends_of(self, slot: str) -> str:
+        return self.kind or slot
 
 
 class Pipeline(Configurable, ABC):
@@ -99,8 +105,8 @@ class Pipeline(Configurable, ABC):
                 if not spec.optional:
                     errors.append(f'[{cls.section}] {slot} can\'t be "none"')
                 continue
-            if registry.find(choice, slot) is None:
-                installed = ", ".join(b.name for b in registry.backends(slot)) or "nothing"
+            if registry.find(choice, spec.backends_of(slot)) is None:
+                installed = ", ".join(b.name for b in registry.backends(spec.backends_of(slot))) or "nothing"
                 errors.append(f'[{cls.section}] unknown {slot} "{choice}". Installed: {installed}')
         return errors
 
@@ -111,8 +117,8 @@ class Pipeline(Configurable, ABC):
         from MAT.tools.transcriptors import TranscribeDiarizeTool
 
         options = config.options(cls)
-        chosen = {slot: registry.get(slot, getattr(options, slot)).cls for slot in cls.slots
-                  if getattr(options, slot) != "none"}
+        chosen = {slot: registry.get(spec.backends_of(slot), getattr(options, slot)).cls
+                  for slot, spec in cls.slots.items() if getattr(options, slot) != "none"}
         transcriber = chosen.get("transcriber")
         if transcriber is not None and issubclass(transcriber, TranscribeDiarizeTool):
             chosen.pop("diarizer", None)  # never used then
@@ -127,7 +133,7 @@ class Pipeline(Configurable, ABC):
             if not self.slots[slot].optional:
                 raise ConfigError(f'[{self.section}] {slot} can\'t be "none"')
             return None
-        tool = registry.get(slot, choice).cls()
+        tool = registry.get(self.slots[slot].backends_of(slot), choice).cls()
         self._running = tool  # the backend a failing step was using, for the out of memory message
         try:
             self.models[slot] = tool.describe(config)

@@ -57,7 +57,7 @@ def _add_slot_flags(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("backends", "Pick the backend for each step. `MAT backends` lists them, "
                                                   "`MAT backends show NAME` shows their options.")
     for slot, pipeline in _slot_owners().items():
-        choices = [b.name for b in registry.backends(slot)]
+        choices = [b.name for b in registry.backends(pipeline.slots[slot].backends_of(slot))]
         if pipeline.slots[slot].optional:
             choices.append("none")
         field = pipeline.Options.model_fields[slot]
@@ -87,9 +87,9 @@ def _selected_sections(config) -> List[Type]:
     for pipeline in Pipeline.all():
         sections.append(pipeline)
         options = config.options(pipeline)
-        for slot in pipeline.slots:
+        for slot, spec in pipeline.slots.items():
             choice = getattr(options, slot)
-            found = registry.find(choice, slot) if choice != "none" else None
+            found = registry.find(choice, spec.backends_of(slot)) if choice != "none" else None
             if isinstance(found, registry.Backend) and found.cls not in sections:
                 sections.append(found.cls)
             elif isinstance(found, registry.SkippedBackend):

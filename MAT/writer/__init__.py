@@ -22,7 +22,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Type
 
 from mat_format import (
     BookResult, Chapter, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
-    TextEntity, TimeRange, Word,
+    TextEntity, TimeRange, TranscriptEntity, Word,
 )
 
 from MAT.pipelines import PipelineResult, PodcastOutput, BookOutput
@@ -86,7 +86,9 @@ def podcast_result(output: PodcastOutput) -> PodcastResult:
         segments=_words(output.squished_speaker),
         summary=_summary_text(output),
         events=[],
-        entities=[],
+        entities=[TranscriptEntity(label=e["label"], text=e["text"], start=e.get("start"), end=e.get("end"),
+                                   speakers=list(e.get("speakers") or []))
+                  for e in getattr(output, "entities", None) or []],
     )
 
 

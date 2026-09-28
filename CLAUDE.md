@@ -6,7 +6,8 @@ Notes for working on MAT (Media Analytics Toolset) with Claude Code.
 
 CLI that runs ML pipelines on media files and writes results to a folder/zip. Two pipelines:
 
-- `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `summarizer` (llm or none).
+- `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `entities` (gliner or none, takes the `ner` backends via `Slot(kind=...)`),
+  `summarizer` (llm or none).
 - `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none).
 
 `MAT/reader` loads written results back (format 2, see `MAT/writer`).

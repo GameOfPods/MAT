@@ -106,7 +106,7 @@ class Event(_Model):
 
 
 class TranscriptEntity(_Model):
-    """A named entity found in the transcript. Not filled yet, planned for a later MAT version."""
+    """A named entity found in the transcript (MAT 0.3 with podcast.ner, empty otherwise)."""
 
     label: str = Field(description="Entity type, for example PERSON.")
     text: str
@@ -139,6 +139,18 @@ class PodcastResult(_Model):
 
     def speaker(self, speaker_id: str) -> Optional[Speaker]:
         return next((speaker for speaker in self.speakers if speaker.id == speaker_id), None)
+
+    def entity_counts(self) -> Dict[str, Dict[str, int]]:
+        """How often each entity was said, per label: {"PERSON": {"Stannis": 12, ...}}. Spellings that only
+        differ in case count together, under the one seen first."""
+        counts: Dict[str, Dict[str, int]] = {}
+        spelling: Dict[tuple, str] = {}
+        for entity in self.entities:
+            key = (entity.label, entity.text.casefold())
+            name = spelling.setdefault(key, entity.text)
+            per_label = counts.setdefault(entity.label, {})
+            per_label[name] = per_label.get(name, 0) + 1
+        return counts
 
 
 # ---------------------------------------------------------------- book/result.json

@@ -23,8 +23,9 @@ Used for any file ffmpeg can decode.
 3. **Speaker names** (`pyannote`, optional): give MAT a folder with one short clip per person, named after the person (`alice.mp3`, `bob.wav`). Each diarized speaker is compared against those clips. Speakers without a match keep names like `sprecher_0`.
 4. **Speaker names from the transcript** (`llm-names`, off by default): asks an LLM who is who, based on what is said ("Danke, Alex"). It only runs for speakers the clips didn't match, needs a quoted line as proof and high confidence, and a gold clip always wins. Turn it on with `--namer llm-names`. It talks to the same model as the summary (`[llm]`) unless you give `[llm-names]` a preset of its own. An 8B model isn't good enough for this: in our test qwen3:8b gave one of three people the wrong name, DeepSeek got all three right.
 5. **Transcript**: every word gets the one speaker who talks longest during it. Words between segments take the speaker around them, and a turn under half a second in the middle of someone else's sentence goes back to them (`podcast.min-turn`). Then words are merged into lines like `alice [12.3 - 15.8]: ...`. `podcast.word-speakers = "overlap"` keeps the old behavior with lines like `alice & bob`.
-6. **Summary** (`llm`, optional): an OpenAI compatible API or a local Ollama. A transcript that fits into the model's context is summarized in one call, a longer one is split into chunks and refined chunk by chunk.
-7. **Media info**: duration, sample rate, loudness, language.
+6. **Entities** (`gliner`, off by default): people, places, organizations and dates in the transcript with the time and the speaker who said them, from [GLiNER2](https://github.com/fastino-ai/GLiNER2). Turn it on with `--entities gliner`, the labels are `gliner.labels`. `PodcastResult.entity_counts()` in mat-format adds them up per episode. On CPU it takes about 30 minutes for a 3 hour episode, on a GPU a small part of that.
+7. **Summary** (`llm`, optional): an OpenAI compatible API or a local Ollama. A transcript that fits into the model's context is summarized in one call, a longer one is split into chunks and refined chunk by chunk.
+8. **Media info**: duration, sample rate, loudness, language.
 
 ### Books
 

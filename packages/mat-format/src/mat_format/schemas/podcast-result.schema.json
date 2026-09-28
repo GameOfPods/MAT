@@ -207,7 +207,7 @@
       "type": "object"
     },
     "TranscriptEntity": {
-      "description": "A named entity found in the transcript. Not filled yet, planned for a later MAT version.",
+      "description": "A named entity found in the transcript (MAT 0.3 with podcast.ner, empty otherwise).",
       "properties": {
         "label": {
           "description": "Entity type, for example PERSON.",

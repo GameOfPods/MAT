@@ -54,6 +54,8 @@ class PodcastOutput(PipelineResult):
     models: Dict[str, Any] = field(default_factory=dict)
     # speaker id -> {"name": ..., "library_id": ...} for speakers the library knows
     speaker_library: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # {"label", "text", "start", "end", "speakers"} per named entity in the transcript
+    entities: List[Dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self):
         return dataclass_as_dict(self)
@@ -84,6 +86,54 @@ def load_vocabulary(value: Union[None, str, Sequence[str]]) -> List[str]:
             lines = [line.split("#", 1)[0].strip() for line in f]
         return [line for line in lines if line]
     return [str(word).strip() for word in value if str(word).strip()]
+
+
+def transcript_entities(words: List[WordTupleSpeaker], ner, config: Config,
+                        max_words: int = 150) -> List[Dict[str, Any]]:
+    """Named entities of a transcript with times and speakers. Runs NER on the lines of the transcript (cut into
+    pieces of at most max_words, the models read about 400 tokens) and maps the character spans back to words."""
+    from MAT.tools.ner import NERInput
+
+    pieces: List[Tuple[str, List[Tuple[int, int, WordTupleSpeaker]]]] = []
+    run: List[WordTupleSpeaker] = []
+
+    def close(run_words: List[WordTupleSpeaker]):
+        for first in range(0, len(run_words), max_words):
+            text, spans = "", []
+            for word in run_words[first:first + max_words]:
+                token = (word.word.word or "").strip()
+                if not token:
+                    continue
+                if text:
+                    text += " "
+                spans.append((len(text), len(text) + len(token), word))
+                text += token
+            if text:
+                pieces.append((text, spans))
+
+    for word in words:
+        if run and word.speaker != run[-1].speaker:
+            close(run)
+            run = []
+        run.append(word)
+    close(run)
+    if not pieces:
+        return []
+
+    result = ner.process(origin_data=NERInput(*[text for text, _ in pieces]), config=config)
+    entities = []
+    for (text, spans), found in zip(pieces, result.ner):
+        for label, hits in found.items():
+            for entity_text, start, end in hits:
+                covered = [word for a, b, word in spans if a < end and b > start]
+                if not covered:
+                    continue
+                starts = [w.word.start for w in covered if w.word.start is not None]
+                ends = [w.word.end for w in covered if w.word.end is not None]
+                entities.append({"label": label, "text": entity_text, "start": min(starts) if starts else None,
+                                 "end": max(ends) if ends else None,
+                                 "speakers": sorted({s for w in covered for s in w.speaker})})
+    return sorted(entities, key=lambda e: (e["start"] is None, e["start"] or 0.0, e["label"]))
 
 
 def _speaker_state(data: Callable[[str], Any]) -> Optional[Dict[str, Any]]:
@@ -149,6 +199,8 @@ class PodcastOptions(Options):
     speaker_library_learns: Literal["gold", "all", "never"] = Field(
         "gold", description='What the library learns: "gold" only names that came from gold label clips, "all" also '
                             'names the transcript gave us, "never" only reads and writes nothing.')
+    entities: str = Field("none", description='Named entities in the transcript (people, places, ...) with speaker '
+                                              'and time. "gliner" turns it on, the labels are gliner.labels.')
     summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
 
 
@@ -157,7 +209,8 @@ class PodcastPipeline(Pipeline):
     description = "Transcript, speakers and summary for audio files (anything ffmpeg can decode)."
     Options = PodcastOptions
     slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
-             "namer": Slot(optional=True), "summarizer": Slot(optional=True)}
+             "namer": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
+             "summarizer": Slot(optional=True)}
 
     @classmethod
     def preflight(cls, config: Config) -> None:
@@ -399,6 +452,18 @@ class PodcastPipeline(Pipeline):
                 summary = None
             return PipelineStepResult(name="Summarize transcript", data=summary)
 
+        def find_entities(step_input: PipelineStepInput) -> PipelineStepResult:
+            state = _speaker_state(step_input.data)
+            if state is None or not state["word_speaker"]:
+                return PipelineStepResult(name="Entities", data=None)
+            ner = self.backend("entities", step_input.config)
+            if ner is None:
+                return PipelineStepResult(name="Entities", data=None)
+            entities = transcript_entities(state["word_speaker"], ner, step_input.config)
+            self.__class__._LOGGER.info(f"Found {len(entities)} entities, "
+                                        f"{len({(e['label'], e['text'].casefold()) for e in entities})} different")
+            return PipelineStepResult(name="Entities", data=entities)
+
         def media_infos(step_input: PipelineStepInput) -> PipelineStepResult:
             transcription: TranscriptionResult = step_input.data("Transcription")
             lang = getattr(transcription, "language", None)
@@ -415,7 +480,7 @@ class PodcastPipeline(Pipeline):
             )
 
         return [transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library, name_speakers,
-                summarize_transcript, media_infos]
+                find_entities, summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
@@ -441,6 +506,7 @@ class PodcastPipeline(Pipeline):
             summary=_try_get("Summarize transcript"),
             models=dict(self.models),
             speaker_library=library,
+            entities=_try_get("Entities") or [],
         )
 
 
