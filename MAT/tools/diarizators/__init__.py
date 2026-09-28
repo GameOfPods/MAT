@@ -39,19 +39,23 @@ class DiarizationResult(ToolResult):
         return set(self._diarization.keys())
 
     def speaker_matching(self, identifier: SpeakerIdentificationTool, config: Config,
-                         audio: pydub.AudioSegment) -> "DiarizationResult":
+                         audio: pydub.AudioSegment, seconds: Optional[float] = None) -> "DiarizationResult":
+        """Asks the identifier about all speakers at once (one model load), with up to `seconds` of each."""
+        from MAT.utils.audio import speaker_clip
+
+        speakers = sorted(self.speaker)
+        clips = [speaker_clip(audio, self.get_diarization(speaker=speaker), seconds) for speaker in speakers]
+        m = identifier.process(origin_data=SpeakerIdentificationInput(*[(c, c.frame_rate) for c in clips]),
+                               config=config)
+        names = m.get_speaker()
+        if len(names) != len(speakers):
+            raise Exception(f"Speaker matching gave {len(names)} answers for {len(speakers)} speakers")
         final_speaker: Dict[str, List[Tuple[float, float]]] = {}
-        for speaker in self.speaker:
-            a_t = pydub.AudioSegment.empty()
-            for fr, to in self.get_diarization(speaker=speaker):
-                a_t += audio[fr * 1000:to * 1000]
-            m = identifier.process(origin_data=SpeakerIdentificationInput((a_t, a_t.frame_rate)), config=config)
-            if len(m.get_speaker()) != 1:
-                raise Exception(f"Diarization failed for {speaker}")
+        for speaker, found in zip(speakers, names):
             # None means no match (or no gold labels given). Keep the diarizer label then, otherwise all
             # unmatched speakers end up under the same None key and overwrite each other.
             # If two diarizer speakers match the same gold speaker their segments get merged.
-            name = speaker if m.get_speaker()[0] is None else m.get_speaker()[0]
+            name = speaker if found is None else found
             final_speaker.setdefault(name, []).extend(self.get_diarization(speaker=speaker))
         return DiarizationResult(diarization=final_speaker)
 

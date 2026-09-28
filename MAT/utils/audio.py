@@ -17,7 +17,7 @@ keeps a result from the overlap, so nothing is counted twice when the pieces get
 """
 import math
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -94,4 +94,18 @@ def plan_windows(samples: np.ndarray, sample_rate: int, max_length: float, overl
     return windows
 
 
-__all__ = ["Window", "frame_energy", "plan_windows"]
+def speaker_clip(audio, segments: Sequence[Tuple[float, float]], seconds: Optional[float] = None):
+    """The segments of one speaker joined into one pydub clip, in time order. With seconds it stops once the clip is
+    that long: enough for a voice embedding without copying a whole episode, and an embedding of an hour of mixed
+    audio matched nobody in a real episode while two minutes of the same voice did."""
+    import pydub
+
+    collected = pydub.AudioSegment.empty()
+    for start, end in sorted(segments):
+        collected += audio[start * 1000:end * 1000]
+        if seconds is not None and collected.duration_seconds >= seconds:
+            break
+    return collected
+
+
+__all__ = ["Window", "frame_energy", "plan_windows", "speaker_clip"]

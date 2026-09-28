@@ -9,9 +9,13 @@ from MAT.utils.diarization import (
 class FakeIdentifier:
     def __init__(self, answer):
         self.answer = answer
+        self.calls = []
 
     def process(self, origin_data, config):
-        return SpeakerIdentificationResult(self.answer)
+        clips = origin_data.get_audio_files()
+        self.calls.append([round(clip.duration_seconds, 1) for clip, _ in clips])
+        answers = self.answer if isinstance(self.answer, list) else [self.answer] * len(clips)
+        return SpeakerIdentificationResult(*answers)
 
 
 def test_speaker_matching_without_match_keeps_labels():
@@ -27,6 +31,17 @@ def test_speaker_matching_merges_same_person():
                                            audio=pydub.AudioSegment.silent(duration=3000))
     assert matched.speaker == {"alice"}
     assert sorted(matched.get_diarization("alice")) == [(0.0, 1.0), (1.0, 2.0)]
+
+
+def test_speaker_matching_asks_once_with_a_slice_of_everyone():
+    diarization = DiarizationResult({"sprecher_0": [(0.0, 4.0), (5.0, 9.0), (10.0, 14.0)],
+                                     "sprecher_1": [(4.0, 5.0)]})
+    identifier = FakeIdentifier(["alice", None])
+    matched = diarization.speaker_matching(identifier=identifier, config=None, seconds=6,
+                                           audio=pydub.AudioSegment.silent(duration=15000))
+    # one call for both speakers, the first one cut after the segment that crosses 6 seconds
+    assert identifier.calls == [[8.0, 1.0]]
+    assert matched.speaker == {"alice", "sprecher_1"}
 
 
 def test_alignment_and_transcript():

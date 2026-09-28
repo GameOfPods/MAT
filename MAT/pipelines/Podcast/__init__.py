@@ -74,14 +74,9 @@ def _rename_speakers(renames: Dict[str, str], diarization: DiarizationResult,
 
 def _speaker_audio(audio, diarization: DiarizationResult, speaker: str, seconds: float):
     """Up to `seconds` of what one speaker says, enough for an embedding without copying a whole episode."""
-    import pydub
+    from MAT.utils.audio import speaker_clip
 
-    collected = pydub.AudioSegment.empty()
-    for start, end in sorted(diarization.get_diarization(speaker=speaker)):
-        collected += audio[start * 1000:end * 1000]
-        if collected.duration_seconds >= seconds:
-            break
-    return collected
+    return speaker_clip(audio, diarization.get_diarization(speaker=speaker), seconds)
 
 
 class PodcastOptions(Options):
@@ -100,6 +95,9 @@ class PodcastOptions(Options):
                                                    'of somebody else\'s sentence goes back to them. 0 turns it off.')
     max_gap: float = Field(1.0, ge=0, description='Seconds. With word-speakers "single", a word outside all segments '
                                                   'takes the closest speaker this near to it.')
+    match_seconds: float = Field(120.0, gt=0, description="Seconds of every diarizer speaker compared with the gold "
+                                                          "label clips. More isn't better: all of a speaker's hour "
+                                                          "long audio matched nobody in a real episode.")
     speaker_library: Optional[str] = Field(None, description="Folder with the speaker library. A voice that got a "
                                                              "name once is recognized in later episodes and keeps "
                                                              "the same id. Not set: no library.")
@@ -163,8 +161,9 @@ class PodcastPipeline(Pipeline):
                 self.models.pop("identifier", None)
                 return PipelineStepResult(name="Speaker Matching", data=diarization_result)
             a = pydub.AudioSegment.from_file(step_input.file)
-            matched_speaker = diarization_result.speaker_matching(identifier=identifier, audio=a,
-                                                                  config=step_input.config)
+            matched_speaker = diarization_result.speaker_matching(
+                identifier=identifier, audio=a, config=step_input.config,
+                seconds=step_input.config.options(self).match_seconds)
             return PipelineStepResult(name="Speaker Matching", data=matched_speaker)
 
         def creating_speaker_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
