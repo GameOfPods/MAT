@@ -38,7 +38,7 @@ def _voices(vectors):
     return FakeEmbedder
 
 
-def _run(episode, tmp_path, monkeypatch, *, matched, raw, named=None, vectors, values=None):
+def _run(episode, tmp_path, monkeypatch, *, matched, raw, vectors, values=None):
     embedder = _voices(vectors)
     pipeline = PodcastPipeline()
     step = next(s for s in pipeline._get_steps() if s.__name__ == "speaker_library")
@@ -54,7 +54,6 @@ def _run(episode, tmp_path, monkeypatch, *, matched, raw, named=None, vectors, v
         "Diarization": PipelineStepResult(name="Diarization", data=raw),
         "Speaker Matching": PipelineStepResult(name="Speaker Matching", data=matched),
         "Finalizing transcript": PipelineStepResult(name="Finalizing transcript", data=(words, words, transcript)),
-        "Speaker Names": PipelineStepResult(name="Speaker Names", data=named),
     }
     settings = {"speaker-library": str(tmp_path / "library"), "speaker-library-threshold": 0.8}
     settings.update(values or {})
@@ -98,19 +97,12 @@ def test_gold_names_are_learned_and_unnamed_speakers_are_not(episode, tmp_path, 
     assert "sprecher_1" not in result.data["speakers"]
 
 
-def test_llm_names_are_only_learned_when_allowed(episode, tmp_path, monkeypatch):
+def test_unknown_voices_stay_labels_and_their_prints_go_to_the_naming_step(episode, tmp_path, monkeypatch):
     raw = DiarizationResult({"sprecher_0": [(0.0, 5.0)]})
-    # the naming step renamed the speaker from the transcript
-    named = (DiarizationResult({"Tobi": [(0.0, 5.0)]}), [], [], "Tobi [0.0 - 2.0]: hallo")
-    matched = raw
-
-    _run(episode, tmp_path, monkeypatch, matched=matched, raw=raw, named=named, vectors=[TOBI])
+    result, _ = _run(episode, tmp_path, monkeypatch, matched=raw, raw=raw, vectors=[TOBI])
+    assert sorted(result.data["diarization"].speaker) == ["sprecher_0"]
+    assert result.data["voices"] == {"sprecher_0": TOBI}
     assert not (tmp_path / "library" / "speakers.json").exists()
-
-    _run(episode, tmp_path, monkeypatch, matched=matched, raw=raw, named=named, vectors=[TOBI],
-         values={"speaker-library-learns": "all"})
-    stored = json.loads((tmp_path / "library" / "speakers.json").read_text())["speakers"]
-    assert [(s["name"], s["source"]) for s in stored] == [("Tobi", "llm")]
 
 
 def test_no_library_folder_means_the_step_does_nothing(episode, tmp_path, monkeypatch):

@@ -72,6 +72,28 @@ def _rename_speakers(renames: Dict[str, str], diarization: DiarizationResult,
             "\n".join(word_speaker_to_transcript(word_speaker=renamed_squished)))
 
 
+def _speaker_state(data: Callable[[str], Any]) -> Optional[Dict[str, Any]]:
+    """The speakers as far as the pipeline got: after naming, after the library, or straight from the transcript.
+    A dict with diarization, word_speaker, squished, transcript and speakers (name -> {"name", "library_id"} for
+    voices the library knows)."""
+    for step in ("Speaker Names", "Speaker Library"):
+        state = data(step)
+        if state is not None:
+            return state
+    transcripts, matched = data("Finalizing transcript"), data("Speaker Matching")
+    if transcripts is None or matched is None:
+        return None
+    return {"diarization": matched, "word_speaker": transcripts[0], "squished": transcripts[1],
+            "transcript": transcripts[2], "speakers": {}}
+
+
+def _with_renames(state: Dict[str, Any], renames: Dict[str, str], **extra) -> Dict[str, Any]:
+    diarization, word_speaker, squished, transcript = _rename_speakers(
+        renames, state["diarization"], state["word_speaker"], state["squished"])
+    return dict(state, diarization=diarization, word_speaker=word_speaker, squished=squished, transcript=transcript,
+                **extra)
+
+
 def _speaker_audio(audio, diarization: DiarizationResult, speaker: str, seconds: float):
     """Up to `seconds` of what one speaker says, enough for an embedding without copying a whole episode."""
     from MAT.utils.audio import speaker_clip
@@ -183,52 +205,11 @@ class PodcastPipeline(Pipeline):
             full_transcript = "\n".join(word_speaker_to_transcript(word_speaker=squished_speaker))
             return PipelineStepResult(name="Finalizing transcript", data=(word_speaker, squished_speaker, full_transcript))
 
-        def name_speakers(step_input: PipelineStepInput) -> PipelineStepResult:
-            transcripts = step_input.data("Finalizing transcript")
-            matched: DiarizationResult = step_input.data("Speaker Matching")
-            if transcripts is None or matched is None:
-                return PipelineStepResult(name="Speaker Names", data=None)
-            namer = self.backend("namer", step_input.config)
-            if namer is None:
-                return PipelineStepResult(name="Speaker Names", data=None)
-
-            word_speaker, squished_speaker, full_transcript = transcripts
-            raw: DiarizationResult = step_input.data("Diarization")
-            # whatever the identifier matched to a gold clip keeps its name, those speakers aren't called sprecher_N
-            # any more. Everything still carrying a diarizer label is up for naming.
-            unnamed = matched.speaker & (raw.speaker if raw is not None else matched.speaker)
-            transcription: TranscriptionResult = step_input.data("Transcription")
-            try:
-                found = namer.process(
-                    origin_data=SpeakerNamingInput(lines=full_transcript.splitlines(),
-                                                   speakers=sorted(matched.speaker),
-                                                   language=getattr(transcription, "language", None)),
-                    config=step_input.config,
-                )
-            except Exception as e:
-                self.__class__._LOGGER.exception("Naming the speakers failed, keeping the names we have", exc_info=e)
-                return PipelineStepResult(name="Speaker Names", data=None)
-
-            renames = {}
-            for name in (found.names if found is not None else []):
-                if name.speaker in unnamed:
-                    renames[name.speaker] = name.name
-                elif name.speaker != name.name:
-                    self.__class__._LOGGER.warning(
-                        f'The transcript calls {name.speaker} "{name.name}" ({name.evidence}), but the gold labels '
-                        f"matched that voice to {name.speaker}. Keeping the gold label.")
-            if not renames:
-                return PipelineStepResult(name="Speaker Names", data=None)
-
-            self.__class__._LOGGER.info("Named " + ", ".join(f"{old} -> {new}" for old, new in renames.items()))
-            return PipelineStepResult(name="Speaker Names",
-                                      data=_rename_speakers(renames, matched, word_speaker, squished_speaker))
-
         def speaker_library(step_input: PipelineStepInput) -> PipelineStepResult:
+            # runs before the LLM naming: a voice the library knows needs no LLM call
             options = step_input.config.options(self)
-            matched: DiarizationResult = step_input.data("Speaker Matching")
-            transcripts = step_input.data("Finalizing transcript")
-            if not options.speaker_library or matched is None or transcripts is None:
+            state = _speaker_state(step_input.data)
+            if not options.speaker_library or state is None:
                 return PipelineStepResult(name="Speaker Library", data=None)
             try:
                 from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote as Embedder
@@ -240,13 +221,11 @@ class PodcastPipeline(Pipeline):
             from MAT.utils.device import resolve_device
             from MAT.utils.speaker_library import SpeakerLibrary
 
-            named = step_input.data("Speaker Names")
-            diarization, word_speaker, squished, transcript = named if named is not None else (
-                matched, transcripts[0], transcripts[1], transcripts[2])
+            diarization: DiarizationResult = state["diarization"]
             raw: DiarizationResult = step_input.data("Diarization")
             labels = raw.speaker if raw is not None else set()
-            # the identifier renamed whatever it matched, so those names are gone from the diarizer labels
-            from_gold = matched.speaker - labels
+            # the identifier renamed whatever it matched to a gold clip, so those names are no diarizer labels
+            from_gold = diarization.speaker - labels
 
             library = SpeakerLibrary.open(options.speaker_library)
             audio = pydub.AudioSegment.from_file(step_input.file)
@@ -261,7 +240,8 @@ class PodcastPipeline(Pipeline):
 
             episode = os.path.basename(step_input.file)
             renames: Dict[str, str] = {}
-            known_speakers: Dict[str, Dict[str, str]] = {}
+            known_speakers: Dict[str, Dict[str, str]] = dict(state.get("speakers") or {})
+            voices: Dict[str, Any] = {}
             changed = False
             for speaker, vector in zip(speakers, vectors):
                 if vector is None:
@@ -274,46 +254,97 @@ class PodcastPipeline(Pipeline):
                     if entry.name != speaker:
                         renames[speaker] = entry.name
                     known_speakers[entry.name] = {"name": entry.name, "library_id": entry.library_id}
+                    voices[entry.name] = vector
                     if options.speaker_library_learns != "never":
                         library.remember(entry.name, vector, source=entry.source, episode=episode)
                         changed = True
                     continue
+                voices[speaker] = vector
                 if speaker in labels:
-                    continue  # still a diarizer label, there is no name to remember
-                source = "gold" if speaker in from_gold else "llm"
-                if options.speaker_library_learns == "never" or (
-                        source == "llm" and options.speaker_library_learns != "all"):
-                    self.__class__._LOGGER.info(f"Not putting {speaker} into the library, the name came from the "
-                                                f"{'transcript' if source == 'llm' else 'gold labels'} and "
-                                                f"speaker-library-learns is {options.speaker_library_learns}")
+                    continue  # still a diarizer label, maybe the LLM names it later
+                if options.speaker_library_learns == "never":
+                    self.__class__._LOGGER.info(f"Not putting {speaker} into the library, speaker-library-learns "
+                                                f"is never")
                     continue
-                entry = library.remember(speaker, vector, source=source, episode=episode)
-                self.__class__._LOGGER.info(f"The library learned the voice of {speaker} "
-                                            f"(from the {'gold labels' if source == 'gold' else 'transcript'})")
+                entry = library.remember(speaker, vector, source="gold", episode=episode)
+                self.__class__._LOGGER.info(f"The library learned the voice of {speaker} (from the gold labels)")
                 known_speakers[speaker] = {"name": entry.name, "library_id": entry.library_id}
                 changed = True
 
-            if renames:
-                diarization, word_speaker, squished, transcript = _rename_speakers(renames, diarization,
-                                                                                   word_speaker, squished)
             if changed:
                 self.__class__._LOGGER.info(f"Speaker library saved to {library.save()}")
-            return PipelineStepResult(name="Speaker Library", data={
-                "diarization": diarization, "word_speaker": word_speaker, "squished": squished,
-                "transcript": transcript, "speakers": known_speakers,
-            })
+            # voices go along so the naming step can put names from the transcript into the library
+            return PipelineStepResult(name="Speaker Library",
+                                      data=_with_renames(state, renames, speakers=known_speakers, voices=voices))
+
+        def name_speakers(step_input: PipelineStepInput) -> PipelineStepResult:
+            state = _speaker_state(step_input.data)
+            if state is None:
+                return PipelineStepResult(name="Speaker Names", data=None)
+            namer = self.backend("namer", step_input.config)
+            if namer is None:
+                return PipelineStepResult(name="Speaker Names", data=None)
+
+            diarization: DiarizationResult = state["diarization"]
+            raw: DiarizationResult = step_input.data("Diarization")
+            # gold clips and the library renamed what they recognized. Only diarizer labels are up for naming.
+            unnamed = diarization.speaker & (raw.speaker if raw is not None else diarization.speaker)
+            if not unnamed:
+                self.__class__._LOGGER.info("Every speaker has a name already, not asking the LLM")
+                return PipelineStepResult(name="Speaker Names", data=None)
+            transcription: TranscriptionResult = step_input.data("Transcription")
+            try:
+                found = namer.process(
+                    origin_data=SpeakerNamingInput(lines=state["transcript"].splitlines(),
+                                                   speakers=sorted(diarization.speaker),
+                                                   language=getattr(transcription, "language", None)),
+                    config=step_input.config,
+                )
+            except Exception as e:
+                self.__class__._LOGGER.exception("Naming the speakers failed, keeping the names we have", exc_info=e)
+                return PipelineStepResult(name="Speaker Names", data=None)
+
+            known = state.get("speakers") or {}
+            renames = {}
+            for name in (found.names if found is not None else []):
+                if name.speaker in unnamed:
+                    renames[name.speaker] = name.name
+                elif name.speaker != name.name:
+                    source = "speaker library" if name.speaker in known else "gold labels"
+                    self.__class__._LOGGER.warning(
+                        f'The transcript calls {name.speaker} "{name.name}" ({name.evidence}), but the {source} '
+                        f"matched that voice to {name.speaker}. Keeping {name.speaker}.")
+            if not renames:
+                return PipelineStepResult(name="Speaker Names", data=None)
+            self.__class__._LOGGER.info("Named " + ", ".join(f"{old} -> {new}" for old, new in renames.items()))
+
+            known_speakers = dict(known)
+            options = step_input.config.options(self)
+            voices = state.get("voices") or {}
+            if options.speaker_library and voices:
+                if options.speaker_library_learns == "all":
+                    from MAT.utils.speaker_library import SpeakerLibrary
+
+                    library = SpeakerLibrary.open(options.speaker_library)
+                    episode = os.path.basename(step_input.file)
+                    for old, new in renames.items():
+                        if voices.get(old) is None:
+                            continue
+                        entry = library.remember(new, voices[old], source="llm", episode=episode)
+                        known_speakers[new] = {"name": entry.name, "library_id": entry.library_id}
+                        self.__class__._LOGGER.info(f"The library learned the voice of {new} (from the transcript)")
+                    self.__class__._LOGGER.info(f"Speaker library saved to {library.save()}")
+                else:
+                    self.__class__._LOGGER.info(f"Not putting {', '.join(renames.values())} into the library, the "
+                                                f"names came from the transcript and speaker-library-learns is "
+                                                f"{options.speaker_library_learns}")
+            return PipelineStepResult(name="Speaker Names",
+                                      data=_with_renames(state, renames, speakers=known_speakers))
 
         def summarize_transcript(step_input: PipelineStepInput) -> PipelineStepResult:
             from os.path import basename
-            library = step_input.data("Speaker Library")
-            named = step_input.data("Speaker Names")
-            transcripts = step_input.data("Finalizing transcript")
-            if library is not None:
-                full_transcript = library["transcript"]
-            elif named is not None:
-                full_transcript = named[3]
-            else:
-                full_transcript = transcripts[2] if transcripts is not None else None
+            state = _speaker_state(step_input.data)
+            full_transcript = None if state is None else state["transcript"]
             if full_transcript is None:
                 return PipelineStepResult(name="Summarize transcript", data=None)
             summarizer = self.backend("summarizer", step_input.config)
@@ -347,7 +378,7 @@ class PodcastPipeline(Pipeline):
                 )
             )
 
-        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, name_speakers, speaker_library,
+        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library, name_speakers,
                 summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
@@ -359,15 +390,12 @@ class PodcastPipeline(Pipeline):
         transcripts = _try_get("Finalizing transcript")
         word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcripts
         matched = _try_get("Speaker Matching")
-        # the naming step returns everything again with the new names
-        named = _try_get("Speaker Names")
-        if named is not None:
-            matched, word_speaker, squished_speaker, full_transcript = named
-        # and the library step after it, with the names it recognized from earlier episodes
-        library = _try_get("Speaker Library")
-        if library is not None:
-            matched, word_speaker = library["diarization"], library["word_speaker"]
-            squished_speaker, full_transcript = library["squished"], library["transcript"]
+        # the library and the naming step return everything again with the new names
+        state = _speaker_state(_try_get)
+        if state is not None:
+            matched, word_speaker = state["diarization"], state["word_speaker"]
+            squished_speaker, full_transcript = state["squished"], state["transcript"]
+        library = {} if state is None else state.get("speakers") or {}
 
         return PodcastOutput(
             media_info=_try_get("Media Info"),
@@ -376,7 +404,7 @@ class PodcastPipeline(Pipeline):
             word_speaker=word_speaker, squished_speaker=squished_speaker, full_transcript=full_transcript,
             summary=_try_get("Summarize transcript"),
             models=dict(self.models),
-            speaker_library={} if library is None else library["speakers"],
+            speaker_library=library,
         )
 
 

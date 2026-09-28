@@ -83,7 +83,7 @@ def _words(speaker: str, text: str, start: float):
     return WordTupleSpeaker(word=WordTuple(start=start, end=start + 1, word=text), speaker={speaker})
 
 
-def _name_step(answer):
+def _name_step(answer, library=None, values=None):
     FakeNamer.answer = answer
     pipeline = PodcastPipeline()
     step = next(s for s in pipeline._get_steps() if s.__name__ == "name_speakers")
@@ -99,13 +99,15 @@ def _name_step(answer):
                                                     data=(squished, squished, transcript)),
         "Transcription": PipelineStepResult(name="Transcription", data=None),
     }
-    config = Config({"podcast": {"namer": "test-namer"}})
+    if library is not None:
+        previous["Speaker Library"] = PipelineStepResult(name="Speaker Library", data=library)
+    config = Config({"podcast": dict({"namer": "test-namer"}, **(values or {}))})
     return pipeline, step(PipelineStepInput(file="episode.mp3", config=config, previous_results=previous))
 
 
 def test_unnamed_speaker_gets_the_name():
     _, result = _name_step([SpeakerName(speaker="sprecher_1", name="Tobi", evidence="sprecher_0: danke tobi")])
-    diarization, word_speaker, squished, transcript = result.data
+    diarization, squished, transcript = (result.data[k] for k in ("diarization", "squished", "transcript"))
     assert sorted(diarization.speaker) == ["alex", "Tobi"] or sorted(diarization.speaker) == ["Tobi", "alex"]
     assert "Tobi [5.0 - 6.0]: danke alex" in transcript
     assert all(speaker in ("alex", "Tobi") for word in squished for speaker in word.speaker)
@@ -156,3 +158,42 @@ def test_a_model_set_for_the_namer_always_wins():
 def test_nothing_set_anywhere_keeps_the_defaults():
     options = _namer_options({})
     assert (options.preset, options.service, options.model) == ("none", "OpenAI", "gpt-5.6-terra")
+
+
+def _library_state(tmp_path, known):
+    """What the library step hands on: sprecher_1 is still a label, known maps names to library entries."""
+    diarization = DiarizationResult({"alex": [(0.0, 5.0)], "sprecher_1": [(5.0, 9.0)]})
+    squished = [_words("alex", "hallo zusammen", 0.0), _words("sprecher_1", "danke alex", 5.0)]
+    return {"diarization": diarization, "word_speaker": squished, "squished": squished,
+            "transcript": "alex [0.0 - 1.0]: hallo zusammen\nsprecher_1 [5.0 - 6.0]: danke alex",
+            "speakers": known, "voices": {"alex": [1.0, 0.0], "sprecher_1": [0.0, 1.0]}}
+
+
+def test_the_llm_is_not_asked_when_the_library_named_everyone(tmp_path):
+    state = _library_state(tmp_path, {"alex": {"name": "alex", "library_id": "alex-1"}})
+    state["diarization"] = DiarizationResult({"alex": [(0.0, 5.0)], "tobi": [(5.0, 9.0)]})
+    FakeNamer.seen = None
+    _, result = _name_step([], library=state)
+    assert result.data is None and FakeNamer.seen is None
+
+
+def test_names_from_the_transcript_go_into_the_library_only_when_allowed(tmp_path):
+    folder = tmp_path / "library"
+    answer = [SpeakerName(speaker="sprecher_1", name="Tobi", evidence="danke tobi")]
+    _, result = _name_step(answer, library=_library_state(tmp_path, {}),
+                           values={"speaker-library": str(folder)})
+    assert "Tobi" in result.data["diarization"].speaker
+    assert not (folder / "speakers.json").exists()
+
+    _, result = _name_step(answer, library=_library_state(tmp_path, {}),
+                           values={"speaker-library": str(folder), "speaker-library-learns": "all"})
+    stored = json.loads((folder / "speakers.json").read_text())["speakers"]
+    assert [(s["name"], s["source"], s["embeddings"]) for s in stored] == [("Tobi", "llm", [[0.0, 1.0]])]
+    assert result.data["speakers"]["Tobi"]["library_id"].startswith("tobi-")
+
+
+def test_a_library_name_beats_the_llm_and_the_mismatch_is_logged(tmp_path, caplog):
+    state = _library_state(tmp_path, {"alex": {"name": "alex", "library_id": "alex-1"}})
+    _, result = _name_step([SpeakerName(speaker="alex", name="Chris", evidence="danke chris")], library=state)
+    assert result.data is None
+    assert "speaker library" in caplog.text and "Chris" in caplog.text
