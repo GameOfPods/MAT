@@ -51,6 +51,8 @@ WARNINGS = [
     ("std\\(\\): degrees of freedom", UserWarning),
     ("Trying to infer the `batch_size`", UserWarning),
     ("audioop", DeprecationWarning),
+    # pyannote turns TF32 off on every GPU run and says so. Pascal cards have no TF32 anyway
+    ("TensorFloat-32 \\(TF32\\) has been disabled", UserWarning),
 ]
 
 
