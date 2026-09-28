@@ -97,6 +97,21 @@ class Pipeline(Configurable, ABC):
                 errors.append(f'[{cls.section}] unknown {slot} "{choice}". Installed: {installed}')
         return errors
 
+    @classmethod
+    def preflight(cls, config: Config) -> None:
+        """Runs the preflight checks of every backend this pipeline will use."""
+        from MAT import registry
+        from MAT.tools.transcriptors import TranscribeDiarizeTool
+
+        options = config.options(cls)
+        chosen = {slot: registry.get(slot, getattr(options, slot)).cls for slot in cls.slots
+                  if getattr(options, slot) != "none"}
+        transcriber = chosen.get("transcriber")
+        if transcriber is not None and issubclass(transcriber, TranscribeDiarizeTool):
+            chosen.pop("diarizer", None)  # never used then
+        for backend in chosen.values():
+            backend.preflight(config)
+
     def backend(self, slot: str, config: Config) -> Optional[Tool]:
         from MAT import registry
 

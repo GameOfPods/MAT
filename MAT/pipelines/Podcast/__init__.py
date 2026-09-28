@@ -81,8 +81,9 @@ def _speaker_audio(audio, diarization: DiarizationResult, speaker: str, seconds:
 
 class PodcastOptions(Options):
     transcriber: str = Field("whisper", description="Speech to text backend.")
-    diarizer: str = Field("sortformer", description="Diarization backend. Not used when the transcriber also "
-                                                    "does the diarization.")
+    diarizer: str = Field("pyannote-diarization",
+                          description="Diarization backend. Not used when the transcriber also does the "
+                                      "diarization. The default needs a Hugging Face login, sortformer doesn't.")
     identifier: str = Field("pyannote", description='Matches speakers to gold label clips. "none" keeps the '
                                                     'diarizer labels.')
     namer: str = Field("none", description='Names the speakers that the identifier left unnamed, from what is said '

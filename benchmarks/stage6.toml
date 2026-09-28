@@ -1,9 +1,11 @@
-# Stage 6a: new backends against the current defaults (whisper large-v3-turbo + Sortformer).
+# Stage 6: the speech backends against each other. Every system says which diarizer it uses, so the names keep
+# meaning the same after the defaults changed (2026-09: Sortformer -> community-1 exclusive).
 #   uv run MAT bench run -c benchmarks/stage6.toml -o bench-stage6
 # Try it with --limit 1 first. Finished runs are skipped, so systems can be added later.
 
 [[system]]
 name = "whisper-sortformer"
+set = ["podcast.diarizer=sortformer"]
 
 [[system]]
 name = "whisper-sortformer-streaming"
@@ -11,24 +13,25 @@ set = ["podcast.diarizer=sortformer-streaming"]
 
 [[system]]
 name = "parakeet-sortformer"
-set = ["podcast.transcriber=parakeet"]
+set = ["podcast.transcriber=parakeet", "podcast.diarizer=sortformer"]
 
 # Parakeet loses sentences in packed FLEURS and Bundestag files with long pieces, 30 s pieces don't
 [[system]]
 name = "parakeet-sortformer-30s"
-set = ["podcast.transcriber=parakeet", "parakeet.segment-length=30"]
+set = ["podcast.transcriber=parakeet", "parakeet.segment-length=30", "podcast.diarizer=sortformer"]
 
 [[system]]
 name = "whisper-community1"
-set = ["podcast.diarizer=pyannote-diarization"]
+set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=false"]
 
+# the default since 2026-09
 [[system]]
 name = "whisper-community1-exclusive"
 set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=true"]
 
 [[system]]
 name = "parakeet-community1"
-set = ["podcast.transcriber=parakeet", "podcast.diarizer=pyannote-diarization"]
+set = ["podcast.transcriber=parakeet", "podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=false"]
 
 # Needs its own environment first: uv run MAT external install diarizen
 # The weights are non-commercial (CC BY-NC 4.0), see docs/external-environments.md

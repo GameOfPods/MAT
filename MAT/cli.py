@@ -279,6 +279,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     input_files = _find_inputs(args.input, args.input_recursive)
     _LOGGER.info(f"Found {len(input_files)} files to process")
+    for pipeline_class in {p for file in input_files for p in Pipeline.get_pipelines(f=file)}:
+        pipeline_class.preflight(config)
     if not args.yes and not _confirm(input_files):
         _LOGGER.error("Please check your input and try again.")
         sys.exit(1)

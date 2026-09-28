@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--audio", type=Path, default=None, help="Audio file, default: pyannote sample.wav")
     parser.add_argument("--device", default=None, help="cpu or cuda, default: cuda if available")
     parser.add_argument("--transcriber", default="whisper", help="Transcriber backend, default: %(default)s")
-    parser.add_argument("--diarizer", default="sortformer", help="Diarizer backend, default: %(default)s")
+    parser.add_argument("--diarizer", default="pyannote-diarization", help="Diarizer backend, default: %(default)s")
     parser.add_argument("--whisper-model", default=None, help="Override the whisper model")
     parser.add_argument("--summary", action="store_true", help="Run the real LLM summary instead of a fake one")
     parser.add_argument("--out", type=Path, default=None, help="Output folder, default: a temp folder")

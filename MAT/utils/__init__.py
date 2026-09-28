@@ -36,6 +36,15 @@ def get_all_concrete_subclasses(cls):
     return concrete_subclasses
 
 
+def _permanent(error: BaseException) -> bool:
+    """Errors a retry can't fix: no login, no access, no such model. Waiting a minute for each is just slow."""
+    try:
+        from huggingface_hub.errors import GatedRepoError, LocalTokenNotFoundError, RepositoryNotFoundError
+    except ImportError:
+        return False
+    return isinstance(error, (GatedRepoError, LocalTokenNotFoundError, RepositoryNotFoundError))
+
+
 def timeout_retry(func: Callable, func_args: tuple, func_kwargs: Dict[str, Any], time_out: int = 60, retries: int = 5):
     retries = max(0, retries)
     time_out = max(0, time_out)
@@ -45,6 +54,8 @@ def timeout_retry(func: Callable, func_args: tuple, func_kwargs: Dict[str, Any],
         try:
             return func(*func_args, **func_kwargs)
         except Exception as e:
+            if _permanent(e):
+                raise
             last_e = e
         retries -= 1
         # no point in waiting after the last attempt

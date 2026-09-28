@@ -46,7 +46,7 @@ def run(tmp_path, monkeypatch):
 
 
 def test_passes_decoded_audio_and_speaker_counts(run):
-    fake, loaded, result = run({"device": "cpu", "min-speakers": 2, "max-speakers": 4})
+    fake, loaded, result = run({"device": "cpu", "min-speakers": 2, "max-speakers": 4, "exclusive": False})
     audio, kwargs = fake.calls[0]
     assert kwargs == {"min_speakers": 2, "max_speakers": 4}
     assert audio["sample_rate"] == 16000
@@ -56,8 +56,8 @@ def test_passes_decoded_audio_and_speaker_counts(run):
     assert result.to_dict() == {"sprecher_0": [(0.5, 1.5)], "sprecher_1": [(0.0, 1.0)]}
 
 
-def test_exclusive_diarization(run):
-    _, _, result = run({"device": "cpu", "exclusive": True})
+def test_exclusive_diarization_is_the_default(run):
+    _, _, result = run({"device": "cpu"})
     assert result.to_dict() == {"sprecher_0": [(0.5, 1.5)], "sprecher_1": [(0.0, 0.5)]}
 
 
@@ -71,3 +71,27 @@ def test_speaker_range_is_checked(tmp_path):
     config = Config({"pyannote-diarization": {"min-speakers": 5, "max-speakers": 2}}, work_directory=str(tmp_path))
     with pytest.raises(ConfigError, match="max-speakers"):
         config.options(DiarizerPyannote)
+
+
+def test_preflight_says_what_to_do_without_a_login(monkeypatch, tmp_path):
+    import huggingface_hub
+    from huggingface_hub.errors import GatedRepoError
+
+    def refuse(repo_id, **kwargs):
+        raise GatedRepoError("401 Client Error", response=None)
+
+    monkeypatch.setattr(huggingface_hub, "auth_check", refuse)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    config = Config({}, work_directory=str(tmp_path))
+    with pytest.raises(ConfigError, match="--diarizer sortformer"):
+        DiarizerPyannote.preflight(config)
+
+
+def test_preflight_lets_an_offline_machine_try_the_cache(monkeypatch, tmp_path):
+    import huggingface_hub
+
+    def offline(repo_id, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(huggingface_hub, "auth_check", offline)
+    DiarizerPyannote.preflight(Config({}, work_directory=str(tmp_path)))

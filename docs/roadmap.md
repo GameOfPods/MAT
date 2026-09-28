@@ -2,7 +2,7 @@
 
 Known problems and what we want to do about them. Stage 1 is done on the `fix/restore-v0.2` branch. Every later stage gets its own branch.
 
-**Next up:** pick the defaults (stage 6, open decision below, now with fair FLEURS numbers and a real episode for Parakeet), then the rest of stage 7.
+**Next up:** the rest of stage 7. Parakeet as the default transcriber waits for the corrected German reference.
 
 Target hardware for real runs is a separate box with a GTX 1080 Ti (11 GB). Development and unit tests happen on a CPU-only machine. The notes on models and hardware at the bottom explain most of the choices below.
 
@@ -161,7 +161,7 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 - [ ] Transformers is capped at `<4.53.3` by spacy-transformers and `<5` by gliner2, which blocks Cohere Transcribe (needs 5.4+) and Granite Speech (5.8+). Cheaper than another environment: drop `spacy-transformers` (we don't default to the `*_trf` spaCy models) and check what gliner2 really needs.
 - [ ] 6c: Qwen3-ASR 1.7B with Qwen3-ForcedAligner for timestamps, MOSS-Transcribe-Diarize and Granite Speech 4.1 2B-plus (both transcribe and diarize). MOSS handles 90 minutes and Granite 9 minutes per pass, so both use the long-audio splitter.
 - [ ] 6d: Cohere Transcribe. It needs the language up front and has no timestamps, so language comes from a first pass and timestamps from Qwen3-ForcedAligner.
-- [ ] Pick new defaults from the benchmark numbers. First run on the GPU box (2026-09-16, `benchmarks/stage6.toml`, one to two files per dataset, so treat single numbers with care):
+- [x] Pick new defaults from the benchmark numbers. First run on the GPU box (2026-09-16, `benchmarks/stage6.toml`, one to two files per dataset, so treat single numbers with care):
 
   | diarizer | VoxConverse DER | speakers off | AMI DER | AMI cpWER | RTFx | peak GPU |
   |---|---|---|---|---|---|---|
@@ -187,7 +187,7 @@ Known conflict: transformers is capped at `<4.53.3` by spacy-transformers (neede
 
   Parakeet wins on English meetings (AMI WER 17.4 % against 19.5 %, twice as fast) at 9.5 GB. Its FLEURS and Bundestag numbers (29.9 % and 38.7 %) come from the packing problem under stage 5, not from the model. Streaming Sortformer is the low memory option (2 GB) but the worst at matching words to speakers on AMI.
 
-  Open decision: `pyannote-diarization` is better than Sortformer everywhere but needs a Hugging Face login (gated) and more memory, `diarizen` is better again but non-commercial and needs its own environment. A default that needs an account is a real cost for anyone installing MAT.
+  Open decision: `pyannote-diarization` is better than Sortformer everywhere but needs a Hugging Face login (gated) and more memory, `diarizen` is better again but non-commercial and needs its own environment. A default that needs an account is a real cost for anyone installing MAT. Decided (2026-09-28): the default diarizer is `pyannote-diarization` with `exclusive` on. `MAT run` checks the Hugging Face access before the first file and says what to do (accept the terms, `hf auth login`, or `--diarizer sortformer`), and missing access is no longer retried 5 times a minute apart. Whisper stays the default transcriber until the German reference gives Parakeet a real WER; the README calls Parakeet the fast option.
 - [x] Parakeet on ASR Bundestag (54.9 % WER against 8.5 %) and whisper's high FLEURS WER: both come from the packed files losing speech, see stage 5.
 
 Transcript quality (seen on the first real German episode):

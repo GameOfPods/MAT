@@ -9,6 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
+import os
 from typing import Optional
 
 from pydantic import Field, model_validator
@@ -18,7 +19,7 @@ from MAT.registry import register, require
 require("pyannote.audio", extra="pyannote")
 
 from MAT.tools.diarizators import DiarizationResult, DiarizationTool, DiarizerInput  # noqa: E402
-from MAT.utils.config import Config, Options  # noqa: E402
+from MAT.utils.config import Config, ConfigError, Options  # noqa: E402
 
 
 class PyannoteDiarizationOptions(Options):
@@ -29,9 +30,10 @@ class PyannoteDiarizationOptions(Options):
     num_speakers: Optional[int] = Field(None, ge=1, description="Exact number of speakers, if you know it.")
     min_speakers: Optional[int] = Field(None, ge=1, description="Lowest number of speakers when estimating.")
     max_speakers: Optional[int] = Field(None, ge=1, description="Highest number of speakers when estimating.")
-    exclusive: bool = Field(False, description="Use the exclusive diarization with one speaker at a time, made for "
-                                               "matching transcript words to speakers. Overlapping speech goes to "
-                                               "the most likely speaker.")
+    exclusive: bool = Field(True, description="Use the exclusive diarization with one speaker at a time, made for "
+                                              "matching transcript words to speakers. Overlapping speech goes to "
+                                              "the most likely speaker. Best word to speaker matching in our "
+                                              "benchmark, false gives slightly better DER on meetings.")
     no_hf_token: bool = Field(False, description="Don't send your Hugging Face token when loading the model.")
 
     @model_validator(mode="after")
@@ -47,6 +49,27 @@ class DiarizerPyannote(DiarizationTool):
     Options = PyannoteDiarizationOptions
     packages = ("pyannote-audio",)
     _LOGGER = logging.getLogger(__name__)
+
+    @classmethod
+    def preflight(cls, config: Config) -> None:
+        from huggingface_hub import auth_check
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+        options = config.options(cls)
+        if os.environ.get("HF_HUB_OFFLINE", "").lower() in ("1", "true", "yes"):
+            return
+        try:
+            auth_check(options.model, token=False if options.no_hf_token else None)
+        except (GatedRepoError, RepositoryNotFoundError) as e:
+            raise ConfigError(cls._login_message(options.model)) from e
+        except Exception as e:
+            # offline or Hugging Face is down: the model may be in the cache, loading will tell
+            cls._LOGGER.debug(f"Could not check access to {options.model}: {e}")
+
+    @staticmethod
+    def _login_message(model: str) -> str:
+        return (f"{model} needs a Hugging Face login. Accept its terms on https://huggingface.co/{model}, then run "
+                f"`hf auth login` or set HF_TOKEN. Without a login use --diarizer sortformer.")
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:
         import numpy as np
@@ -81,11 +104,15 @@ class DiarizerPyannote(DiarizationTool):
 
         from MAT.utils import timeout_retry
 
-        pipeline = timeout_retry(func=Pipeline.from_pretrained, func_args=(options.model,),
-                                 func_kwargs={"token": not options.no_hf_token}, time_out=60, retries=5)
+        from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+        try:
+            pipeline = timeout_retry(func=Pipeline.from_pretrained, func_args=(options.model,),
+                                     func_kwargs={"token": not options.no_hf_token}, time_out=60, retries=5)
+        except (GatedRepoError, RepositoryNotFoundError) as e:
+            raise RuntimeError(DiarizerPyannote._login_message(options.model)) from e
         if pipeline is None:
-            raise RuntimeError(f"Could not load {options.model}. Accept its terms on Hugging Face and log in with "
-                               f"`hf auth login`")
+            raise RuntimeError(DiarizerPyannote._login_message(options.model))
         pipeline.to(torch.device(device))
         return pipeline
 

@@ -26,3 +26,19 @@ def test_timeout_retry_returns_value(monkeypatch):
         return "ok"
 
     assert timeout_retry(func=flaky, func_args=(), func_kwargs={}, time_out=1, retries=3) == "ok"
+
+
+def test_timeout_retry_gives_up_at_once_on_a_missing_login():
+    from huggingface_hub.errors import GatedRepoError
+
+    from MAT.utils import timeout_retry
+
+    calls = []
+
+    def load():
+        calls.append(1)
+        raise GatedRepoError("401 Client Error", response=None)
+
+    with pytest.raises(GatedRepoError):
+        timeout_retry(func=load, func_args=(), func_kwargs={}, time_out=60, retries=5)
+    assert len(calls) == 1

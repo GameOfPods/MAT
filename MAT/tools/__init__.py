@@ -38,6 +38,11 @@ class Tool(Generic[T_in, T_out], Configurable, ABC):
     def process(self, origin_data: T_in, config: Config) -> Optional[T_out]:
         pass
 
+    @classmethod
+    def preflight(cls, config: Config) -> None:
+        """Cheap checks before the first file starts (a login, a server). Raise ConfigError with what to do, so a
+        run doesn't fail after an hour of transcribing. Must not fail when the network is down."""
+
     def describe(self, config: Config) -> Dict[str, Any]:
         info: Dict[str, Any] = {"backend": self.backend_name}
         model = getattr(config.options(self), "model", None)

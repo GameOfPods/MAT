@@ -6,7 +6,7 @@ Notes for working on MAT (Media Analytics Toolset) with Claude Code.
 
 CLI that runs ML pipelines on media files and writes results to a folder/zip. Two pipelines:
 
-- `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (sortformer, sortformer-streaming, pyannote-diarization), `identifier` (pyannote or none), `namer` (llm-names or none), `summarizer` (llm or none).
+- `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `summarizer` (llm or none).
 - `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none).
 
 `MAT/reader` loads written results back (format 2, see `MAT/writer`).
@@ -85,7 +85,7 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 ## Machines
 
 - The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
-- No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models (pyannote community-1) work. The defaults need no login: WeSpeaker is not gated.
+- No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models work. The default diarizer (pyannote community-1) needs that login; `--diarizer sortformer` and WeSpeaker don't. Backends can check such things before the first file with `preflight`.
 - Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. spaCy models are pip-installed at runtime by `spacy_download` and removed again by every `uv sync` (exact sync), so the book smoke script downloads `en_core_web_sm` again after a sync.
 - Real runs and benchmarks happen on a separate GPU box with a GTX 1080 Ti (Pascal, compute capability 6.1, 11 GB), set up with uv. Claude can't reach it, the user runs GPU smoke tests and `MAT bench` there and shares the results.
   Known setup: driver 580.178.04, FFmpeg 9.0.1 (too new for torchcodec 0.7), the desktop already uses about 930 MiB of GPU memory. It has an HF token and API keys. Stage 2 smoke numbers are in `docs/roadmap.md`.
