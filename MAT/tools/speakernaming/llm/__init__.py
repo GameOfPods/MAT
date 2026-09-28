@@ -33,12 +33,17 @@ from MAT.utils.config import Config, Options  # noqa: E402
 
 # A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
 # underscores, so a model that echoes "sprecher_0" back at us doesn't get through.
+# what the namer takes from [llm] while it has no preset of its own
+INHERITED = ("preset", "service", "model", "base_url")
+
 _NAME = re.compile(r"^[^\W\d_]+(?:[ '’\-][^\W\d_]+)*$", re.UNICODE)
 
 
 class SpeakerNamingOptions(Options):
     preset: Literal["none", "openai", "ollama", "llamacpp"] = Field(
-        "none", description="Starting point for the other options, like llm.preset.")
+        "none", description="Starting point for the other options, like llm.preset. While it isn't set, preset, "
+                            "service, model and base-url come from [llm] wherever you set them there. Once it's "
+                            "set (even to the same value) this section stands on its own.")
     service: str = Field("OpenAI", description="LLM provider, OpenAI or Ollama. Same meaning as in [llm].")
     model: str = Field("gpt-5.6-terra", description="Model name at the provider.")
     base_url: Optional[str] = Field(None, description="Where Ollama listens, default $OLLAMA_HOST or localhost.")
@@ -65,7 +70,7 @@ class SpeakerNamingLLM(SpeakerNamingTool):
 
         from MAT.tools.summary.llm import LLM, SummaryLLM
 
-        options = self._apply_preset(config.options(self))
+        options = self._apply_preset(self._inherit(config.options(self), config))
         if not origin_data.speakers or not origin_data.lines:
             return SpeakerNamingResult()
 
@@ -87,6 +92,26 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         if not found:
             self._LOGGER.info("The transcript doesn't say who is who, keeping the diarizer names")
         return SpeakerNamingResult(found)
+
+    @classmethod
+    def _inherit(cls, options: SpeakerNamingOptions, config: Config) -> SpeakerNamingOptions:
+        """Without a preset of its own the namer talks to the same model as the summary: whatever of preset, service,
+        model and base-url you set in [llm] and not here. With its own preset nothing comes from [llm], so a cloud
+        model name can't end up at Ollama."""
+        from MAT.tools.summary.llm import SummaryLLM
+
+        if "preset" in options.model_fields_set:
+            cls._LOGGER.info(f"Speaker naming uses its own settings (llm-names.preset = {options.preset})")
+            return options
+        summary = config.options(SummaryLLM)
+        taken = {name: getattr(summary, name) for name in INHERITED
+                 if name in summary.model_fields_set and name not in options.model_fields_set}
+        if not taken:
+            return options
+        cls._LOGGER.info("Speaker naming takes " + ", ".join(f"{name.replace('_', '-')}={value}"
+                                                             for name, value in sorted(taken.items()))
+                         + " from [llm]")
+        return options.model_copy(update=taken)
 
     @classmethod
     def _apply_preset(cls, options: SpeakerNamingOptions) -> SpeakerNamingOptions:

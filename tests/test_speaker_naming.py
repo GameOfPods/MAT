@@ -127,3 +127,32 @@ def test_the_namer_sees_every_speaker():
     _name_step([])
     assert sorted(FakeNamer.seen.speakers) == ["alex", "sprecher_1"]
     assert len(FakeNamer.seen.lines) == 2
+
+
+def _namer_options(values):
+    config = Config(values)
+    return SpeakerNamingLLM._apply_preset(SpeakerNamingLLM._inherit(config.options(SpeakerNamingLLM), config))
+
+
+def test_without_its_own_preset_the_namer_follows_the_summary():
+    options = _namer_options({"llm": {"preset": "ollama", "model": "qwen3:8b", "chunk-size": 12000}})
+    assert (options.preset, options.service, options.model) == ("ollama", "Ollama", "qwen3:8b")
+
+
+def test_its_own_preset_means_nothing_comes_from_the_summary():
+    # the same preset as [llm] still cuts the link, so llm.model doesn't leak over
+    options = _namer_options({"llm": {"preset": "openai", "model": "deepseek-flash"},
+                              "llm-names": {"preset": "openai"}})
+    assert options.model == "gpt-5.6-terra"
+    options = _namer_options({"llm": {"model": "deepseek-flash"}, "llm-names": {"preset": "ollama"}})
+    assert (options.service, options.model) == ("Ollama", "gpt-5.6-terra")
+
+
+def test_a_model_set_for_the_namer_always_wins():
+    options = _namer_options({"llm": {"preset": "ollama", "model": "qwen3:8b"}, "llm-names": {"model": "qwen3:14b"}})
+    assert (options.service, options.model) == ("Ollama", "qwen3:14b")
+
+
+def test_nothing_set_anywhere_keeps_the_defaults():
+    options = _namer_options({})
+    assert (options.preset, options.service, options.model) == ("none", "OpenAI", "gpt-5.6-terra")
