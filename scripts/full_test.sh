@@ -240,7 +240,9 @@ run "bench run" bench uv run --no-sync MAT bench run -c "$BENCH/bench.toml" -o "
 
 if [ -n "$MAT_TEST_AUDIO" ]; then
   # -i takes glob patterns, so [ ] * ? in the file name get escaped
-  ARGS=(run --yes --export-config -o "$OUT/run" -i "$(sed 's/[][*?]/[&]/g' <<< "$MAT_TEST_AUDIO")")
+  # entities and sound events are off by default, the full test turns them on to see them work
+  ARGS=(run --yes --export-config -o "$OUT/run" -i "$(sed 's/[][*?]/[&]/g' <<< "$MAT_TEST_AUDIO")"
+        --entities gliner --events audioset)
   if [ -z "$OPENAI_API_KEY" ]; then
     ARGS+=(--summarizer none)
   elif [ -n "$MAT_TEST_LLM_MODEL" ]; then
@@ -252,7 +254,7 @@ if [ -n "$MAT_TEST_AUDIO" ]; then
     ${OPENAI_API_KEY:+OPENAI_API_KEY="$OPENAI_API_KEY"} \
     ${OPENAI_API_BASE:+OPENAI_API_BASE="$OPENAI_API_BASE"} \
     uv run --no-sync MAT "${ARGS[@]}"
-  grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed" \
+  grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed|Found [0-9]+ (entities|events)" \
     "$LOGS/run.log" | grep -E " - +[A-Z]+ +- " | sed -E 's/^.* - +[A-Z]+ +- [^:]*: //' | detail
 
   run "check result" check uv run --no-sync python -W ignore - "$OUT/run" <<'PY'
@@ -291,6 +293,12 @@ words = podcast.words
 print(f"words {len(words)}, without times {sum(w.start is None or w.end is None for w in words)}, "
       f"more than one speaker {sum(len(w.speakers) > 1 for w in words)}, no speaker {sum(not w.speakers for w in words)}, "
       f"segments {len(podcast.segments)}")
+counts = podcast.entity_counts()
+print(f"entities {len(podcast.entities)}: " + "; ".join(
+    f"{label} " + ", ".join(f"{name} {n}" for name, n in sorted(names.items(), key=lambda x: -x[1])[:6])
+    for label, names in counts.items()))
+print(f"sound events {len(podcast.events)}: " + ", ".join(
+    f"{e.label} {e.start:.0f}-{e.end:.0f} s" for e in podcast.events[:12]))
 print("transcript start:")
 for line in result.transcript().splitlines()[:8]:
     print("  " + line[:160])
