@@ -98,6 +98,13 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         return cls._apply_preset(cls._inherit(config.options(cls), config))
 
     @classmethod
+    def preflight(cls, config: Config) -> None:
+        from MAT.tools.summary.llm import check_llm_access
+
+        options = cls.effective_options(config)
+        check_llm_access(options.service, options.model, options.base_url, "Speaker naming", "--namer none")
+
+    @classmethod
     def _inherit(cls, options: SpeakerNamingOptions, config: Config) -> SpeakerNamingOptions:
         """Without a preset of its own the namer talks to the same model as the summary: whatever of preset, service,
         model and base-url you set in [llm] and not here. With its own preset nothing comes from [llm], so a cloud

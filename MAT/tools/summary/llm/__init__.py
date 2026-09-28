@@ -49,6 +49,34 @@ PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def check_llm_access(service: str, model: str, base_url: Optional[str], what: str, skip: str) -> None:
+    """Stops a run before the first file when the LLM can't work: no API key, or an Ollama that doesn't answer or
+    doesn't have the model. `what` is the step ("The summary"), `skip` how to run without it."""
+    from MAT.utils.config import ConfigError
+
+    if service == "Ollama":
+        import requests
+
+        url = ollama_url(base_url)
+        try:
+            response = requests.get(f"{url}/api/tags", timeout=5)
+            response.raise_for_status()
+            names = {entry.get("name") for entry in response.json().get("models") or []}
+        except Exception as e:
+            raise ConfigError(f"{what} uses Ollama at {url}, but it doesn't answer ({e.__class__.__name__}). Start "
+                              f"it (systemctl start ollama, or ollama serve), point llm.base-url or OLLAMA_HOST at "
+                              f"it, or {skip}.") from e
+        wanted = {model, f"{model}:latest"}
+        if names and not names & wanted:
+            raise ConfigError(f"{what} wants {model}, but Ollama at {url} only has {', '.join(sorted(names))}. "
+                              f"Run `ollama pull {model}` or pick one of those.")
+        return
+    if not os.environ.get("OPENAI_API_KEY"):
+        where = os.environ.get("OPENAI_API_BASE") or "the OpenAI API"
+        raise ConfigError(f"{what} uses {where} and needs OPENAI_API_KEY (any value for a local server behind "
+                          f"OPENAI_API_BASE). Set it, use a local model (--set llm.preset=ollama), or {skip}.")
+
+
 def ollama_url(base_url: Optional[str] = None) -> str:
     """Where Ollama listens: the option, then $OLLAMA_HOST, then the default. A bare host:port gets a scheme."""
     url = (base_url or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").strip().rstrip("/")
@@ -270,6 +298,11 @@ class SummaryLLM(SummaryTool):
     @classmethod
     def effective_options(cls, config: Config) -> "LLMOptions":
         return cls._apply_preset(config.options(cls))
+
+    @classmethod
+    def preflight(cls, config: Config) -> None:
+        options = cls.effective_options(config)
+        check_llm_access(options.service, options.model, options.base_url, "The summary", "--summarizer none")
 
     @classmethod
     def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun, refine_reserved: Optional[int] = None,

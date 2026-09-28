@@ -81,6 +81,7 @@ def link_speakers(similarity, local: Sequence[str], known: Sequence[str],
 class DiarizerNEMO(DiarizationTool):
     Options = SortformerOptions
     packages = ("nemo-toolkit", "pyannote-audio")
+    memory_hint = "shorter pieces (--set sortformer.segment-length=150, about 2 GB)"
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:
@@ -290,6 +291,7 @@ class StreamingSortformerOptions(SortformerOptions):
           description="NVIDIA streaming Sortformer v2.1, up to 4 speakers, long audio in one piece")
 class DiarizerStreamingSortformer(DiarizerNEMO):
     Options = StreamingSortformerOptions
+    memory_hint = "a shorter chunk (--set sortformer-streaming.chunk-len=170)"
 
     def _configure_model(self, model, options: StreamingSortformerOptions) -> None:
         modules = model.sortformer_modules

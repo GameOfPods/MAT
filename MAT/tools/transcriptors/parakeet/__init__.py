@@ -57,6 +57,7 @@ def guess_language(text: str) -> Optional[str]:
 class TranscriptorParakeet(TransciptionTool):
     Options = ParakeetOptions
     packages = ("nemo-toolkit",)
+    memory_hint = "shorter pieces (--set parakeet.segment-length=300), or --transcriber whisper (4.4 GB instead of 9.6)"
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscriptionResult]:

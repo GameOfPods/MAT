@@ -48,6 +48,7 @@ class PyannoteDiarizationOptions(Options):
 class DiarizerPyannote(DiarizationTool):
     Options = PyannoteDiarizationOptions
     packages = ("pyannote-audio",)
+    memory_hint = "--diarizer sortformer with --set sortformer.segment-length=150 (about 2 GB)"
     _LOGGER = logging.getLogger(__name__)
 
     @classmethod

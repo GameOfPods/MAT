@@ -70,12 +70,16 @@ class BookPipeline(Pipeline):
 
     @classmethod
     def accept(cls, f: str) -> bool:
+        return cls.why_not(f) is None
+
+    @classmethod
+    def why_not(cls, f: str) -> Optional[str]:
         try:
             from ebooklib import epub
             epub.read_epub(f, options={"ignore_ncx": True})
-            return True
-        except Exception:
-            return False
+            return None
+        except Exception as e:
+            return f"not an EPUB ({e.__class__.__name__})"
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
         from ebooklib import epub, ITEM_DOCUMENT, ITEM_NAVIGATION

@@ -36,6 +36,7 @@ class WhisperOptions(Options):
 class TransciptorWhisper(TransciptionTool):
     Options = WhisperOptions
     packages = ("faster-whisper", "whisperx", "ctranslate2")
+    memory_hint = "a smaller model (--set whisper.model=medium) or --set whisper.compute-type=int8"
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscriptionResult]:

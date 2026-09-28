@@ -42,10 +42,25 @@ Used for EPUB files.
 - ffmpeg on your `PATH`. The current pipelines work with any recent version (tested with 6.1 and 9.0). torchcodec 0.7, which pyannote uses when it has to open audio files itself, only supports ffmpeg 4 to 7, so that becomes relevant once pyannote reads files directly.
 - For the GPU: an NVIDIA driver that supports CUDA 12.6. GTX 10xx cards need the 580 driver branch, later branches dropped them.
 - Disk space for models. The first run downloads a few GB into the Hugging Face and torch caches.
-- For summaries: `OPENAI_API_KEY`. Set `OPENAI_API_BASE` if you want to use another OpenAI compatible server.
+- For summaries: `OPENAI_API_KEY`, or a local Ollama. Set `OPENAI_API_BASE` if you want to use another OpenAI compatible server. `MAT run` checks the key (or that Ollama answers and has the model) before the first file, `--summarizer none` skips summaries.
 - A Hugging Face login for the default diarizer, [pyannote community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) (gated): accept its terms on the model page, then run `hf auth login` or set `HF_TOKEN`. `MAT run` checks the access before the first file and says so if it's missing. Without an account use `--diarizer sortformer`, everything else (WeSpeaker for speaker names, Parakeet, whisper) needs no login.
 
 A GPU helps a lot but isn't needed. Everything runs on CPU, it's just slow.
+
+### GPU memory
+
+The steps run one after another and every backend frees the GPU before the next one starts, so what counts is the biggest single step. Measured on a GTX 1080 Ti, whole MAT process including the CUDA context:
+
+| Backend | Up to | To use less |
+|---|---|---|
+| whisper `large-v3-turbo` | 4.7 GB | `whisper.model=medium`, `whisper.compute-type=int8` |
+| parakeet | 9.6 GB | `parakeet.segment-length=300` |
+| pyannote-diarization (default) | 6.9 GB | `--diarizer sortformer` |
+| sortformer, 300 s pieces | 5.5 GB | `sortformer.segment-length=150` (about 2 GB) |
+| sortformer-streaming | 2.0 GB | |
+| diarizen | 7.3 GB | `diarizen.batch-size=4` |
+
+Everything else on the card counts too. The desktop takes about 1 GB, and a local LLM server keeps its model loaded after it answered (Ollama for 5 minutes, unless `OLLAMA_KEEP_ALIVE=0`), so an 8B model sitting there collides with the next episode's transcription. MAT doesn't start or stop your LLM server. When a step runs out of memory, MAT says which backend it was and which of these settings helps.
 
 ## Install
 

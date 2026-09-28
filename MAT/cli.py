@@ -279,7 +279,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     input_files = _find_inputs(args.input, args.input_recursive)
     _LOGGER.info(f"Found {len(input_files)} files to process")
-    for pipeline_class in {p for file in input_files for p in Pipeline.get_pipelines(f=file)}:
+    pipelines_of = {file: list(Pipeline.get_pipelines(f=file)) for file in input_files}
+    for pipeline_class in {p for found in pipelines_of.values() for p in found}:
         pipeline_class.preflight(config)
     if not args.yes and not _confirm(input_files):
         _LOGGER.error("Please check your input and try again.")
@@ -299,9 +300,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 t_file_start = perf_counter()
                 pb.description = file
                 pb.increment(n=1)
+                if not pipelines_of[file]:
+                    failed += 1
+                    reasons = "; ".join(f"{p.section}: {p.why_not(file)}" for p in Pipeline.all())
+                    _LOGGER.error(f"Nothing can read {file} ({reasons})")
+                    continue
                 try:
                     results = []
-                    for pipeline_class in Pipeline.get_pipelines(f=file):
+                    for pipeline_class in pipelines_of[file]:
                         t_start = perf_counter()
                         pipeline = pipeline_class()
                         results.append(pipeline.process(file=file, config=config))

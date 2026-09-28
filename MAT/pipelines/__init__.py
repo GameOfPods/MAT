@@ -59,6 +59,8 @@ class Pipeline(Configurable, ABC):
         self.models: Dict[str, Dict[str, Any]] = {}
         # step name -> seconds it took in the last process() call, `MAT bench` reports them
         self.step_seconds: Dict[str, float] = {}
+        # the backend the running step created last, named in an out of memory error
+        self._running: Optional[Tool] = None
 
     @classmethod
     def name(cls) -> str:
@@ -72,6 +74,11 @@ class Pipeline(Configurable, ABC):
     @abstractmethod
     def accept(cls, f: str) -> bool:
         raise NotImplementedError()
+
+    @classmethod
+    def why_not(cls, f: str) -> Optional[str]:
+        """Why accept() said no, in words a user can act on. None when it would accept the file."""
+        return None if cls.accept(f) else "not a file this pipeline reads"
 
     @classmethod
     def get_pipelines(cls, f: str) -> Iterable[Type["Pipeline"]]:
@@ -121,6 +128,7 @@ class Pipeline(Configurable, ABC):
                 raise ConfigError(f'[{self.section}] {slot} can\'t be "none"')
             return None
         tool = registry.get(slot, choice).cls()
+        self._running = tool  # the backend a failing step was using, for the out of memory message
         try:
             self.models[slot] = tool.describe(config)
         except Exception as e:
@@ -136,7 +144,17 @@ class Pipeline(Configurable, ABC):
         all_steps = list(self._get_steps())
         for i, step in enumerate(all_steps):
             t1 = perf_counter_ns() / 1e+6
-            res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
+            self._running = None
+            try:
+                res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
+            except Exception as e:
+                from MAT.utils.device import GpuOutOfMemory, is_out_of_memory, out_of_memory_message
+
+                if isinstance(e, GpuOutOfMemory) or not is_out_of_memory(e):
+                    raise
+                backend = self._running
+                name = backend.backend_name if backend is not None else step.__name__
+                raise GpuOutOfMemory(out_of_memory_message(name, getattr(backend, "memory_hint", ""))) from e
             step_results[res.name] = res
             t2 = perf_counter_ns() / 1e+6
             self.step_seconds[res.name] = (t2 - t1) / 1000

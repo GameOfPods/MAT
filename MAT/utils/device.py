@@ -62,4 +62,39 @@ def free_gpu_memory() -> None:
         torch.cuda.empty_cache()
 
 
-__all__ = ["resolve_device", "ct2_compute_type", "torch_dtype", "free_gpu_memory"]
+class GpuOutOfMemory(RuntimeError):
+    """A backend ran out of GPU memory. The message says which one and what to change."""
+
+
+def is_out_of_memory(error: BaseException) -> bool:
+    """torch, CTranslate2 ("CUDA failed with error out of memory") and DiariZen ("batch_size (32) is probably too
+    large") all say it differently."""
+    import sys
+
+    torch = sys.modules.get("torch")
+    if torch is not None and isinstance(error, getattr(torch.cuda, "OutOfMemoryError", ())):
+        return True
+    text = str(error).lower()
+    return "out of memory" in text or (isinstance(error, MemoryError) and "batch_size" in text)
+
+
+def out_of_memory_message(backend: str, hint: str = "") -> str:
+    import sys
+
+    free = ""
+    torch = sys.modules.get("torch")
+    try:
+        if torch is not None and torch.cuda.is_available():
+            available, total = torch.cuda.mem_get_info()
+            free = f" {available / 2 ** 30:.1f} of {total / 2 ** 30:.1f} GB were free afterwards."
+    except Exception:
+        pass
+    return (f"{backend} ran out of GPU memory.{free} "
+            + (f"To use less: {hint}. " if hint else "")
+            + "Other programs on the GPU count too: a local LLM server keeps its model loaded after answering "
+              "(Ollama for 5 minutes unless OLLAMA_KEEP_ALIVE=0), and the desktop takes about 1 GB. "
+              "--set <backend>.device=cpu works as well, just slower.")
+
+
+__all__ = ["resolve_device", "ct2_compute_type", "torch_dtype", "free_gpu_memory", "GpuOutOfMemory",
+           "is_out_of_memory", "out_of_memory_message"]

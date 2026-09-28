@@ -287,6 +287,13 @@ def run_benchmark(bench: BenchFile, output: Path, datasets: Sequence[str] = (), 
     picked_datasets, picked_systems = bench.pick(datasets, systems)
     # check every system config before anything long runs
     configs = {system.name: system_config(system, bench.base_dir) for system in picked_systems}
+    from MAT.pipelines import PodcastPipeline
+
+    for name, config in configs.items():
+        try:
+            PodcastPipeline.preflight(config)  # a missing login fails here, not after hours of other systems
+        except ConfigError as e:
+            raise ConfigError(f"System {name}: {e}") from e
     prepared = prepare(picked_datasets, limit)
     total = sum(len(items) for _, items in prepared) * len(picked_systems)
     work = output / ".work"

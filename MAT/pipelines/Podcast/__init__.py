@@ -166,13 +166,22 @@ class PodcastPipeline(Pipeline):
 
     @classmethod
     def accept(cls, f: str) -> bool:
+        return cls.why_not(f) is None
+
+    @classmethod
+    def why_not(cls, f: str) -> Optional[str]:
         from pydub import AudioSegment
         # noinspection PyBroadException
         try:
             AudioSegment.from_file(f)
-            return True
-        except Exception:
-            return False
+            return None
+        except FileNotFoundError as e:
+            # pydub raises this when ffmpeg itself is missing, too
+            return f"ffmpeg or the file is missing ({e})"
+        except Exception as e:
+            # pydub puts ffmpeg's whole output into the message, the last line says what went wrong
+            last = [line for line in str(e).strip().splitlines() if line.strip()][-1:] or [e.__class__.__name__]
+            return f"ffmpeg can't read it as audio: {last[0].strip()}"
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
         import pydub

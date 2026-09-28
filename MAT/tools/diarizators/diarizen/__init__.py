@@ -46,6 +46,7 @@ class DiarizenOptions(Options):
 class DiarizerDiariZen(DiarizationTool):
     Options = DiarizenOptions
     packages = ()
+    memory_hint = "a smaller batch (--set diarizen.batch-size=4)"
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: DiarizerInput, config: Config) -> Optional[DiarizationResult]:

@@ -33,6 +33,8 @@ class Tool(Generic[T_in, T_out], Configurable, ABC):
     backend_name: ClassVar[str] = ""
     # distribution names, their versions go into the result so you can tell what produced it
     packages: ClassVar[Tuple[str, ...]] = ()
+    # what lowers the GPU memory of this backend, shown when it runs out
+    memory_hint: ClassVar[str] = ""
 
     @abstractmethod
     def process(self, origin_data: T_in, config: Config) -> Optional[T_out]:

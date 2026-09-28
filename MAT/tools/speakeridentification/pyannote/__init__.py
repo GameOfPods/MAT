@@ -50,6 +50,7 @@ class PyannoteOptions(Options):
 class SpeakerIdetificationPyannote(SpeakerIdentificationTool):
     Options = PyannoteOptions
     packages = ("pyannote-audio",)
+    memory_hint = "less audio per speaker (--set podcast.match-seconds=60)"
     _LOGGER = logging.getLogger(__name__)
 
     def can_match(self, config: Config) -> bool:
