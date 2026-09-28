@@ -125,17 +125,24 @@ class Clip:
 
 
 SAMPLE_RATE = 16000
+# loudness every packed clip is brought to, in dBFS (RMS), about what a mastered podcast has
+CLIP_LOUDNESS = -20.0
 
 
 def pack(clips: Sequence[Clip], folder: Path, prefix: str, max_seconds: float,
-         gap: float = 1.0) -> List[Tuple[Path, List[Turn]]]:
+         gap: float = 1.0, loudness: Optional[float] = CLIP_LOUDNESS) -> List[Tuple[Path, List[Turn]]]:
     """Joins short clips into 16 kHz mono files of up to max_seconds, with gap seconds of silence in between. Models
     load once per file, so this is much faster than one file per sentence, and it also tests longer audio.
-    The files are cached in folder, keyed by the clip ids."""
+    The files are cached in folder, keyed by the clip ids and these settings.
+
+    Every clip is brought to `loudness` dBFS first (None keeps it as recorded). FLEURS has sentences 40 dB quieter
+    than the one before, which never happens inside a real episode, and whisper's voice activity filter threw those
+    sentences away as silence."""
     from pydub import AudioSegment
 
     folder.mkdir(parents=True, exist_ok=True)
-    key = hashlib.sha1(("\n".join(c.id for c in clips) + f"\n{max_seconds}\n{gap}").encode()).hexdigest()[:10]
+    settings = f"\n{max_seconds}\n{gap}" + ("" if loudness is None else f"\nloudness {loudness}")
+    key = hashlib.sha1(("\n".join(c.id for c in clips) + settings).encode()).hexdigest()[:10]
     manifest = folder / f"{prefix}-{key}.json"
     if manifest.exists():
         entries = json.loads(manifest.read_text(encoding="utf-8"))
@@ -157,6 +164,9 @@ def pack(clips: Sequence[Clip], folder: Path, prefix: str, max_seconds: float,
 
     for clip in clips:
         audio = AudioSegment.from_file(str(clip.audio)).set_channels(1).set_frame_rate(SAMPLE_RATE).set_sample_width(2)
+        if loudness is not None and audio.rms > 0:
+            # louder up to the target, but never so much that the peaks clip
+            audio = audio.apply_gain(min(loudness - audio.dBFS, -1.0 - audio.max_dBFS))
         data = audio.raw_data
         if buffer and (len(buffer) + len(silence) + len(data)) / bytes_per_second > max_seconds:
             flush()

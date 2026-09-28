@@ -13,6 +13,11 @@ set = ["podcast.diarizer=sortformer-streaming"]
 name = "parakeet-sortformer"
 set = ["podcast.transcriber=parakeet"]
 
+# Parakeet loses sentences in packed FLEURS and Bundestag files with long pieces, 30 s pieces don't
+[[system]]
+name = "parakeet-sortformer-30s"
+set = ["podcast.transcriber=parakeet", "parakeet.segment-length=30"]
+
 [[system]]
 name = "whisper-community1"
 set = ["podcast.diarizer=pyannote-diarization"]

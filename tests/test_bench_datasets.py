@@ -30,6 +30,23 @@ def test_pack_joins_clips_with_gaps(tmp_path):
     assert first_audio.stat().st_mtime_ns == mtime
 
 
+def test_pack_brings_quiet_and_loud_clips_to_the_same_level(tmp_path):
+    from pydub import AudioSegment
+
+    quiet = tmp_path / "quiet.wav"
+    Sine(440).to_audio_segment(duration=1000, volume=-50).set_frame_rate(16000).export(str(quiet), format="wav")
+    loud = _wav(tmp_path / "loud.wav")
+    audio, turns = pack([Clip("q", quiet, "a"), Clip("l", loud, "b")], tmp_path / "packed", "x", max_seconds=10.0)[0]
+    packed = AudioSegment.from_file(str(audio))
+    levels = [packed[int(t.start * 1000):int(t.end * 1000)].dBFS for t in turns]
+    assert all(abs(level + 20) < 1 for level in levels), levels
+    # as recorded is another pack, not the same file
+    kept, _ = pack([Clip("q", quiet, "a"), Clip("l", loud, "b")], tmp_path / "packed", "x", max_seconds=10.0,
+                   loudness=None)[0]
+    assert kept != audio
+    assert AudioSegment.from_file(str(kept))[:1000].dBFS < -45
+
+
 FLEURS_TSV = (
     "1\tf1.wav\tErster Satz.\terster satz\te r s t e r\t16000\tMALE\n"
     "1\tf2.wav\tErster Satz.\terster satz\te r s t e r\t16000\tFEMALE\n"

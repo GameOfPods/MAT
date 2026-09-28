@@ -76,7 +76,7 @@ limit = 100
 | `ami` | 2 | meetings | 16 meetings, about 9 hours (test) |
 | `bundestag` | 200 | snippets | the test split of the clean subset, many hours |
 
-**fleurs** (`languages`, `split`, `limit` = sentences per language, `pack-minutes`): every sentence exists from several speakers, MAT takes one recording per sentence. The sentences get joined into files of up to `pack-minutes` with a second of silence in between, so the models load once per file and not once per sentence. Clean read speech, so it only says how well words are recognized.
+**fleurs** (`languages`, `split`, `limit` = sentences per language, `pack-minutes`): every sentence exists from several speakers, MAT takes one recording per sentence. The sentences get joined into files of up to `pack-minutes` with a second of silence in between, so the models load once per file and not once per sentence. Every sentence is brought to -20 dBFS first: FLEURS has recordings 40 dB quieter than their neighbours, and whisper's voice activity filter dropped them as silence (on 30 English sentences 21.0 % WER as recorded, 6.9 % leveled). Packs made before that have another cache key and get rebuilt. Parakeet still loses sentences in packed files when it gets long pieces (see `parakeet.segment-length` in the roadmap), so compare it with 30 second pieces too. Clean read speech, so it only says how well words are recognized.
 
 **voxconverse** (`split`, `limit`, `files`): mostly English. Lots of short turns and overlapping speech, much harder for diarization than a podcast with a few hosts. Annotations v0.3 from the GitHub repository.
 
