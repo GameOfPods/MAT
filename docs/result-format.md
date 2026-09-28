@@ -87,7 +87,7 @@ A **speaker** is `{"id": "alice", "name": "Alice", "library_id": "alice-9f2c1a",
 - `name`: the person's name when MAT knows one, from a gold label clip, from the transcript or from the speaker library.
 - `library_id`: the id of that voice in the speaker library. It stays the same in every episode that voice appears in, which is what you need to count speaking time per person across episodes. Null when no library was used or the voice is new.
 
-A **word** is `{"start": 6.73, "end": 6.86, "text": "Hello?", "speakers": ["alice"]}`. `start` and `end` can be null if the aligner couldn't place the word. `speakers` is empty when no speaker talks at that time and has more than one entry when speakers overlap.
+A **word** is `{"start": 6.73, "end": 6.86, "text": "Hello?", "speakers": ["alice"]}`. `start` and `end` can be null if the aligner couldn't place the word. `speakers` has one entry by default: the speaker who talks longest during the word. It's empty when no speaker is close enough. With `podcast.word-speakers = "overlap"` it lists every speaker talking during the word, so it can have more than one entry.
 
 **Model info** is `{"backend": "whisper", "model": "large-v3-turbo", "packages": {"faster-whisper": "1.2.1"}}`. Backends can add more fields, for example the summarizer adds `service` and `api_base`.
 

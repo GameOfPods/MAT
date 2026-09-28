@@ -23,7 +23,7 @@ from MAT.tools import (
 )
 from MAT.utils.config import Options
 from MAT.utils.diarization import (
-    align_diarization_with_transcription, squish_word_speaker, word_speaker_to_transcript
+    align_diarization_with_transcription, assign_speakers, squish_word_speaker, word_speaker_to_transcript
 )
 
 
@@ -92,6 +92,14 @@ class PodcastOptions(Options):
                                                     'diarizer labels.')
     namer: str = Field("none", description='Names the speakers that the identifier left unnamed, from what is said '
                                            'in the transcript. "none" skips it. Gold labels always win.')
+    word_speakers: Literal["single", "overlap"] = Field(
+        "single", description='"single" gives every word the one speaker who talks longest during it and fills small '
+                              'gaps from the words around it. "overlap" gives a word every speaker who talks during '
+                              'it (lines like "alice & bob") and leaves words outside all segments without one.')
+    min_turn: float = Field(0.5, ge=0, description='Seconds. With word-speakers "single", a shorter turn in the middle '
+                                                   'of somebody else\'s sentence goes back to them. 0 turns it off.')
+    max_gap: float = Field(1.0, ge=0, description='Seconds. With word-speakers "single", a word outside all segments '
+                                                  'takes the closest speaker this near to it.')
     speaker_library: Optional[str] = Field(None, description="Folder with the speaker library. A voice that got a "
                                                              "name once is recognized in later episodes and keeps "
                                                              "the same id. Not set: no library.")
@@ -164,7 +172,13 @@ class PodcastPipeline(Pipeline):
             transcription: TranscriptionResult = step_input.data("Transcription")
             if matched_speaker is None or transcription is None:
                 return PipelineStepResult(name="Finalizing transcript", data=None)
-            word_speaker = align_diarization_with_transcription(diarization=matched_speaker, transcript=transcription)
+            options = step_input.config.options(self)
+            if options.word_speakers == "overlap":
+                word_speaker = align_diarization_with_transcription(diarization=matched_speaker,
+                                                                    transcript=transcription)
+            else:
+                word_speaker = assign_speakers(matched_speaker, transcription.word_timings or [],
+                                               max_gap=options.max_gap, min_turn=options.min_turn)
             squished_speaker = squish_word_speaker(word_speaker=word_speaker)
             full_transcript = "\n".join(word_speaker_to_transcript(word_speaker=squished_speaker))
             return PipelineStepResult(name="Finalizing transcript", data=(word_speaker, squished_speaker, full_transcript))
