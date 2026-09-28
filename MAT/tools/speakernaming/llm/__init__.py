@@ -94,6 +94,10 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         return SpeakerNamingResult(found)
 
     @classmethod
+    def effective_options(cls, config: Config) -> SpeakerNamingOptions:
+        return cls._apply_preset(cls._inherit(config.options(cls), config))
+
+    @classmethod
     def _inherit(cls, options: SpeakerNamingOptions, config: Config) -> SpeakerNamingOptions:
         """Without a preset of its own the namer talks to the same model as the summary: whatever of preset, service,
         model and base-url you set in [llm] and not here. With its own preset nothing comes from [llm], so a cloud

@@ -268,6 +268,10 @@ class SummaryLLM(SummaryTool):
         return options.model_copy(update=update)
 
     @classmethod
+    def effective_options(cls, config: Config) -> "LLMOptions":
+        return cls._apply_preset(config.options(cls))
+
+    @classmethod
     def _resolve_chunk_size(cls, options: "LLMOptions", reserved: int, len_fun, refine_reserved: Optional[int] = None,
                             longest: Optional[int] = None) -> int:
         """Tokens per chunk. An explicit number wins, "auto" asks the server, then the table, then the fallback.

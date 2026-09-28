@@ -260,3 +260,11 @@ def test_metadata_reaches_every_prompt(monkeypatch):
     assert len(list(result.text)) == 1
     assert len(llm.prompts) > 1
     assert all("filename: episode.mp3" in p for p in llm.prompts)
+
+
+def test_config_show_prints_what_the_preset_fills_in():
+    from MAT.utils.config import render_sections
+
+    text = render_sections([SummaryLLM], config=Config({"llm": {"preset": "ollama", "model": "qwen3:8b"}}),
+                           comments=False)
+    assert 'service = "Ollama"' in text and "max-tokens = 4096" in text

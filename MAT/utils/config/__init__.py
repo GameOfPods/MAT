@@ -48,6 +48,12 @@ class Configurable:
     description: ClassVar[str] = ""
     Options: ClassVar[Type[Options]] = Options
 
+    @classmethod
+    def effective_options(cls, config: "Config") -> Options:
+        """The options as a run will use them. Backends with presets or values taken from other sections fill
+        those in here, so `config show` and --export-config show what really runs."""
+        return config.options(cls)
+
 
 def parse_value(text: str) -> Any:
     # JSON covers numbers, true/false, null, lists and objects. Everything else is a plain string.
@@ -211,7 +217,7 @@ def render_sections(classes: Iterable[Type[Configurable]], config: Optional[Conf
         if comments and cls.description:
             lines.extend(f"# {line}" for line in textwrap.wrap(cls.description, 100))
         lines.append(f"[{cls.section}]")
-        values = config.options(cls).model_dump(by_alias=True, mode="json")
+        values = cls.effective_options(config).model_dump(by_alias=True, mode="json")
         for name, field in cls.Options.model_fields.items():
             key = field.alias or _kebab(name)
             if comments and field.description:
