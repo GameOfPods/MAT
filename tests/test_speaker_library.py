@@ -49,6 +49,29 @@ def test_only_the_newest_embeddings_are_kept(tmp_path):
     assert kept[-1][0] == float(MAX_EMBEDDINGS + 4)
 
 
+def test_running_an_episode_again_replaces_its_embedding(tmp_path):
+    library = SpeakerLibrary.open(tmp_path)
+    for i in range(MAX_EMBEDDINGS - 1):
+        library.remember("Alex", [float(i), 1.0, 0.0], episode=f"older{i}.mp3")
+    library.remember("Alex", ALEX, episode="ep.mp3")
+    library.remember("Alex", ALEX_AGAIN, episode="ep.mp3")
+    library.remember("Alex", ALEX_AGAIN, episode="ep.mp3")
+    speaker = library.speakers[0]
+    assert len(speaker.embeddings) == MAX_EMBEDDINGS
+    assert speaker.embedding_episodes[0] == "older0.mp3"
+    assert speaker.embedding_episodes[-1] == "ep.mp3" and speaker.embeddings[-1] == ALEX_AGAIN
+    assert speaker.episodes.count("ep.mp3") == 1
+
+
+def test_old_files_lose_their_repeated_prints(tmp_path):
+    # written before embedding_episodes existed, the same episode three times
+    (tmp_path / "speakers.json").write_text(json.dumps({"version": 1, "speakers": [
+        {"library_id": "alex-1", "name": "alex", "embeddings": [ALEX, ALEX, ALEX, ALEX_AGAIN]}]}))
+    speaker = SpeakerLibrary.open(tmp_path).speakers[0]
+    assert speaker.embeddings == [ALEX, ALEX_AGAIN]
+    assert speaker.embedding_episodes == [None, None]
+
+
 def test_a_voice_nobody_knows_is_no_match(tmp_path):
     library = SpeakerLibrary.open(tmp_path)
     library.remember("Alex", ALEX)

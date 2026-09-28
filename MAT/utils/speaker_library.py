@@ -43,8 +43,24 @@ class LibrarySpeaker:
     # where the name came from: gold (a clip matched), llm (the transcript said so), manual (you wrote it)
     source: str = "manual"
     embeddings: List[List[float]] = field(default_factory=list)
+    # the episode each embedding came from, same order as embeddings. None for prints made by hand or before we
+    # stored it
+    embedding_episodes: List[Optional[str]] = field(default_factory=list)
     episodes: List[str] = field(default_factory=list)
     updated: str = ""
+
+    def __post_init__(self):
+        # older files have no embedding_episodes, and a rerun of an episode used to store the same print again
+        episodes = list(self.embedding_episodes) + [None] * (len(self.embeddings) - len(self.embedding_episodes))
+        seen, embeddings, kept = set(), [], []
+        for embedding, episode in zip(self.embeddings, episodes):
+            key = tuple(embedding)
+            if key in seen:
+                continue
+            seen.add(key)
+            embeddings.append(embedding)
+            kept.append(episode)
+        self.embeddings, self.embedding_episodes = embeddings, kept
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -119,13 +135,19 @@ class SpeakerLibrary:
 
     def remember(self, name: str, embedding: Sequence[float], source: str = "manual",
                  episode: Optional[str] = None) -> LibrarySpeaker:
-        """Adds a voice or gives a known one another embedding."""
+        """Adds a voice or gives a known one another embedding. One embedding per episode: running an episode again
+        replaces its embedding instead of pushing out the ones of other episodes."""
         speaker = self.by_name(name)
         if speaker is None:
             speaker = LibrarySpeaker(library_id=f"{_slug(name)}-{uuid.uuid4().hex[:6]}", name=name, source=source)
             self.speakers.append(speaker)
-        speaker.embeddings.append([float(value) for value in embedding])
-        del speaker.embeddings[:-MAX_EMBEDDINGS]
+        vector = [float(value) for value in embedding]
+        if episode is not None and episode in speaker.embedding_episodes:
+            index = speaker.embedding_episodes.index(episode)
+            del speaker.embeddings[index], speaker.embedding_episodes[index]
+        speaker.embeddings.append(vector)
+        speaker.embedding_episodes.append(episode)
+        del speaker.embeddings[:-MAX_EMBEDDINGS], speaker.embedding_episodes[:-MAX_EMBEDDINGS]
         if episode and episode not in speaker.episodes:
             speaker.episodes.append(episode)
         speaker.updated = datetime.now().isoformat(timespec="seconds")

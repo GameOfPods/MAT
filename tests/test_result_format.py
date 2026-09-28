@@ -134,3 +134,14 @@ def test_writer_does_not_collide(tmp_path, input_file):
     a = writer.store(file=str(input_file), output=str(tmp_path), pipeline_results=[])
     b = writer.store(file=str(input_file), output=str(tmp_path), pipeline_results=[])
     assert a != b
+
+
+def test_speaker_names_from_every_source(tmp_path, input_file):
+    output = podcast_output()
+    # alice came from a gold clip, bob is still a diarizer label, carol was recognized by the library
+    output.diarization_matched = DiarizationResult({"alice": [(0.0, 0.5)], "sprecher_1": [(0.9, 1.5)],
+                                                    "carol": [(1.5, 2.0)]})
+    output.speaker_library = {"carol": {"name": "carol", "library_id": "carol-abc123"}}
+    podcast = MATResult.read(write(tmp_path, input_file, [output])).podcast
+    assert {s.id: (s.name, s.library_id) for s in podcast.speakers} == {
+        "alice": ("alice", None), "sprecher_1": (None, None), "carol": ("carol", "carol-abc123")}

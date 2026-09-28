@@ -181,7 +181,7 @@ uv run MAT run -i episode.mp3 -o results --yes \
 
 In the next episode the same voices are recognized without clips, keep their names, and keep the same `library_id` in `result.json`, so you can count speaking time per person across a whole season.
 
-By default only names that came from gold clips are learned (`podcast.speaker-library-learns = "gold"`). `"all"` also stores names that the LLM read out of the transcript, `"never"` only reads. The library is a single `speakers.json` you can open, fix by hand or delete.
+By default only names that came from gold clips are learned (`podcast.speaker-library-learns = "gold"`). `"all"` also stores names that the LLM read out of the transcript, `"never"` only reads. The library is a single `speakers.json` you can open, fix by hand or delete. It keeps one voice print per speaker and episode (at most 10 per speaker), so running an episode again replaces its print.
 
 ### Summaries
 

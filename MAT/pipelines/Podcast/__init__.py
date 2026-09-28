@@ -288,6 +288,8 @@ class PodcastPipeline(Pipeline):
                                                 f"speaker-library-learns is {options.speaker_library_learns}")
                     continue
                 entry = library.remember(speaker, vector, source=source, episode=episode)
+                self.__class__._LOGGER.info(f"The library learned the voice of {speaker} "
+                                            f"(from the {'gold labels' if source == 'gold' else 'transcript'})")
                 known_speakers[speaker] = {"name": entry.name, "library_id": entry.library_id}
                 changed = True
 

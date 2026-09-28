@@ -39,12 +39,22 @@ def _finite(value: Optional[float]) -> Optional[float]:
     return float(value) if value is not None and math.isfinite(value) else None
 
 
-def _speakers(diarization: Optional[DiarizationResult],
-              library: Optional[Dict[str, Dict[str, str]]] = None) -> List[Speaker]:
+def _speakers(diarization: Optional[DiarizationResult], library: Optional[Dict[str, Dict[str, str]]] = None,
+              labels: Optional[DiarizationResult] = None) -> List[Speaker]:
+    """labels is the diarizer's own result. A speaker whose id isn't one of its labels got a name from the gold clips
+    or the transcript, and that name goes into `name` as well."""
     if diarization is None:
         return []
     library = library or {}
-    return [Speaker(id=speaker, name=(library.get(speaker) or {}).get("name"),
+    unnamed = set() if labels is None else labels.speaker
+
+    def name(speaker: str) -> Optional[str]:
+        known = (library.get(speaker) or {}).get("name")
+        if known is not None or labels is None or speaker in unnamed:
+            return known
+        return speaker
+
+    return [Speaker(id=speaker, name=name(speaker),
                     library_id=(library.get(speaker) or {}).get("library_id"),
                     segments=[TimeRange(start=start, end=end)
                               for start, end in sorted(diarization.get_diarization(speaker))])
@@ -69,7 +79,8 @@ def podcast_result(output: PodcastOutput) -> PodcastResult:
             duration=media.duration, speech_duration=_finite(media.duration_after_vad),
             sample_rate=media.sample_rate, max_dbfs=_finite(media.max_dbfs), rms=_finite(media.rms),
         ),
-        speakers=_speakers(output.diarization_matched, getattr(output, "speaker_library", None)),
+        speakers=_speakers(output.diarization_matched, getattr(output, "speaker_library", None),
+                           labels=output.diarization),
         diarization=_speakers(output.diarization),
         words=_words(output.word_speaker),
         segments=_words(output.squished_speaker),
