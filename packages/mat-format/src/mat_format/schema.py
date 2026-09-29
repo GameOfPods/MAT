@@ -13,7 +13,8 @@ from typing import Dict, Tuple, Type
 
 from pydantic import BaseModel
 
-from mat_format.models import FORMAT_VERSION, BookResult, Meta, PodcastResult
+from mat_format.models import BookResult, Meta, PodcastResult
+from mat_format.version import __version__
 
 SCHEMA_DIR = Path(__file__).parent / "schemas"
 BASE_URL = "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/"
@@ -33,8 +34,10 @@ def generate() -> Dict[str, dict]:
         schemas[file_name] = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": BASE_URL + file_name,
-            "$comment": f"MAT result format {FORMAT_VERSION}, describes {target}. Generated from "
+            "$comment": f"MAT result format {__version__}, describes {target}. Generated from "
                         f"mat_format/models.py, don't edit by hand.",
+            # not a JSON Schema keyword, validators ignore it. A single schema file says which version it is
+            "version": __version__,
             **schema,
         }
     return schemas

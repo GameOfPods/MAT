@@ -52,6 +52,9 @@ class Meta(_Model):
     """Content of meta.json in the root of every result."""
 
     format: Literal[2] = Field(FORMAT_VERSION, description="Result format version.")
+    format_version: Optional[str] = Field(None, description="Full version of the result format, for example 2.5.0. "
+                                                            "The minor version says which fields to expect. Missing "
+                                                            "in results from before 2.5.")
     mat_version: str = Field(description="Version of MAT that wrote the result.")
     created: str = Field(description="Local time the result was written, ISO 8601 without time zone.")
     input: Input

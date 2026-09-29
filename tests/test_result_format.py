@@ -59,6 +59,8 @@ def test_layout_and_meta(tmp_path, input_file):
         ["diarization.rttm", "result.json", "summary.md", "transcript.txt"]
     meta = json.loads((folder / "meta.json").read_text())
     assert meta["format"] == 2
+    import mat_format
+    assert meta["format_version"] == mat_format.__version__
     assert meta["input"]["name"] == "episode.wav"
     assert meta["pipelines"] == ["podcast", "book"]
     assert json.loads((folder / "podcast" / "result.json").read_text())["schema"] == "mat.podcast"

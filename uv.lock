@@ -2152,7 +2152,6 @@ dev = [
 
 [[package]]
 name = "mat-format"
-version = "2.4.0"
 source = { editable = "packages/mat-format" }
 dependencies = [
     { name = "pydantic" },

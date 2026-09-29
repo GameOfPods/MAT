@@ -62,6 +62,8 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 - Output format 2: `<stem>_<time>/meta.json` plus `podcast/` or `book/` with `result.json` (and `transcript.txt`,
   `summary.md`, `diarization.rttm`). Spec in `docs/result-format.md`. The data model, reader and JSON schemas live in the
   uv workspace package `packages/mat-format` (only pydantic, no MAT imports). `MAT/writer` builds those models.
+  The format version lives in `mat_format/version.py` (major = format, minor + 1 for every set of new fields, and a
+  line in the changelog of `docs/result-format.md`); it's independent of the MAT version and ends up in `meta.json`.
   After changing `mat_format/models.py`: run `.venv/bin/python -m mat_format.schema`, update the spec, and remember
   that renaming/removing/retyping a field needs a new format version (adding fields doesn't). Other programs
   (Mosaicast, Java) read results through the schemas, so don't break the format casually.

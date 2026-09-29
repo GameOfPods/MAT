@@ -9,7 +9,8 @@ from mat_format.models import (
     Sentence, Speaker, TextEntity, TimeRange, TranscriptEntity, Word,
 )
 from mat_format.reader import MATResult
+from mat_format.version import __version__
 
-__all__ = ["FORMAT_VERSION", "MATResult", "Meta", "FailedStep", "Input", "ModelInfo", "PodcastResult", "Media",
-           "Speaker", "TimeRange", "Word", "Event", "TranscriptEntity", "BookResult", "Chapter", "Character",
+__all__ = ["FORMAT_VERSION", "MATResult", "Meta", "FailedStep", "Input", "ModelInfo", "PodcastResult",
+           "Media", "Speaker", "TimeRange", "Word", "Event", "TranscriptEntity", "BookResult", "Chapter", "Character",
            "Sentence", "TextEntity"]

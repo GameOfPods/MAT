@@ -1,6 +1,6 @@
 # MAT result format
 
-This describes what MAT writes, so other programs can read it without MAT. The current version is **format 2**.
+This describes what MAT writes, so other programs can read it without MAT. The current version is **format 2**, in its minor version **2.5** (see the [changelog](#changelog)).
 
 Machine readable definitions (JSON Schema, draft 2020-12):
 
@@ -17,7 +17,9 @@ Every GitHub release has the schemas attached under fixed names, whether they ch
 - `https://github.com/GameOfPods/MAT/releases/latest/download/book-result.schema.json`
 - `https://github.com/GameOfPods/MAT/releases/latest/download/mat-result-format.zip`
 
-Use a specific release instead of `latest` if your build should not pick up changes on its own. The schemas, the examples and the `mat-format` package are licensed under Apache 2.0.
+Every file is also attached with the format version in its name, like `podcast-result-2.5.0.schema.json` and `mat-result-format-2.5.0.zip`, and every schema file says its version in a top level `version` field. Use a specific release instead of `latest` if your build should not pick up changes on its own.
+
+The format has its own version, independent of MAT's: the `mat-format` package version, written into every `meta.json` as `format_version`. The major version is the format (`format: 2`), the minor version goes up when fields are added. The schemas, the examples and the `mat-format` package are licensed under Apache 2.0.
 
 ## Layout
 
@@ -43,19 +45,20 @@ episode_2026-09-15_20-15-02/        or episode_2026-09-15_20-15-02.zip
 - `meta.json` and every `result.json` have a `format` field. It only changes when something breaks: a field is renamed or removed, a type changes, or the meaning of a field changes.
 - New fields can show up within a format version. **Readers must ignore fields they don't know.** The schemas don't forbid extra properties for that reason.
 - Check `format` in `meta.json` first and stop if it's a version your reader doesn't support.
-- The major version of the `mat-format` Python package is the format version.
+- The major version of the `mat-format` Python package is the format version. Its minor version goes up with every set of new fields and is written into `meta.json` as `format_version`, independent of the MAT version. MAT versions and format versions don't move together.
 
 ## Conventions
 
 - Times are seconds (float) from the start of the audio file.
 - Optional values are written as `null`, not left out. Lists are empty, not `null`.
-- Speaker ids are only unique inside one result. `sprecher_0` in one episode has nothing to do with `sprecher_0` in the next. Stable speaker ids across episodes are planned and will be added as new fields.
+- Speaker ids are only unique inside one result. `sprecher_0` in one episode has nothing to do with `sprecher_0` in the next. For the same person across episodes use `speakers[].library_id` (speaker library, since 2.1).
 
 ## meta.json
 
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | integer | Always `2` |
+| `format_version` | string | Full format version, like `2.5.0`. The minor version tells which fields to expect. Missing before 2.5 |
 | `mat_version` | string | MAT version that wrote it |
 | `created` | string | Local time, ISO 8601 without time zone, for example `2026-09-15T20:15:02` |
 | `input.name` | string | Input file name |
@@ -138,4 +141,15 @@ if result.podcast:
 ## Changelog
 
 - **Format 2** (MAT 0.2, stage 4 of the roadmap): first documented format. Folder per pipeline with `result.json`, models and package versions, speakers as objects, `speech_duration`, typed `events` and `entities`.
+
+Minor versions of format 2, each only adds fields:
+
+| Version | Added |
+|---|---|
+| 2.0 | first version |
+| 2.1 | `speakers[].name`, `speakers[].library_id` (speaker library) |
+| 2.2 | podcast `entities` filled (`--entities gliner`), `PodcastResult.entity_counts()` in the reader |
+| 2.3 | book `characters`, `chapters[].summary` |
+| 2.4 | `meta.failed_steps` |
+| 2.5 | `meta.format_version`, the version in every schema file |
 - **Format 1** (MAT 0.2.0 and older): `0.PodcastOutput/` style folders with several JSON files, undocumented, not readable anymore.

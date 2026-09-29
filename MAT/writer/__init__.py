@@ -167,7 +167,10 @@ class Writer:
             write(result, os.path.join(folder, name))
             pipelines.append(name)
             failed.extend(FailedStep(pipeline=name, **f) for f in getattr(result, "failed_steps", None) or [])
+        from mat_format import __version__ as format_version
+
         meta = Meta(
+            format_version=format_version,
             mat_version=__version__,
             created=now.isoformat(timespec="seconds"),
             input=Input(name=os.path.basename(file), path=os.path.abspath(file),

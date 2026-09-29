@@ -68,9 +68,17 @@ def test_output_option_writes_every_schema(tmp_path):
 
 def test_package_major_version_is_the_format_version():
     from importlib.metadata import version
-    from mat_format import FORMAT_VERSION
-    assert int(version("mat-format").split(".")[0]) == FORMAT_VERSION, \
-        "bump the mat-format major version in packages/mat-format/pyproject.toml together with FORMAT_VERSION"
+    from mat_format import FORMAT_VERSION, __version__
+    assert int(__version__.split(".")[0]) == FORMAT_VERSION, \
+        "bump the major version in mat_format/version.py together with FORMAT_VERSION"
+    # the installed package reads its version from the same file
+    assert version("mat-format") == __version__
+
+
+def test_every_schema_says_its_version():
+    from mat_format import __version__
+    for schema in format_schema.generate().values():
+        assert schema["version"] == __version__ and __version__ in schema["$comment"]
 
 
 def test_does_not_pull_in_mat_or_torch():

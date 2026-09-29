@@ -4,7 +4,7 @@
  "models": {
   "splitter": {
    "backend": "spacy",
-   "model": "en_core_web_sm",
+   "model": null,
    "packages": {
     "spacy": "3.8.16"
    }
@@ -30,7 +30,7 @@
    ],
    "sentences": [
     {
-     "text": "Alice met Bob in Berlin on Monday.\n",
+     "text": "Alice met Bob in Berlin on Monday.",
      "lemmas": {
       "Alice": 1,
       "meet": 1,
@@ -81,7 +81,8 @@
       }
      ]
     }
-   ]
+   ],
+   "summary": null
   },
   {
    "heading": "Chapter 2",
@@ -92,7 +93,7 @@
    ],
    "sentences": [
     {
-     "text": "On Friday Bob flew to Paris.\n",
+     "text": "On Friday Bob flew to Paris.",
      "lemmas": {
       "Friday": 1,
       "Bob": 1,
@@ -108,18 +109,6 @@
       },
       {
        "label": "LOCATION",
-       "text": "Paris",
-       "start": 22,
-       "end": 27
-      },
-      {
-       "label": "ORGANIZATION",
-       "text": "Bob",
-       "start": 10,
-       "end": 13
-      },
-      {
-       "label": "ORGANIZATION",
        "text": "Paris",
        "start": 22,
        "end": 27
@@ -152,16 +141,11 @@
        "text": "home",
        "start": 16,
        "end": 20
-      },
-      {
-       "label": "ORGANIZATION",
-       "text": "Alice",
-       "start": 0,
-       "end": 5
       }
      ]
     }
-   ]
+   ],
+   "summary": null
   },
   {
    "heading": "Epilogue",
@@ -186,12 +170,6 @@
        "end": 38
       },
       {
-       "label": "ORGANIZATION",
-       "text": "London",
-       "start": 32,
-       "end": 38
-      },
-      {
        "label": "DATE",
        "text": "March 2024",
        "start": 3,
@@ -199,7 +177,32 @@
       }
      ]
     }
-   ]
+   ],
+   "summary": null
+  }
+ ],
+ "characters": [
+  {
+   "name": "Alice",
+   "mentions": 2,
+   "variants": {
+    "Alice": 2
+   },
+   "chapters": {
+    "Chapter 1": 1,
+    "Chapter 2": 1
+   }
+  },
+  {
+   "name": "Bob",
+   "mentions": 2,
+   "variants": {
+    "Bob": 2
+   },
+   "chapters": {
+    "Chapter 1": 1,
+    "Chapter 2": 1
+   }
   }
  ]
 }

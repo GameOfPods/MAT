@@ -1,7 +1,8 @@
 {
  "format": 2,
+ "format_version": "2.5.0",
  "mat_version": "0.2.0",
- "created": "2026-09-14T23:20:56",
+ "created": "2026-09-29T11:22:49",
  "input": {
   "name": "sample.wav",
   "path": "/data/sample.wav",
@@ -9,5 +10,6 @@
  },
  "pipelines": [
   "podcast"
- ]
+ ],
+ "failed_steps": []
 }
