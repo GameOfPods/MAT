@@ -65,14 +65,13 @@ jobs:
             echo "::warning::committed schema files differ from the models, attaching the generated ones"
           fi
 
-      - name: Bundle schemas, spec and examples
-        run: |
-          mkdir -p dist/bundle
-          cp -r dist/schemas dist/bundle/schemas
-          cp -r packages/mat-format/examples dist/bundle/examples
-          cp docs/result-format.md packages/mat-format/LICENSE dist/bundle/
-          (cd dist/bundle && zip -qr ../mat-result-format.zip .)
-          ls -la dist dist/schemas
+      - name: Bundle schemas, spec, examples and a README
+        # the spec's links are rewritten to work inside the zip, see the script
+        run: '"$RUNNER_TEMP/venv/bin/python" scripts/build_format_bundle.py --schemas dist/schemas --output dist --tag "$TAG"'
+
+      - name: Build the mat-format wheel
+        # Python programs can install the reader from the release instead of writing their own
+        run: uv build --package mat-format --wheel --out-dir dist/wheel
 
       - name: Copies with the format version in the name
         run: |
@@ -91,5 +90,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         # --clobber replaces files of a previous run with the same name
         run: |
-          gh release upload "$TAG" dist/schemas/*.schema.json dist/mat-result-format.zip dist/versioned/* \
+          gh release upload "$TAG" dist/schemas/*.schema.json dist/mat-result-format.zip dist/versioned/* dist/wheel/*.whl \
             --clobber --repo "$GITHUB_REPOSITORY"
