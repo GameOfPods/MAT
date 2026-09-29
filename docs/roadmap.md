@@ -287,7 +287,7 @@ Drop whatever stage 4 already solved.
 - [x] `DiarizerNEMO._create_config` (old MSDD setup, downloads yaml from GitHub) was unused. Removed in stage 4.
 - [x] CI: GitHub Actions for pull requests and pushes to `master`. Unit tests with all backends on CPU torch, an install without any backend, mat-format alone on Python 3.10/3.12/3.13. Dependabot keeps the action versions current.
 - [ ] Mark the CI jobs as required status checks in the GitHub branch protection of `master` (repository settings, can't be done from a file).
-- [ ] Clean up stale `mat.egg-info`/`MAT.egg-info` folders and decide if `.idea/` belongs in the repo
+- [x] Clean up stale `mat.egg-info`/`MAT.egg-info` folders and decide if `.idea/` belongs in the repo Done: the egg-info folders were untracked leftovers and are gone. `.idea/` was in .gitignore but still tracked, and its deployment settings had a host name, an IP and a user name of a dev machine in them. It's untracked now; the files stay where they are for the IDE. The old commits still contain them.
 
 ## Notes on models and hardware (September 2026)
 
