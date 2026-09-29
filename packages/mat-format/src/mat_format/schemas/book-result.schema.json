@@ -82,6 +82,14 @@
           "description": "Chapter heading (as in chapters[].heading) to count.",
           "title": "Chapters",
           "type": "object"
+        },
+        "joined": {
+          "description": "Names of other characters that were joined into this one by the character judge, with the evidence (since 2.6).",
+          "items": {
+            "$ref": "#/$defs/JoinedName"
+          },
+          "title": "Joined",
+          "type": "array"
         }
       },
       "required": [
@@ -91,6 +99,26 @@
         "chapters"
       ],
       "title": "Character",
+      "type": "object"
+    },
+    "JoinedName": {
+      "description": "A name that turned out to be the same character, and the sentence that shows it.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Sentence of the book that says both names are one person.",
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "evidence"
+      ],
+      "title": "JoinedName",
       "type": "object"
     },
     "ModelInfo": {

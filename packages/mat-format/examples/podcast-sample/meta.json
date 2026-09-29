@@ -1,8 +1,8 @@
 {
  "format": 2,
- "format_version": "2.5.0",
+ "format_version": "2.6.0",
  "mat_version": "0.2.0",
- "created": "2026-09-29T11:22:49",
+ "created": "2026-09-29T14:12:55",
  "input": {
   "name": "sample.wav",
   "path": "/data/sample.wav",

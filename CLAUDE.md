@@ -8,8 +8,11 @@ CLI that runs ML pipelines on media files and writes results to a folder/zip. Tw
 
 - `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `entities` (gliner or none, takes the `ner` backends via `Slot(kind=...)`),
   `events` (audioset, clap or none), `summarizer` (llm or none).
-- `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none), `chapter_summarizer` (llm or none, flag
-  `--chapter-summarizer`). Characters come from the PERSON entities (`MAT/utils/characters.py`).
+- `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none), `character_judge` (llm-characters or none),
+  `chapter_summarizer` (llm or none, flag `--chapter-summarizer`). Characters come from the PERSON entities
+  (`MAT/utils/characters.py`: cluster by rules, candidates, build with what the judge confirmed).
+- Small LLM jobs (llm-names, llm-characters) share `MAT/tools/summary/llm/task.py`: own section following `[llm]`
+  until it has a preset, presets, preflight, and a client that answers in JSON by schema where the server can.
 
 `MAT/reader` loads written results back (format 2, see `MAT/writer`).
 

@@ -11,7 +11,7 @@
   },
   "ner": {
    "backend": "gliner",
-   "model": "fastino/gliner2-large-v1",
+   "model": "fastino/gliner2-multi-v1",
    "packages": {
     "gliner": "0.2.29",
     "gliner2": "2.0.0"
@@ -41,15 +41,15 @@
      "entities": [
       {
        "label": "PERSON",
-       "text": "Bob",
-       "start": 10,
-       "end": 13
-      },
-      {
-       "label": "PERSON",
        "text": "Alice",
        "start": 0,
        "end": 5
+      },
+      {
+       "label": "PERSON",
+       "text": "Bob",
+       "start": 10,
+       "end": 13
       },
       {
        "label": "LOCATION",
@@ -135,12 +135,6 @@
        "text": "Alice",
        "start": 0,
        "end": 5
-      },
-      {
-       "label": "LOCATION",
-       "text": "home",
-       "start": 16,
-       "end": 20
       }
      ]
     }
@@ -191,7 +185,8 @@
    "chapters": {
     "Chapter 1": 1,
     "Chapter 2": 1
-   }
+   },
+   "joined": []
   },
   {
    "name": "Bob",
@@ -202,7 +197,8 @@
    "chapters": {
     "Chapter 1": 1,
     "Chapter 2": 1
-   }
+   },
+   "joined": []
   }
  ]
 }

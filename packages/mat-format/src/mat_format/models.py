@@ -214,6 +214,13 @@ class Chapter(_Model):
                                                      "(no spoilers). Null when chapter summaries didn't run.")
 
 
+class JoinedName(_Model):
+    """A name that turned out to be the same character, and the sentence that shows it."""
+
+    name: str
+    evidence: str = Field(description="Sentence of the book that says both names are one person.")
+
+
 class Character(_Model):
     """A person of the book, with the name variants that were joined for it."""
 
@@ -221,6 +228,9 @@ class Character(_Model):
     mentions: int = Field(description="How often any of the variants was found.")
     variants: Dict[str, int] = Field(description="Spelling as found to count, for example Eddard: 12.")
     chapters: Dict[str, int] = Field(description="Chapter heading (as in chapters[].heading) to count.")
+    joined: List[JoinedName] = Field(default_factory=list, description="Names of other characters that were joined "
+                                                                       "into this one by the character judge, with "
+                                                                       "the evidence (since 2.6).")
 
 
 class BookResult(_Model):
@@ -236,5 +246,6 @@ class BookResult(_Model):
                                                                           "most mentioned first. Empty without NER.")
 
 
-__all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "FailedStep", "TimeRange", "Speaker", "Word", "Media", "Event",
-           "TranscriptEntity", "TranscriptSentence", "PodcastResult", "TextEntity", "Sentence", "Chapter", "Character", "BookResult"]
+__all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "FailedStep", "TimeRange", "Speaker", "Word", "Media",
+           "Event", "TranscriptEntity", "TranscriptSentence", "PodcastResult", "TextEntity", "Sentence", "Chapter",
+           "Character", "JoinedName", "BookResult"]

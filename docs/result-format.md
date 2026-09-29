@@ -112,7 +112,7 @@ Speaking time per speaker, for example, is the sum of `end - start` over their `
 
 A **chapter** has `heading` (repeated headings get a roman numeral, like `Part II`), `heading_raw` (as in the book), `paragraphs` (list of strings), `sentences` and `summary` (Markdown, only from this chapter, null when chapter summaries didn't run, since mat-format 2.3).
 
-A **character** is `{"name": "Eddard Stark", "mentions": 14, "variants": {"Eddard": 9, "Eddard Stark": 4, "Lord Eddard Stark": 1}, "chapters": {"Prologue": 2, "Eddard I": 12}}`. `chapters` uses the headings of `chapters[].heading`.
+A **character** is `{"name": "Eddard Stark", "mentions": 14, "variants": {"Eddard": 9, "Eddard Stark": 4, "Lord Eddard Stark": 1}, "chapters": {"Prologue": 2, "Eddard I": 12}, "joined": []}`. `chapters` uses the headings of `chapters[].heading`. `joined` lists names the character judge merged into this character, each with the sentence that shows it (`{"name": "Zwiebelritter", "evidence": "..."}`, since 2.6). MAT has no alias list: merging names by a fixed list is left to the reading program, `variants` has every spelling for that.
 
 A **sentence** has `text`, `lemmas` (lemma to count, without stop words and punctuation) and `entities`. An entity is `{"label": "PERSON", "text": "Alice", "start": 0, "end": 5}`, where `start` and `end` are character offsets in the sentence text (end exclusive).
 
@@ -153,5 +153,5 @@ Minor versions of format 2, each only adds fields:
 | 2.3 | book `characters`, `chapters[].summary` |
 | 2.4 | `meta.failed_steps` |
 | 2.5 | `meta.format_version`, the version in every schema file |
-| 2.6 | podcast `sentences` |
+| 2.6 | podcast `sentences`, book `characters[].joined` |
 - **Format 1** (MAT 0.2.0 and older): `0.PodcastOutput/` style folders with several JSON files, undocumented, not readable anymore.

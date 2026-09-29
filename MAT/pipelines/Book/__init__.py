@@ -62,6 +62,10 @@ class BookOptions(Options):
     character_labels: List[str] = Field(["PERSON"], description="NER labels that count as characters for the "
                                                                 "character list.")
     min_mentions: int = Field(2, ge=1, description="Characters mentioned less often stay off the character list.")
+    character_judge: str = Field("none", description='Decides with an LLM which names are one character, from '
+                                                      'sentences that say so ("X, den alle Y nannten"), English '
+                                                      'nicknames and ambiguous short names like a family name. '
+                                                      '"llm-characters" turns it on, settings in [llm-characters].')
     chapter_summarizer: str = Field("none", description='Summary of every chapter, with the [llm] settings and '
                                                         'prompts written for chapters (no spoilers from later '
                                                         'chapters). "llm" turns it on.')
@@ -73,6 +77,7 @@ class BookPipeline(Pipeline):
     description = "Chapters, sentences, lemma counts and named entities for EPUB books."
     Options = BookOptions
     slots = {"splitter": Slot(), "ner": Slot(optional=True),
+             "character_judge": Slot(optional=True, kind="characters"),
              "chapter_summarizer": Slot(optional=True, kind="summarizer")}
     required_steps = {"parse_book", "validate_chapters"}
     _LOGGER = logging.getLogger(__name__)
@@ -186,16 +191,20 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="NER", data=chapters)
 
         def character_task(step_input: PipelineStepInput) -> PipelineStepResult:
-            from MAT.utils.characters import character_list
+            from MAT.utils.characters import Mention, build, cluster
 
             chapters: List[Chapter] = step_input.data("NER")
             if not chapters:
                 return PipelineStepResult(name="Characters", data=None)
             options = step_input.config.options(self)
             wanted = {label.casefold() for label in options.character_labels}
-            mentions = [(c.get_beautiful_heading(), text) for c in chapters for sentence in (c.ner or [])
+            mentions = [Mention(chapter=c.get_beautiful_heading(), name=text,
+                                sentence=c.sentences[i] if c.sentences and i < len(c.sentences) else "")
+                        for c in chapters for i, sentence in enumerate(c.ner or [])
                         for label, found in sentence.items() if label.casefold() in wanted for text, _, _ in found]
-            characters = character_list(mentions, min_mentions=options.min_mentions)
+            clusters = cluster(mentions)
+            joins, resolved = self._judge_characters(clusters, step_input)
+            characters = build(clusters, min_mentions=options.min_mentions, joins=joins, resolved=resolved)
             self.__class__._LOGGER.info(f"{len(characters)} characters, most mentioned: "
                                         + ", ".join(f"{c['name']} ({c['mentions']})" for c in characters[:8]))
             return PipelineStepResult(name="Characters", data=characters)
@@ -228,6 +237,38 @@ class BookPipeline(Pipeline):
 
         return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task,
                 character_task, summary_task]
+
+    def _judge_characters(self, clusters, step_input: PipelineStepInput):
+        """Asks the character judge about the candidates, returns what it confirmed: (joins, resolved)."""
+        from MAT.tools.characters import CharacterJudgeInput, MentionQuestion, PairQuestion
+        from MAT.utils.characters import candidates
+
+        judge = self.backend("character_judge", step_input.config)
+        if judge is None:
+            return [], {}
+        language = step_input.data("Language")
+        pairs, mentions = candidates(clusters, language=language)
+        if not pairs and not mentions:
+            self.__class__._LOGGER.info("No name pairs or ambiguous names to ask about")
+            return [], {}
+        self.__class__._LOGGER.info(f"Asking {judge.backend_name} about {len(pairs)} name pairs and "
+                                    f"{len(mentions)} ambiguous names")
+        questions = [PairQuestion(id=i, a=clusters.display(p.a), b=clusters.display(p.b), sentences_a=p.sentences_a,
+                                  sentences_b=p.sentences_b, together=p.together) for i, p in enumerate(pairs)]
+        options = {i: {clusters.display(o): o for o in m.options} for i, m in enumerate(mentions)}
+        mention_questions = [MentionQuestion(id=i, name=m.name, sentence=m.sentence, options=list(options[i]))
+                             for i, m in enumerate(mentions)]
+        try:
+            result = judge.process(CharacterJudgeInput(questions, mention_questions, language=language),
+                                   step_input.config)
+        except Exception as e:
+            # the list without the judge is still right, just less merged
+            self.__class__._LOGGER.exception("Judging the characters failed, keeping the list as the rules made it",
+                                             exc_info=e)
+            return [], {}
+        joins = [(pairs[i].a, pairs[i].b, evidence) for i, evidence in result.same.items()]
+        resolved = {mentions[i].index: options[i][name] for i, name in result.mentions.items() if name in options[i]}
+        return joins, resolved
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> BookOutput:
 
