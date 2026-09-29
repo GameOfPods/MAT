@@ -45,7 +45,8 @@ def versions() -> str:
 
 
 def supports_blocks(stream=None) -> bool:
-    """Whether the block letters will come out right. MAT_BANNER=block or ascii decides by hand. Otherwise the
+    """Whether the block letters will come out right. MAT_BANNER=block or ascii decides by hand (none turns the
+    banner off, see print_banner). Otherwise the
     stream's encoding has to be able to write them, and the terminal must not be a dumb one. Whether the font has
     the glyphs can't be asked, a UTF-8 terminal almost always has them."""
     import os
@@ -91,7 +92,12 @@ def banner(blocks: bool = False) -> str:
 
 
 def print_banner(stream=None) -> None:
-    """To stderr like the logs, stdout stays for command output."""
+    """To stderr like the logs, stdout stays for command output. MAT_BANNER=none leaves it out, for scripts and logs
+    that should only have log lines. The version line in the log comes anyway."""
+    import os
+
+    if os.environ.get("MAT_BANNER", "").strip().lower() == "none":
+        return
     stream = stream or sys.stderr
     stream.write(banner(blocks=supports_blocks(stream)) + "\n")
     stream.flush()

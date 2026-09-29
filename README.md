@@ -191,7 +191,7 @@ The order is: defaults, then the config file, then `--set`. Unknown sections, mi
 
 ### Banner
 
-`MAT run` and `MAT bench run` start with a banner showing the MAT version and the result format version. It uses block letters when the console can write them (UTF-8, not `TERM=dumb`) and plain ASCII otherwise. `MAT_BANNER=block` or `MAT_BANNER=ascii` picks one by hand.
+`MAT run` and `MAT bench run` start with a banner showing the MAT version and the result format version. It uses block letters when the console can write them (UTF-8, not `TERM=dumb`) and plain ASCII otherwise. `MAT_BANNER=block` or `MAT_BANNER=ascii` picks one by hand, `MAT_BANNER=none` leaves the banner out for scripts and clean logs (the log line with both versions stays).
 
 ### Step cache
 

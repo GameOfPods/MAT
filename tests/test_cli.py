@@ -148,3 +148,17 @@ def test_block_letters_only_where_they_can_be_written(monkeypatch):
     assert not supports_blocks(utf8)
     monkeypatch.setenv("MAT_BANNER", "block")
     assert supports_blocks(latin)
+
+
+def test_banner_none_prints_nothing(monkeypatch):
+    import io
+
+    from MAT.banner import print_banner
+
+    stream = io.StringIO()
+    monkeypatch.setenv("MAT_BANNER", "none")
+    print_banner(stream)
+    assert stream.getvalue() == ""
+    monkeypatch.setenv("MAT_BANNER", "ascii")
+    print_banner(stream)
+    assert "Media Analytics Toolset" in stream.getvalue()
