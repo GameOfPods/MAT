@@ -9,6 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import os.path
+import uuid
 from dataclasses import dataclass, field, asdict as dataclass_as_dict
 from typing import Any, List, Dict, Iterable, Callable, Literal, Optional, Sequence, Set, Tuple, Union
 
@@ -217,6 +218,11 @@ class PodcastPipeline(Pipeline):
              "namer": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
              "events": Slot(optional=True), "summarizer": Slot(optional=True)}
 
+    def __init__(self):
+        super().__init__()
+        # the 16 kHz mono audio of the file being processed, decoded once by the first step
+        self._segment = None
+
     @classmethod
     def preflight(cls, config: Config) -> None:
         load_vocabulary(config.options(cls).vocabulary)  # a missing file stops the run before the first episode
@@ -228,6 +234,20 @@ class PodcastPipeline(Pipeline):
 
     @classmethod
     def why_not(cls, f: str) -> Optional[str]:
+        import shutil
+        import subprocess
+
+        # ffprobe only reads the header, decoding a 3 hour episode just to say yes took seconds and gigabytes
+        if shutil.which("ffprobe"):
+            try:
+                probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+                                        f], capture_output=True, text=True, timeout=60)
+            except (OSError, subprocess.SubprocessError) as e:
+                return f"ffprobe failed ({e})"
+            if "audio" in probe.stdout.split():
+                return None
+            last = [line for line in probe.stderr.strip().splitlines() if line.strip()][-1:]
+            return f"ffmpeg can't read it as audio: {last[0].strip()}" if last else "no audio stream in it"
         from pydub import AudioSegment
         # noinspection PyBroadException
         try:
@@ -245,11 +265,33 @@ class PodcastPipeline(Pipeline):
         import pydub
         used = {}
 
+        def audio_path(step_input: PipelineStepInput) -> str:
+            """The 16 kHz mono wav the audio step wrote, the input file if it didn't run."""
+            return (step_input.data("Audio") or {}).get("path") or step_input.file
+
+        def audio_segment(step_input: PipelineStepInput) -> "pydub.AudioSegment":
+            if self._segment is None:
+                self._segment = pydub.AudioSegment.from_file(audio_path(step_input))
+            return self._segment
+
+        def prepare_audio(step_input: PipelineStepInput) -> PipelineStepResult:
+            # Decoded once here. Every model wants 16 kHz mono anyway and reading a wav is quick, where every step
+            # used to decode the mp3 again (4 to 5 times per episode).
+            sound = pydub.AudioSegment.from_file(step_input.file)
+            info = {"duration": sound.duration_seconds, "sample_rate": sound.frame_rate, "max_dbfs": sound.max_dBFS,
+                    "rms": sound.rms}
+            self._segment = sound.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+            del sound
+            os.makedirs(step_input.config.work_directory, exist_ok=True)
+            path = os.path.join(step_input.config.work_directory, f"audio.{uuid.uuid4().hex}.wav")
+            self._segment.export(path, format="wav")
+            return PipelineStepResult(name="Audio", data=dict(info, path=path))
+
         def transcribe(step_input: PipelineStepInput) -> PipelineStepResult:
             transcriber = self.backend("transcriber", step_input.config)
             used["transcriber"] = transcriber
             vocabulary = load_vocabulary(step_input.config.options(self).vocabulary)
-            d = transcriber.process(origin_data=TranscriptionInput(step_input.file, vocabulary=vocabulary),
+            d = transcriber.process(origin_data=TranscriptionInput(audio_path(step_input), vocabulary=vocabulary),
                                     config=step_input.config)
             return PipelineStepResult(name="Transcription", data=d)
 
@@ -259,7 +301,7 @@ class PodcastPipeline(Pipeline):
                 transcription = step_input.data("Transcription")
                 return PipelineStepResult(name="Diarization", data=getattr(transcription, "diarization", None))
             diarizer = self.backend("diarizer", step_input.config)
-            d = diarizer.process(origin_data=DiarizerInput(in_file=step_input.file), config=step_input.config)
+            d = diarizer.process(origin_data=DiarizerInput(in_file=audio_path(step_input)), config=step_input.config)
             return PipelineStepResult(name="Diarization", data=d)
 
         def speaker_matching(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -275,7 +317,7 @@ class PodcastPipeline(Pipeline):
                 self._LOGGER.info(f"{identifier.backend_name} has nothing to match against, keeping the diarizer names")
                 self.models.pop("identifier", None)
                 return PipelineStepResult(name="Speaker Matching", data=diarization_result)
-            a = pydub.AudioSegment.from_file(step_input.file)
+            a = audio_segment(step_input)
             matched_speaker = diarization_result.speaker_matching(
                 identifier=identifier, audio=a, config=step_input.config,
                 seconds=step_input.config.options(self).match_seconds)
@@ -320,7 +362,7 @@ class PodcastPipeline(Pipeline):
             from_gold = diarization.speaker - labels
 
             library = SpeakerLibrary.open(options.speaker_library)
-            audio = pydub.AudioSegment.from_file(step_input.file)
+            audio = audio_segment(step_input)
             speakers = sorted(diarization.speaker)
             clips = [_speaker_audio(audio, diarization, speaker, options.speaker_library_seconds)
                      for speaker in speakers]
@@ -480,25 +522,35 @@ class PodcastPipeline(Pipeline):
             transcription: TranscriptionResult = step_input.data("Transcription")
             lang = getattr(transcription, "language", None)
             duration_av = getattr(transcription, "duration_after_vad", None)
-            a = pydub.AudioSegment.from_file(step_input.file)
+            info = step_input.data("Audio")
+            if info is None:
+                a = pydub.AudioSegment.from_file(step_input.file)
+                info = {"duration": a.duration_seconds, "sample_rate": a.frame_rate, "max_dbfs": a.max_dBFS,
+                        "rms": a.rms}
             return PipelineStepResult(
                 name="Media Info",
                 data=MediaInfo(
                     file_name=os.path.basename(step_input.file),
-                    duration=a.duration_seconds, sample_rate=a.frame_rate, max_dbfs=a.max_dBFS, rms=a.rms,
-                    language="" if lang is None else lang,
-                    duration_after_vad=a.duration_seconds if duration_av is None else duration_av,
+                    duration=info["duration"], sample_rate=info["sample_rate"], max_dbfs=info["max_dbfs"],
+                    rms=info["rms"], language="" if lang is None else lang,
+                    duration_after_vad=info["duration"] if duration_av is None else duration_av,
                 )
             )
 
-        return [transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library, name_speakers,
-                find_entities, find_events, summarize_transcript, media_infos]
+        return [prepare_audio, transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library,
+                name_speakers, find_entities, find_events, summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
         def _try_get(k: str):
             result = step_results.get(k)
             return None if result is None else result.data
+
+        # the decoded audio is only needed while the steps run
+        self._segment = None
+        prepared = (_try_get("Audio") or {}).get("path")
+        if prepared and os.path.isfile(prepared):
+            os.remove(prepared)
 
         transcripts = _try_get("Finalizing transcript")
         word_speaker, squished_speaker, full_transcript = (None, None, None) if transcripts is None else transcripts
