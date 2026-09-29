@@ -40,6 +40,14 @@ class Input(_Model):
     sha1: str = Field(description="SHA-1 of the file content, hex encoded.")
 
 
+class FailedStep(_Model):
+    """A step that failed, so its part of the result is missing."""
+
+    pipeline: str = Field(description='"podcast" or "book".')
+    step: str = Field(description="Name of the step, for example summarize_transcript.")
+    error: str = Field(description="Error type and message.")
+
+
 class Meta(_Model):
     """Content of meta.json in the root of every result."""
 
@@ -49,6 +57,9 @@ class Meta(_Model):
     input: Input
     pipelines: List[str] = Field(description='Pipelines that ran, each has a folder of the same name: "podcast", '
                                              '"book".')
+    failed_steps: List[FailedStep] = Field(default_factory=list,
+                                             description="Steps that failed. Their part of the result is missing, "
+                                                         "everything else is there.")
 
 
 # ---------------------------------------------------------------- podcast/result.json
@@ -208,5 +219,5 @@ class BookResult(_Model):
                                                                           "most mentioned first. Empty without NER.")
 
 
-__all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "TimeRange", "Speaker", "Word", "Media", "Event",
+__all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "FailedStep", "TimeRange", "Speaker", "Word", "Media", "Event",
            "TranscriptEntity", "PodcastResult", "TextEntity", "Sentence", "Chapter", "Character", "BookResult"]

@@ -3,6 +3,33 @@
   "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/meta.schema.json",
   "$comment": "MAT result format 2, describes meta.json. Generated from mat_format/models.py, don't edit by hand.",
   "$defs": {
+    "FailedStep": {
+      "description": "A step that failed, so its part of the result is missing.",
+      "properties": {
+        "pipeline": {
+          "description": "\"podcast\" or \"book\".",
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "step": {
+          "description": "Name of the step, for example summarize_transcript.",
+          "title": "Step",
+          "type": "string"
+        },
+        "error": {
+          "description": "Error type and message.",
+          "title": "Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pipeline",
+        "step",
+        "error"
+      ],
+      "title": "FailedStep",
+      "type": "object"
+    },
     "Input": {
       "description": "The media file that was processed.",
       "properties": {
@@ -59,6 +86,14 @@
         "type": "string"
       },
       "title": "Pipelines",
+      "type": "array"
+    },
+    "failed_steps": {
+      "description": "Steps that failed. Their part of the result is missing, everything else is there.",
+      "items": {
+        "$ref": "#/$defs/FailedStep"
+      },
+      "title": "Failed Steps",
       "type": "array"
     }
   },

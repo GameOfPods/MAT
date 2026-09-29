@@ -74,6 +74,7 @@ class BookPipeline(Pipeline):
     Options = BookOptions
     slots = {"splitter": Slot(), "ner": Slot(optional=True),
              "chapter_summarizer": Slot(optional=True, kind="summarizer")}
+    required_steps = {"parse_book", "validate_chapters"}
     _LOGGER = logging.getLogger(__name__)
     _SPECIAL_CHAPTERS = {"prologue", "introduction", "epilogue", "prolog", "epilog"}
     _CHAPTER_NUMBER_REGEX = {re.compile(r"chapter \d+$"), re.compile(r"kapitel \d+$")}

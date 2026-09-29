@@ -281,8 +281,8 @@ Drop whatever stage 4 already solved.
 
 ## Stage 10: robustness and cleanup
 
-- [ ] One failing step (for example the summary without an API key) drops all results of the file. Make steps fail on their own and keep the rest.
-- [ ] Steps that skip because of missing input do it silently. Log a warning.
+- [x] One failing step (for example the summary without an API key) drops all results of the file. Make steps fail on their own and keep the rest. Done: every pipeline names the steps it can't do without (`required_steps`: audio and transcription for podcasts, reading the book and its chapters for books). Any other step that fails is logged, left out, and listed in `meta.json` under `failed_steps` (mat-format 2.4); the steps after it see no result for it. A missing API key or Ollama stops the run before the first file anyway (preflight).
+- [ ] Steps that skip because of missing input do it silently. Log a warning. Mostly covered now: the failing step itself is logged and listed in `failed_steps`, so a later step that skips has a visible reason.
 - [x] `SpeakerIdetificationSpeechBrain.process` was a stub that returned `None`. Removed in stage 4 together with the `speechbrain` dependency, the backend registry makes it easy to add a real one later.
 - [x] `DiarizerNEMO._create_config` (old MSDD setup, downloads yaml from GitHub) was unused. Removed in stage 4.
 - [x] CI: GitHub Actions for pull requests and pushes to `master`. Unit tests with all backends on CPU torch, an install without any backend, mat-format alone on Python 3.10/3.12/3.13. Dependabot keeps the action versions current.

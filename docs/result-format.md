@@ -62,6 +62,7 @@ episode_2026-09-15_20-15-02/        or episode_2026-09-15_20-15-02.zip
 | `input.path` | string | Absolute path of the input on the machine that ran MAT |
 | `input.sha1` | string | SHA-1 of the input file, hex |
 | `pipelines` | list of string | Pipelines that ran, each has a folder with that name: `podcast`, `book` |
+| `failed_steps` | list | Steps that failed (`pipeline`, `step`, `error`). Their part of the result is missing, the rest is there. Since mat-format 2.4 |
 
 ## podcast/result.json
 

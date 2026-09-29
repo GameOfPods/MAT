@@ -11,7 +11,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict as dataclass_as_dict
-from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional, Type
+from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional, Set, Type
 from time import perf_counter_ns
 from datetime import timedelta
 
@@ -59,6 +59,9 @@ class Pipeline(Configurable, ABC):
     _LOGGER = logging.getLogger(__name__)
     # slot name -> Slot. The pipeline's Options need a str field with the same name holding the backend name.
     slots: ClassVar[Dict[str, Slot]] = {}
+    # steps (function names) the result is worthless without. When one of them fails the file fails, any other
+    # step that fails is logged and left out, and the rest of the result is still written.
+    required_steps: ClassVar[Set[str]] = set()
 
     def __init__(self):
         # slot -> Tool.describe() of the backends that ran, ends up in the result
@@ -67,6 +70,8 @@ class Pipeline(Configurable, ABC):
         self.step_seconds: Dict[str, float] = {}
         # the backend the running step created last, named in an out of memory error
         self._running: Optional[Tool] = None
+        # {"step", "error"} of steps that failed in the last process() call
+        self.failed_steps: List[Dict[str, str]] = []
 
     @classmethod
     def name(cls) -> str:
@@ -145,6 +150,7 @@ class Pipeline(Configurable, ABC):
     def process(self, file: str, config: Config) -> PipelineResult:
         self.models = {}
         self.step_seconds = {}
+        self.failed_steps = []
         step_results: Dict[str, PipelineStepResult] = {}
         self.__class__._LOGGER.info(f"Running pipeline {self.section} on {file}")
         all_steps = list(self._get_steps())
@@ -152,21 +158,32 @@ class Pipeline(Configurable, ABC):
             t1 = perf_counter_ns() / 1e+6
             self._running = None
             try:
-                res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
-            except Exception as e:
-                from MAT.utils.device import GpuOutOfMemory, is_out_of_memory, out_of_memory_message
+                try:
+                    res = step(PipelineStepInput(file=file, config=config, previous_results=step_results))
+                except Exception as e:
+                    from MAT.utils.device import GpuOutOfMemory, is_out_of_memory, out_of_memory_message
 
-                if isinstance(e, GpuOutOfMemory) or not is_out_of_memory(e):
+                    if isinstance(e, GpuOutOfMemory) or not is_out_of_memory(e):
+                        raise
+                    backend = self._running
+                    name = backend.backend_name if backend is not None else step.__name__
+                    raise GpuOutOfMemory(out_of_memory_message(name, getattr(backend, "memory_hint", ""))) from e
+            except Exception as e:
+                if step.__name__ in self.required_steps:
                     raise
-                backend = self._running
-                name = backend.backend_name if backend is not None else step.__name__
-                raise GpuOutOfMemory(out_of_memory_message(name, getattr(backend, "memory_hint", ""))) from e
+                # steps after it see no result for it and skip what depends on it
+                self.__class__._LOGGER.exception(f"Step {i + 1}/{len(all_steps)} ({step.__name__}) failed, going on "
+                                                 f"without it: {e}", exc_info=e)
+                self.failed_steps.append({"step": step.__name__, "error": f"{e.__class__.__name__}: {e}"})
+                continue
             step_results[res.name] = res
             t2 = perf_counter_ns() / 1e+6
             self.step_seconds[res.name] = (t2 - t1) / 1000
             self.__class__._LOGGER.info(f"Step {i + 1}/{len(all_steps)} done: {res.name} in "
                                         f"{f'{t2 - t1:.3f}ms' if t2 - t1 < 1000 else str(timedelta(milliseconds=int(t2 - t1)))}")
-        return self._finalize_result(step_results=step_results)
+        result = self._finalize_result(step_results=step_results)
+        result.failed_steps = list(self.failed_steps)
+        return result
 
     @abstractmethod
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:

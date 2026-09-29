@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple, Type
 
 from mat_format import (
-    BookResult, Chapter, Character, Event, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
+    BookResult, Chapter, Character, Event, FailedStep, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
     TextEntity, TimeRange, TranscriptEntity, Word,
 )
 
@@ -158,7 +158,7 @@ class Writer:
             folder = f"{base_folder}_{i}"
             i += 1
         os.makedirs(folder, exist_ok=False)
-        pipelines = []
+        pipelines, failed = [], []
         for result in pipeline_results:
             if type(result) not in self._writers:
                 raise TypeError(f"No writer registered for {type(result).__name__}")
@@ -166,12 +166,14 @@ class Writer:
             os.makedirs(os.path.join(folder, name), exist_ok=False)
             write(result, os.path.join(folder, name))
             pipelines.append(name)
+            failed.extend(FailedStep(pipeline=name, **f) for f in getattr(result, "failed_steps", None) or [])
         meta = Meta(
             mat_version=__version__,
             created=now.isoformat(timespec="seconds"),
             input=Input(name=os.path.basename(file), path=os.path.abspath(file),
                         sha1=get_hash_file(file_path=os.path.abspath(file))),
             pipelines=pipelines,
+            failed_steps=failed,
         )
         _write_text(os.path.join(folder, "meta.json"), meta.model_dump_json(by_alias=True, indent=1))
         return os.path.abspath(folder)

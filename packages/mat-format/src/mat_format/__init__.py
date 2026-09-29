@@ -5,11 +5,11 @@ Data model, JSON schemas and reader for MAT results.
     result = MATResult.read("results/episode_2026-09-15_20-15-02.zip")
 """
 from mat_format.models import (
-    FORMAT_VERSION, BookResult, Chapter, Character, Event, Input, Media, Meta, ModelInfo, PodcastResult, Sentence,
-    Speaker, TextEntity, TimeRange, TranscriptEntity, Word,
+    FORMAT_VERSION, BookResult, Chapter, Character, Event, FailedStep, Input, Media, Meta, ModelInfo, PodcastResult,
+    Sentence, Speaker, TextEntity, TimeRange, TranscriptEntity, Word,
 )
 from mat_format.reader import MATResult
 
-__all__ = ["FORMAT_VERSION", "MATResult", "Meta", "Input", "ModelInfo", "PodcastResult", "Media", "Speaker",
-           "TimeRange", "Word", "Event", "TranscriptEntity", "BookResult", "Chapter", "Character", "Sentence",
-           "TextEntity"]
+__all__ = ["FORMAT_VERSION", "MATResult", "Meta", "FailedStep", "Input", "ModelInfo", "PodcastResult", "Media",
+           "Speaker", "TimeRange", "Word", "Event", "TranscriptEntity", "BookResult", "Chapter", "Character",
+           "Sentence", "TextEntity"]

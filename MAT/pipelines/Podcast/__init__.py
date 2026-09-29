@@ -222,6 +222,7 @@ class PodcastPipeline(Pipeline):
     slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
              "namer": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
              "events": Slot(optional=True), "summarizer": Slot(optional=True)}
+    required_steps = {"prepare_audio", "transcribe"}
 
     def __init__(self):
         super().__init__()
