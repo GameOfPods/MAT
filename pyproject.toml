@@ -69,6 +69,8 @@ llm = [
     "langchain-openai>=1",
     "langchain-text-splitters>=1",
     "tiktoken",
+    # English nicknames (Ned for Edward) as candidates for llm-characters
+    "nicknames>=1",
 ]
 # The English and German default models are declared here (wheels from GitHub, see [tool.uv.sources]), so
 # `uv sync` keeps them. spacy-download installs any other model with pip at runtime. No spacy-transformers: the

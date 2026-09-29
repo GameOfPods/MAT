@@ -17,7 +17,7 @@ settings work like the summary ones, see MAT/tools/summary/llm.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field
 
@@ -29,10 +29,9 @@ from MAT.tools.speakernaming import (  # noqa: E402
     SpeakerName, SpeakerNamingInput, SpeakerNamingResult, SpeakerNamingTool,
 )
 from MAT.tools.speakernaming.llm.prompts import PROMPT, SYSTEM_MESSAGE  # noqa: E402
-from MAT.utils.config import Config, Options  # noqa: E402
+from MAT.tools.summary.llm.task import INHERITED, LLMTask, LLMTaskOptions  # noqa: E402,F401
+from MAT.utils.config import Config  # noqa: E402
 
-# A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
-# underscores, so a model that echoes "sprecher_0" back at us doesn't get through.
 # what the model has to answer, for servers that can enforce it (see structured_output)
 ANSWER_SCHEMA = {
     "type": "object",
@@ -64,38 +63,23 @@ def quoted_in(quote: str, text: str) -> bool:
     return True
 
 
-# what the namer takes from [llm] while it has no preset of its own
-INHERITED = ("preset", "service", "model", "base_url")
-
+# A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
+# underscores, so a model that echoes "sprecher_0" back at us doesn't get through.
 _NAME = re.compile(r"^[^\W\d_]+(?:[ '’\-][^\W\d_]+)*$", re.UNICODE)
 
 
-class SpeakerNamingOptions(Options):
-    preset: Literal["none", "openai", "ollama", "llamacpp"] = Field(
-        "none", description="Starting point for the other options, like llm.preset. While it isn't set, preset, "
-                            "service, model and base-url come from [llm] wherever you set them there. Once it's "
-                            "set (even to the same value) this section stands on its own.")
-    service: str = Field("OpenAI", description="LLM provider, OpenAI or Ollama. Same meaning as in [llm].")
-    model: str = Field("gpt-5.6-terra", description="Model name at the provider.")
-    base_url: Optional[str] = Field(None, description="Where Ollama listens, default $OLLAMA_HOST or localhost.")
-    max_tokens: int = Field(2048, ge=1, description="Maximum tokens for the answer. The answer is a short JSON.")
-    reasoning_effort: Optional[str] = Field("low", description='Thinking effort, "unset" doesn\'t send it.')
-    first_token_timeout: float = Field(900.0, gt=0, description="Seconds to wait for the first streamed token.")
-    idle_timeout: float = Field(120.0, gt=0, description="Seconds to wait between two streamed tokens.")
-    max_retries: int = Field(2, ge=0, description="Retries after timeouts or a busy provider.")
+class SpeakerNamingOptions(LLMTaskOptions):
     opening_minutes: float = Field(10.0, gt=0, description="Minutes from the start of the episode the model sees. "
                                                            "People introduce themselves early.")
     lines_per_speaker: int = Field(40, ge=1, description="Lines of every speaker the model sees on top of that.")
-    structured: Literal["auto", "schema", "json", "off"] = Field(
-        "auto", description='Make the model answer in JSON: "schema" lets the server enforce the answer format '
-                            '(Ollama, OpenAI), "json" only asks for JSON (DeepSeek), "off" relies on the prompt. '
-                            'auto picks by server.')
     system_message: str = Field(SYSTEM_MESSAGE, description="Instructions, sent as a system message.")
     prompt: str = Field(PROMPT, description="Prompt, has to contain {speakers}, {opening} and {samples}.")
 
 
 @register("namer", "llm-names", description="Names speakers from what is said in the transcript")
-class SpeakerNamingLLM(SpeakerNamingTool):
+class SpeakerNamingLLM(LLMTask, SpeakerNamingTool):
+    TASK = "Speaker naming"
+    SKIP = "--namer none"
     Options = SpeakerNamingOptions
     packages = ("langchain-core", "langchain-openai")
     _LOGGER = logging.getLogger(__name__)
@@ -103,7 +87,7 @@ class SpeakerNamingLLM(SpeakerNamingTool):
     def process(self, origin_data: SpeakerNamingInput, config: Config) -> Optional[SpeakerNamingResult]:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        from MAT.tools.summary.llm import LLM, SummaryLLM
+        from MAT.tools.summary.llm import SummaryLLM
 
         options = self._apply_preset(self._inherit(config.options(self), config))
         if not origin_data.speakers or not origin_data.lines:
@@ -114,15 +98,7 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         # Ollama has to be told how much context to load, the others take what the prompt brings
         num_ctx = (len_fun(options.system_message) + len_fun(prompt) + options.max_tokens + 512
                    if options.service == "Ollama" else None)
-        from MAT.tools.summary.llm import structured_output
-
-        structured = structured_output(options.service, options.structured)
-        llm = LLM.parse_str(name=options.service).get_llm(
-            model=options.model, max_tokens=options.max_tokens, reasoning_effort=options.reasoning_effort,
-            first_token_timeout=options.first_token_timeout, idle_timeout=options.idle_timeout,
-            max_retries=options.max_retries, base_url=options.base_url, num_ctx=num_ctx,
-            schema=ANSWER_SCHEMA, structured=structured,
-        )
+        llm = self.client(options, schema=ANSWER_SCHEMA, num_ctx=num_ctx)
         self._LOGGER.info(f"Asking {options.model} for the names of {len(origin_data.speakers)} speakers")
         answer = llm.invoke([SystemMessage(options.system_message), HumanMessage(prompt)])
         found = self._parse(str(getattr(answer, "content", answer) or ""), known=origin_data.speakers,
@@ -132,49 +108,6 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         if not found:
             self._LOGGER.info("The transcript doesn't say who is who, keeping the diarizer names")
         return SpeakerNamingResult(found)
-
-    @classmethod
-    def effective_options(cls, config: Config) -> SpeakerNamingOptions:
-        return cls._apply_preset(cls._inherit(config.options(cls), config))
-
-    @classmethod
-    def preflight(cls, config: Config) -> None:
-        from MAT.tools.summary.llm import check_llm_access
-
-        options = cls.effective_options(config)
-        check_llm_access(options.service, options.model, options.base_url, "Speaker naming", "--namer none")
-
-    @classmethod
-    def _inherit(cls, options: SpeakerNamingOptions, config: Config) -> SpeakerNamingOptions:
-        """Without a preset of its own the namer talks to the same model as the summary: whatever of preset, service,
-        model and base-url you set in [llm] and not here. With its own preset nothing comes from [llm], so a cloud
-        model name can't end up at Ollama."""
-        from MAT.tools.summary.llm import SummaryLLM
-
-        if "preset" in options.model_fields_set:
-            cls._LOGGER.info(f"Speaker naming uses its own settings (llm-names.preset = {options.preset})")
-            return options
-        summary = config.options(SummaryLLM)
-        taken = {name: getattr(summary, name) for name in INHERITED
-                 if name in summary.model_fields_set and name not in options.model_fields_set}
-        if not taken:
-            return options
-        cls._LOGGER.info("Speaker naming takes " + ", ".join(f"{name.replace('_', '-')}={value}"
-                                                             for name, value in sorted(taken.items()))
-                         + " from [llm]")
-        return options.model_copy(update=taken)
-
-    @classmethod
-    def _apply_preset(cls, options: SpeakerNamingOptions) -> SpeakerNamingOptions:
-        from MAT.tools.summary.llm import PRESETS
-
-        values = PRESETS.get(options.preset)
-        if not values:
-            return options
-        fields = type(options).model_fields
-        update = {name: value for name, value in values.items()
-                  if name in fields and name not in options.model_fields_set}
-        return options.model_copy(update=update) if update else options
 
     @staticmethod
     def _fill(options: SpeakerNamingOptions, origin_data: SpeakerNamingInput) -> str:

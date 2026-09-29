@@ -24,7 +24,8 @@ def test_characters_come_from_person_entities_of_all_chapters():
     result = steps["character_task"](PipelineStepInput(
         file="book.epub", config=Config({}), previous_results={"NER": PipelineStepResult("NER", chapters)}))
     assert result.data == [{"name": "Stannis Baratheon", "mentions": 3,
-                            "variants": {"Stannis": 2, "Stannis Baratheon": 1}, "chapters": {"Davos": 2, "Jon": 1}}]
+                            "variants": {"Stannis": 2, "Stannis Baratheon": 1}, "chapters": {"Davos": 2, "Jon": 1},
+                            "joined": []}]
 
 
 @registry.register("summarizer", "test-chapters")
