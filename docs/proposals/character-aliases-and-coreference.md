@@ -1,6 +1,6 @@
 # Proposal: nicknames, short names and coreference for character counts
 
-Status: proposal, nothing built yet (2026-09-29). Part of the follow-up to stage 8.
+Status: decided 2026-09-29, see [decisions](#decisions). Layers 1 and 2 are stage 11, layer 3 is stage 12.
 
 ## The problem
 
@@ -39,25 +39,20 @@ rules, a list the user writes, and an LLM that has to show its evidence.
 
 ## Proposed design, in three layers
 
-### Layer 1: aliases without a model (build first)
+### Layer 1: candidates from the text, no model
 
-1. **An alias file per show or book series**, like `podcast.vocabulary`: `book.aliases` / `podcast.aliases`, one
-   character per line.
+No alias file in MAT (decided 2026-09-29): a fixed list of who is who is static merging, and the program that reads
+MAT results can do that with its own list. MAT keeps what it found apart and hands over everything a reader needs
+for that: every character with its `variants` and counts per chapter, and the podcast entities with their exact text.
 
-   ```text
-   # canonical name = other names, comma separated
-   Eddard Stark = Ned, Lord Stark, Ned Stark
-   Davos Seaworth = Onion Knight, Zwiebelritter
-   Theon Graufreud = Reek, Stinker
-   ```
+What MAT does itself only depends on the text:
 
-   Written once per series and shared between the book pipeline and the podcast entities, it's the only way that
-   is always right, and fan wikis have these lists ready. Entries from the file win over everything else.
-2. **Pattern evidence in the text**: appositions that name a person twice in one sentence.
+1. **Pattern evidence**: appositions that name a person twice in one sentence.
    `X, (den|die) (alle|man) Y nannte`, `X, called Y`, `Y, as X was known`, `X (Y)`. Only when X and Y are both PERSON
    entities in the same sentence. Such a pair is a candidate, not a join: it goes into layer 2.
-3. **The `nicknames` package** for English given names that aren't story specific. Also only a candidate, because
+2. **The `nicknames` package** for English given names that aren't story specific. Also only a candidate, because
    "Al" can be Alexander or Albert.
+3. **Ambiguous short names** ("Stark", which fits several full names): every occurrence is a candidate for layer 2.
 
 ### Layer 2: an LLM decides about candidate pairs (build second)
 
@@ -150,16 +145,21 @@ JSON: {"answer": "<one candidate>" | "unsure", "reason": "one short sentence"}
 
 ## Order of work
 
-1. Alias file for books and podcast entities, pattern candidates, `nicknames` for English. No model, can't be wrong
-   beyond what the user writes.
-2. `[llm-characters]` with the pair judgement and the swap check. Test on one German and one English book against a
-   hand-made alias list.
-3. Coreference experiment: `envs/maverick-de`, Stanza, agreement rule, hand-checked precision. Only if that passes,
-   `references` in the result format (added field, mat-format 2.x).
+1. Stage 11: pattern and nickname candidates, `[llm-characters]` with the pair judgement and the swap check. The
+   merges that pass go into `characters` with their evidence, the ones that don't stay separate characters. Test on
+   one German and one English book against a hand-made list of who is who (only for measuring, it doesn't ship).
+2. Stage 12: coreference experiment. `envs/maverick-de` (and `envs/maverick-en`), Stanza, agreement rule,
+   hand-checked precision. Only if that passes, `references` in the result format (added field, mat-format 2.x).
 
-## Questions for you
+## Decisions
 
-- Is a non-commercial model acceptable for the book pipeline, like DiariZen for diarization? Maverick is the only
-  German coreference model trained on novels.
-- Should the alias file be one per series that both books and podcast episodes use? That fits Game of Pods, where the
-  podcast talks about the same characters as the books.
+2026-09-29, with the user:
+
+- **Non-commercial models are fine** as long as MAT's license (GPL-3.0) isn't affected. That holds with the same setup
+  as DiariZen: maverick-coref(-de) is CC BY-NC-SA 4.0 for code and weights, so it never gets imported into MAT or
+  shipped with it. It runs in its own environment (`envs/`, installed by the user with `MAT external install`) and
+  talks to MAT through JSON over a process boundary, and the weights are downloaded by the user. It's off by default,
+  and the docs say that results made with it can't be used commercially. (This is how we read the licenses, not
+  legal advice.)
+- **No alias file in MAT.** Static merging belongs to the program reading the results.
+- **Order:** layers 1 and 2 first (stage 11), so a release can happen before the coreference experiment (stage 12).

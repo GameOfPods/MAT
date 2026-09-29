@@ -1,6 +1,6 @@
 # Research: NLP tools for MAT, state of 2026-09
 
-Status: research, nothing built yet (2026-09-29). For every text task MAT has or could have: what we use, what
+Status: decided 2026-09-29, see [decisions](#decisions). For every text task MAT has or could have: what we use, what
 else exists, and whether an LLM is the right tool. The goal is to use small specialized models where they are good
 enough and an LLM only where understanding is needed. Speech models are in the roadmap (stage 6), this is about text.
 
@@ -119,7 +119,19 @@ Ollama unloads it again before the next episode (`OLLAMA_KEEP_ALIVE=0`).
 - `deepmultilingualpunctuation` is a dependency of MAT but nothing uses it. Either drop it, or use it to restore
   punctuation when whisper returns a lowercase transcript without any (then it also helps SaT and NER).
 
-## Suggested order
+## Decisions
+
+2026-09-29, with the user:
+
+- **Stage 11**: structured output for `llm-names`, GLiNER2 multi against large on German, `[llm-characters]` from the
+  character proposal, SaT sentences for transcripts (NER on sentences instead of turns).
+- **Stage 12**: the coreference experiment.
+- **Not in MAT**: episode chapters, topic tags and keywords, topics across a season. The program reading MAT results
+  is the better place for them: it sees all episodes, and it decides how they're shown. MAT delivers what they need
+  (transcript with times and speakers, sentences, entities).
+- `deepmultilingualpunctuation`: decided in stage 11 together with SaT.
+
+## Suggested order (before the decisions)
 
 1. Structured output for `llm-names` (small, improves what exists).
 2. GLiNER2 multi against large on German (a test, maybe a new default).

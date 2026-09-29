@@ -260,10 +260,20 @@ Transcript quality (seen on the first real German episode):
 - [x] Chapter summaries with the same LLM settings as podcasts Done: `--chapter-summarizer llm`, one summary per chapter in `chapters[].summary`, with prompts for books (`CHAPTER_PROMPTS`) that forbid anything from later chapters or outside knowledge. Not tried on a real book with a real LLM yet.
 - [x] Try coreference resolution for characters in German and English. Keep it only if the results are usable. Tried coreferee 1.5 (2026-09, supports spaCy 3.8, English and German, installed in a throwaway environment) on a five sentence Davos/Stannis passage: in English it linked Davos with "her" and Stannis with "woman", in German Stannis with "Frau", and missed "the king" = Stannis in both. Wrong links are worse than none for a character list, so it's not in. maverick-coref-de (KONVENS 2025) is German only research code without a clear license. If this comes back, it's as an LLM job next to the chapter summaries.
 
-## After stage 8: proposals
+## Stage 11: better names and sentences (decided 2026-09-29)
 
-- [ ] Nicknames, ambiguous short names and coreference for character counts: [proposal](proposals/character-aliases-and-coreference.md). Alias file, pattern candidates, an LLM that judges candidate pairs with evidence, and a coreference experiment where two systems have to agree.
-- [ ] NLP tools research (sentences with SaT, GLiNER2 multi for German, keywords, episode chapters, structured LLM output): [proposal](proposals/nlp-tools-2026.md).
+From the [character proposal](proposals/character-aliases-and-coreference.md) and the [NLP tools research](proposals/nlp-tools-2026.md). A release can happen after this stage, before stage 12.
+
+- [ ] Structured output for `llm-names`: a JSON schema through Ollama `format` and OpenAI `response_format`, the current parsing stays for providers without schemas (DeepSeek).
+- [ ] GLiNER2 `gliner2-multi-v1` against `gliner2-large-v1` on German: hand-check about 200 entities of a German episode and a German book, switch the default if multi is better.
+- [ ] SaT (wtpsplit) sentences for transcripts, NER on sentences instead of speaker turns. Decide about the unused `deepmultilingualpunctuation` on the way (drop it, or restore punctuation for lowercase whisper output).
+- [ ] Character candidates from the text (appositions like "X, den alle Y nannten", the `nicknames` package for English, ambiguous short names per occurrence) and `[llm-characters]` to judge them: a merge needs a quoted sentence and has to survive a second call with the names swapped, no outside knowledge (spoilers). Merges with their evidence in `characters`. No alias file in MAT, static merging is left to the program reading the results.
+
+## Stage 12: coreference experiment
+
+- [ ] maverick-coref-de and maverick-coref in their own environments (CC BY-NC-SA 4.0, like DiariZen: never imported into MAT, off by default, docs say results can't be used commercially), Stanza as the second system. A reference counts only when both agree and the cluster has exactly one character. `references` next to `mentions`, never summed, and only if hand-checked chapters show at least 97 % precision.
+
+Not in MAT (decided 2026-09-29): episode chapters, topic tags and keywords, topics across a season. They belong into the program reading the results.
 
 ## Stage 9: speed
 
