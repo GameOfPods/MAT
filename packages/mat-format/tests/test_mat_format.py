@@ -70,8 +70,7 @@ def test_package_major_version_is_the_format_version():
     from importlib.metadata import version
     from mat_format import FORMAT_VERSION, __version__
     assert int(__version__.split(".")[0]) == FORMAT_VERSION, \
-        "bump the major version in mat_format/version.py together with FORMAT_VERSION"
-    # the installed package reads its version from the same file
+        "bump the major version in packages/mat-format/pyproject.toml together with FORMAT_VERSION"
     assert version("mat-format") == __version__
 
 

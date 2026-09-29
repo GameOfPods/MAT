@@ -12,8 +12,28 @@ import logging
 import os
 import sys
 
-__author__ = 'RedRem95'
-from MAT.__version__ import __version__
+
+
+def _metadata(field: str) -> str:
+    """Version (or another field) from the installed package metadata, which comes from pyproject.toml. A source
+    checkout that was never installed reads pyproject.toml itself."""
+    from importlib import metadata
+    from pathlib import Path
+
+    try:
+        if field == "version":
+            return metadata.version("MAT")
+        return metadata.metadata("MAT")[field] or ""
+    except metadata.PackageNotFoundError:
+        import tomllib
+
+        project = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+        return project["version"] if field == "version" else ""
+
+
+__version__ = _metadata("version")
+# "RedRem <alex@...>" in the metadata, only the name
+__author__ = _metadata("Author-email").split("<")[0].strip() or "RedRem"
 
 # Logs go to stderr, stdout is for command output like `MAT config init > mat.toml`
 logging.basicConfig(

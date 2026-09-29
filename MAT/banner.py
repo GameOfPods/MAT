@@ -11,7 +11,6 @@
 """The header MAT prints when it starts a run, and the versions that go into it."""
 import sys
 
-AUTHOR = "RedRem"
 HOMEPAGE = "github.com/GameOfPods/MAT"
 LICENSE = "GPL-3.0"
 
@@ -34,6 +33,12 @@ _ART_BLOCK = [
 ]
 _FRAME_ASCII = "+-+|++"
 _FRAME_BLOCK = "╔═╗║╚╝"
+
+
+def _author() -> str:
+    from MAT import __author__
+
+    return __author__
 
 
 def versions() -> str:
@@ -72,7 +77,7 @@ def banner(blocks: bool = False) -> str:
     art = _ART_BLOCK if blocks else _ART_ASCII
     top_left, horizontal, top_right, vertical, bottom_left, bottom_right = _FRAME_BLOCK if blocks else _FRAME_ASCII
     title = " ".join("MEDIA ANALYTICS TOOLSET") if blocks else "Media Analytics Toolset"
-    rows = [("version", __version__), ("result format", format_version), ("by", AUTHOR), ("license", LICENSE),
+    rows = [("version", __version__), ("result format", format_version), ("by", _author()), ("license", LICENSE),
             ("home", HOMEPAGE)]
     key_width = max(len(key) for key, _ in rows)
     info = [f"{key.rjust(key_width)}  {value}" for key, value in rows]
@@ -103,4 +108,4 @@ def print_banner(stream=None) -> None:
     stream.flush()
 
 
-__all__ = ["AUTHOR", "HOMEPAGE", "LICENSE", "versions", "supports_blocks", "banner", "print_banner"]
+__all__ = ["HOMEPAGE", "LICENSE", "versions", "supports_blocks", "banner", "print_banner"]

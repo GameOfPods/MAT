@@ -34,7 +34,7 @@ def test_main_exit_codes(capsys):
 
 
 def test_missing_version_line(tmp_path):
-    file = tmp_path / "__version__.py"
-    file.write_text("version = '1.0'\n")
+    file = tmp_path / "pyproject.toml"
+    file.write_text('[project]\nname = "MAT"\n')
     with pytest.raises(ValueError):
         check_release_version.read_version(file)

@@ -1927,6 +1927,7 @@ wheels = [
 
 [[package]]
 name = "mat"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -2059,49 +2060,35 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4" },
-    { name = "de-core-news-md", marker = "extra == 'all'", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl" },
     { name = "de-core-news-md", marker = "extra == 'spacy'", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl" },
     { name = "deepmultilingualpunctuation" },
     { name = "ebooklib" },
-    { name = "en-core-web-md", marker = "extra == 'all'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl" },
     { name = "en-core-web-md", marker = "extra == 'spacy'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl" },
-    { name = "faster-whisper", marker = "extra == 'all'", specifier = ">=1.2" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.2" },
-    { name = "gliner", marker = "extra == 'all'" },
     { name = "gliner", marker = "extra == 'gliner'" },
-    { name = "gliner2", extras = ["local"], marker = "extra == 'all'", specifier = ">=2" },
     { name = "gliner2", extras = ["local"], marker = "extra == 'gliner'", specifier = ">=2" },
     { name = "huggingface-hub" },
-    { name = "jiwer", marker = "extra == 'all'", specifier = ">=4" },
     { name = "jiwer", marker = "extra == 'bench'", specifier = ">=4" },
-    { name = "langchain", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain", marker = "extra == 'llm'", specifier = ">=1" },
-    { name = "langchain-core", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain-core", marker = "extra == 'llm'", specifier = ">=1" },
-    { name = "langchain-ollama", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain-ollama", marker = "extra == 'llm'", specifier = ">=1" },
-    { name = "langchain-openai", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain-openai", marker = "extra == 'llm'", specifier = ">=1" },
-    { name = "langchain-text-splitters", marker = "extra == 'all'", specifier = ">=1" },
     { name = "langchain-text-splitters", marker = "extra == 'llm'", specifier = ">=1" },
     { name = "langdetect", specifier = ">=1.0.9" },
     { name = "linkify-it-py" },
     { name = "markdown" },
     { name = "markdown-it-py" },
+    { name = "mat", extras = ["whisper", "sortformer", "parakeet", "pyannote", "llm", "spacy", "gliner", "bench", "events"], marker = "extra == 'all'" },
     { name = "mat-format", editable = "packages/mat-format" },
     { name = "mdformat" },
     { name = "mdutils" },
-    { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'all'", specifier = ">=3" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'parakeet'", specifier = ">=3" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "extra == 'sortformer'", specifier = ">=3" },
     { name = "numpy", specifier = ">=2" },
-    { name = "pip", marker = "extra == 'all'" },
     { name = "pip", marker = "extra == 'spacy'" },
     { name = "psutil" },
-    { name = "pyannote-audio", marker = "extra == 'all'", specifier = ">=4" },
     { name = "pyannote-audio", marker = "extra == 'pyannote'", specifier = ">=4" },
     { name = "pyannote-audio", marker = "extra == 'sortformer'", specifier = ">=4" },
-    { name = "pyannote-metrics", marker = "extra == 'all'", specifier = ">=4" },
     { name = "pyannote-metrics", marker = "extra == 'bench'", specifier = ">=4" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pydub" },
@@ -2113,24 +2100,19 @@ requires-dist = [
     { name = "rttm-manager" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "spacy", marker = "extra == 'all'", specifier = ">=3.8,<3.9" },
     { name = "spacy", marker = "extra == 'spacy'", specifier = ">=3.8,<3.9" },
-    { name = "spacy-download", marker = "extra == 'all'" },
     { name = "spacy-download", marker = "extra == 'spacy'" },
-    { name = "tiktoken", marker = "extra == 'all'" },
     { name = "tiktoken", marker = "extra == 'llm'" },
     { name = "torch", specifier = ">=2.8,<2.15" },
     { name = "torchaudio", specifier = ">=2.8,<2.15" },
     { name = "torchcodec", specifier = ">=0.7,<0.8" },
     { name = "torchvision" },
     { name = "tqdm" },
-    { name = "transformers", marker = "extra == 'all'", specifier = ">=4.40" },
     { name = "transformers", marker = "extra == 'events'", specifier = ">=4.40" },
-    { name = "whisperx", marker = "extra == 'all'", specifier = ">=3.8" },
     { name = "whisperx", marker = "extra == 'whisper'", specifier = ">=3.8" },
     { name = "xlsxwriter" },
 ]
-provides-extras = ["all", "bench", "events", "gliner", "llm", "parakeet", "pyannote", "sortformer", "spacy", "whisper"]
+provides-extras = ["whisper", "sortformer", "pyannote", "parakeet", "llm", "spacy", "gliner", "bench", "events", "all"]
 
 [package.metadata.requires-dev]
 backends = [{ name = "mat", extras = ["all"] }]
@@ -2152,6 +2134,7 @@ dev = [
 
 [[package]]
 name = "mat-format"
+version = "2.5.0"
 source = { editable = "packages/mat-format" }
 dependencies = [
     { name = "pydantic" },

@@ -1,7 +1,8 @@
 [project]
 name = "MAT"
+# the one place for MAT's version: MAT.__version__, `MAT --version` and the release check read it from here
+version = "0.2.0"
 description = "Media Analytics Toolset"
-dynamic = ["version"]
 readme = "README.md"
 license = "GPL-3.0"
 license-files = ["LICENSE"]
@@ -125,9 +126,6 @@ build-backend = "hatchling.build"
 exclude = [
     ".idea*",
 ]
-
-[tool.hatch.version]
-path = "MAT/__version__.py"
 
 [tool.uv]
 # uv has no default extras, so the torch build and the backends are picked with groups.

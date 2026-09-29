@@ -62,8 +62,10 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 - Output format 2: `<stem>_<time>/meta.json` plus `podcast/` or `book/` with `result.json` (and `transcript.txt`,
   `summary.md`, `diarization.rttm`). Spec in `docs/result-format.md`. The data model, reader and JSON schemas live in the
   uv workspace package `packages/mat-format` (only pydantic, no MAT imports). `MAT/writer` builds those models.
-  The format version lives in `mat_format/version.py` (major = format, minor + 1 for every set of new fields, and a
-  line in the changelog of `docs/result-format.md`); it's independent of the MAT version and ends up in `meta.json`.
+  The format version is `version` in `packages/mat-format/pyproject.toml` (major = format, minor + 1 for every set of
+  new fields, and a line in the changelog of `docs/result-format.md`); it's independent of the MAT version, which is
+  `version` in the root `pyproject.toml`. Both are read at runtime from the package metadata, `uv run`/`uv sync`
+  reinstall the packages when the file changes.
   After changing `mat_format/models.py`: run `.venv/bin/python -m mat_format.schema`, update the spec, and remember
   that renaming/removing/retyping a field needs a new format version (adding fields doesn't). Other programs
   (Mosaicast, Java) read results through the schemas, so don't break the format casually.
@@ -124,7 +126,7 @@ Check every new dependency against these before adding it:
   `uv.lock` has to be committed and current), "Install without backends", "mat-format (Python 3.10/3.12/3.13)"
   (mat-format installed alone, tests in `packages/mat-format/tests` must not import MAT).
 - `.github/workflows/release-schemas.yml` runs on every published release. First `scripts/check_release_version.py`
-  checks that the tag is `v` + `MAT/__version__.py` (0.2.0 -> v0.2.0), then it attaches the generated schemas and
+  checks that the tag is `v` + the version in `pyproject.toml` (0.2.0 -> v0.2.0), then it attaches the generated schemas and
   `mat-result-format.zip`. Keep the schema file names stable, other projects download them from
   `releases/latest/download/`.
 - `mat-format`'s major version (`packages/mat-format/pyproject.toml`) has to equal `FORMAT_VERSION`, a test checks it.

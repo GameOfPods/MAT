@@ -334,7 +334,7 @@ When a release is published, `.github/workflows/release-schemas.yml` checks that
 
 To release:
 
-1. Set the version in `MAT/__version__.py`, for example `0.3.0`, and merge that into `master`.
+1. Set `version` in `pyproject.toml`, for example `0.3.0`, and merge that into `master`. The result format has its own version in `packages/mat-format/pyproject.toml`, it only changes when the format does.
 2. Create the release on GitHub with the tag `v0.3.0`, exactly `v` plus the version.
 
 A tag that doesn't match fails the release workflow and nothing gets attached. Fix it by deleting the release and tag and creating them again with the right tag. `python scripts/check_release_version.py v0.3.0` does the same check locally.

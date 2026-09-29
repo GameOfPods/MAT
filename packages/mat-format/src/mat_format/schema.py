@@ -14,7 +14,7 @@ from typing import Dict, Tuple, Type
 from pydantic import BaseModel
 
 from mat_format.models import BookResult, Meta, PodcastResult
-from mat_format.version import __version__
+from mat_format import __version__
 
 SCHEMA_DIR = Path(__file__).parent / "schemas"
 BASE_URL = "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/"

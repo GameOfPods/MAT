@@ -9,7 +9,23 @@ from mat_format.models import (
     Sentence, Speaker, TextEntity, TimeRange, TranscriptEntity, Word,
 )
 from mat_format.reader import MATResult
-from mat_format.version import __version__
+
+
+def _version() -> str:
+    """From the installed package, which takes it from pyproject.toml. A source checkout reads the file itself."""
+    from importlib import metadata
+    from pathlib import Path
+
+    try:
+        return metadata.version("mat-format")
+    except metadata.PackageNotFoundError:
+        import tomllib
+
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        return tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+
+
+__version__ = _version()
 
 __all__ = ["FORMAT_VERSION", "MATResult", "Meta", "FailedStep", "Input", "ModelInfo", "PodcastResult",
            "Media", "Speaker", "TimeRange", "Word", "Event", "TranscriptEntity", "BookResult", "Chapter", "Character",

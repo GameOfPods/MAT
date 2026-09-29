@@ -1,5 +1,5 @@
 # Runs when a release is published:
-# 1. the release tag has to be "v" + the MAT version from MAT/__version__.py (v0.2.0 for 0.2.0)
+# 1. the release tag has to be "v" + the MAT version from pyproject.toml (v0.2.0 for 0.2.0)
 # 2. the result format schemas are attached, also when they didn't change, so other projects can always download the
 #    newest ones from https://github.com/GameOfPods/MAT/releases/latest/download/<file name>. Each file is also attached
 #    with the format version in its name (podcast-result-2.5.0.schema.json), so a download says which version it is.
@@ -31,7 +31,7 @@ jobs:
         with:
           ref: ${{ env.TAG }}
 
-      - name: Compare the tag with MAT/__version__.py
+      - name: Compare the tag with the version in pyproject.toml
         run: python3 scripts/check_release_version.py "$TAG"
 
   schemas:
