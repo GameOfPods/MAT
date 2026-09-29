@@ -93,3 +93,16 @@ def test_the_book_pipeline_joins_what_the_judge_confirmed():
     assert [(c["name"], c["mentions"]) for c in result.data] == [("Davos", 4)]
     assert result.data[0]["joined"] == [{"name": "Zwiebelritter", "evidence": SENTENCE}]
     assert FakeJudge.seen.language == "de"
+
+
+def test_ollama_gets_a_context_that_fits_the_prompt(monkeypatch):
+    seen = []
+    llm = ScriptedLLM(lambda prompt: {"pairs": [], "mentions": []})
+    monkeypatch.setattr(CharacterJudgeLLM, "client",
+                        staticmethod(lambda options, schema=None, num_ctx=None: seen.append(num_ctx) or llm))
+    pairs = [PairQuestion(i, f"Name{i}", f"Other{i}", ["A long sentence about somebody. " * 20] * 5,
+                          ["Another long sentence. " * 20] * 5, []) for i in range(20)]
+    CharacterJudgeLLM().process(CharacterJudgeInput(pairs, [], language="de"),
+                                Config({"llm-characters": {"preset": "ollama", "model": "qwen3:8b"}}))
+    # two calls (both orders), each with room for a prompt far above Ollama's default of a few thousand tokens
+    assert len(seen) == 2 and all(n > 20000 for n in seen)

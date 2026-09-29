@@ -73,28 +73,37 @@ class CharacterJudgeLLM(LLMTask, CharacterJudgeTool):
     def process(self, origin_data: CharacterJudgeInput, config: Config) -> Optional[CharacterJudgeResult]:
         options = self.effective_options(config)
         language = LANGUAGES.get((origin_data.language or "")[:2], origin_data.language or "an unknown language")
-        pair_llm = self.client(options, schema=PAIR_SCHEMA) if origin_data.pairs else None
-        mention_llm = self.client(options, schema=MENTION_SCHEMA) if origin_data.mentions else None
         same: Dict[int, str] = {}
         for batch in _batches(origin_data.pairs, options.batch_size):
-            first = self._ask(pair_llm, options, options.pair_prompt, language, "{pairs}", _pairs_text(batch, False))
-            second = self._ask(pair_llm, options, options.pair_prompt, language, "{pairs}", _pairs_text(batch, True))
+            first = self._ask(options, PAIR_SCHEMA, options.pair_prompt, language, "{pairs}",
+                              _pairs_text(batch, False))
+            second = self._ask(options, PAIR_SCHEMA, options.pair_prompt, language, "{pairs}",
+                               _pairs_text(batch, True))
             same.update(self._agreed_pairs(batch, first, second))
         chosen: Dict[int, str] = {}
         for batch in _batches(origin_data.mentions, options.batch_size):
-            first = self._ask(mention_llm, options, options.mention_prompt, language, "{mentions}",
+            first = self._ask(options, MENTION_SCHEMA, options.mention_prompt, language, "{mentions}",
                               _mentions_text(batch, False))
-            second = self._ask(mention_llm, options, options.mention_prompt, language, "{mentions}",
+            second = self._ask(options, MENTION_SCHEMA, options.mention_prompt, language, "{mentions}",
                                _mentions_text(batch, True))
             chosen.update(self._agreed_mentions(batch, first, second))
         self._LOGGER.info(f"{len(same)} of {len(origin_data.pairs)} name pairs are one character, "
                           f"{len(chosen)} of {len(origin_data.mentions)} ambiguous names decided")
         return CharacterJudgeResult(same=same, mentions=chosen)
 
-    def _ask(self, llm, options, template: str, language: str, placeholder: str, items: str) -> Dict[str, Any]:
+    def _ask(self, options, schema: dict, template: str, language: str, placeholder: str,
+             items: str) -> Dict[str, Any]:
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        from MAT.tools.summary.llm import SummaryLLM
+
         prompt = template.replace("{language}", language).replace(placeholder, items)
+        # Ollama loads its own small context unless told otherwise and cuts the start of a long prompt without a word
+        num_ctx = None
+        if options.service == "Ollama":
+            len_fun = SummaryLLM._get_len_fun()
+            num_ctx = len_fun(options.system_message) + len_fun(prompt) + options.max_tokens + 512
+        llm = self.client(options, schema=schema, num_ctx=num_ctx)
         try:
             answer = llm.invoke([SystemMessage(options.system_message), HumanMessage(prompt)])
         except Exception as e:
