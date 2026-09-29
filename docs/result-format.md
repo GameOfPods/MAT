@@ -99,12 +99,15 @@ Speaking time per speaker, for example, is the sum of `end - start` over their `
 |---|---|---|
 | `schema` | string | Always `mat.book` |
 | `format` | integer | Always `2` |
-| `models` | object | Step name (`splitter`, `ner`) to model info |
+| `models` | object | Step name (`splitter`, `ner`, `chapter_summarizer`) to model info |
 | `title` | string | Book title |
 | `language` | string or null | Detected language, ISO 639-1 |
 | `chapters` | list of chapter | In table of contents order |
+| `characters` | list of character | People of the book, most mentioned first. Empty without NER. Since mat-format 2.3 |
 
-A **chapter** has `heading` (repeated headings get a roman numeral, like `Part II`), `heading_raw` (as in the book), `paragraphs` (list of strings) and `sentences`.
+A **chapter** has `heading` (repeated headings get a roman numeral, like `Part II`), `heading_raw` (as in the book), `paragraphs` (list of strings), `sentences` and `summary` (Markdown, only from this chapter, null when chapter summaries didn't run, since mat-format 2.3).
+
+A **character** is `{"name": "Eddard Stark", "mentions": 14, "variants": {"Eddard": 9, "Eddard Stark": 4, "Lord Eddard Stark": 1}, "chapters": {"Prologue": 2, "Eddard I": 12}}`. `chapters` uses the headings of `chapters[].heading`.
 
 A **sentence** has `text`, `lemmas` (lemma to count, without stop words and punctuation) and `entities`. An entity is `{"label": "PERSON", "text": "Alice", "start": 0, "end": 5}`, where `start` and `end` are character offsets in the sentence text (end exclusive).
 

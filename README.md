@@ -35,8 +35,10 @@ Used for EPUB files.
 1. Read the book and walk the chapters in table of contents order.
 2. Keep headings that look like real chapters: numbers, `Chapter 12` / `Kapitel 12`, prologue/epilogue, headings that repeat, or names you pass with `--set 'book.chapter-names=["Prolog", "Nachwort"]'`. Repeated headings get roman numerals (`Part I`, `Part II`).
 3. Detect the language.
-4. Split sentences and count lemmas (`spacy`). The spaCy model is picked by language (English, German, French, multilingual fallback) unless you set `spacy.model`.
-5. Named entities per sentence (`gliner`, optional): GLiNER2 with `PERSON`, `LOCATION`, `ORGANIZATION`, `DATE` by default.
+4. Split sentences and count lemmas (`spacy`). The spaCy model is picked by language unless you set `spacy.model`: `en_core_web_md` and `de_core_news_md` come with the `spacy` extra, French and the multilingual fallback get downloaded the first time.
+5. Named entities per sentence (`gliner`, optional): GLiNER2 with `PERSON`, `LOCATION`, `ORGANIZATION`, `DATE` by default, all sentences of the book in one go.
+6. Character list: the `PERSON` entities of all chapters, with titles dropped and short names joined to the one full name they belong to ("Eddard" and "Lord Eddard Stark" count for Eddard Stark, "Stark" alone stays separate because it fits several people). Mentions per chapter, names mentioned less than `book.min-mentions` (2) times are left out. Nicknames like "Ned" aren't joined.
+7. Chapter summaries (`--chapter-summarizer llm`, off by default): one summary per chapter with the `[llm]` settings and prompts written for books, which tell the model to use nothing from later chapters or from what it knows about the book.
 
 ## Requirements
 

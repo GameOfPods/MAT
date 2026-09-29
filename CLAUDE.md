@@ -8,7 +8,8 @@ CLI that runs ML pipelines on media files and writes results to a folder/zip. Tw
 
 - `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `entities` (gliner or none, takes the `ner` backends via `Slot(kind=...)`),
   `events` (audioset, clap or none), `summarizer` (llm or none).
-- `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none).
+- `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none), `chapter_summarizer` (llm or none, flag
+  `--chapter-summarizer`). Characters come from the PERSON entities (`MAT/utils/characters.py`).
 
 `MAT/reader` loads written results back (format 2, see `MAT/writer`).
 
@@ -88,7 +89,10 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 
 - The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
 - No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models work. The default diarizer (pyannote community-1) needs that login; `--diarizer sortformer` and WeSpeaker don't. Backends can check such things before the first file with `preflight`.
-- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. spaCy models are pip-installed at runtime by `spacy_download` and removed again by every `uv sync` (exact sync), so the book smoke script downloads `en_core_web_sm` again after a sync.
+- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. `en_core_web_md` and `de_core_news_md` are declared in the `spacy` extra (wheel URLs in `[tool.uv.sources]`), other spaCy models get pip-installed at runtime by `spacy_download` and removed again by every `uv sync`.
+- This dev machine is a QEMU VM with a generic CPU model. torch's CPU build now and then dies with SIGILL ("trap
+  invalid opcode in libtorch_cpu.so" in the kernel log, a core dump in the shell). That's the VM, not MAT: run it
+  again. Host CPU passthrough in the VM settings would fix it.
 - Real runs and benchmarks happen on a separate GPU box with a GTX 1080 Ti (Pascal, compute capability 6.1, 11 GB), set up with uv. Claude can't reach it, the user runs GPU smoke tests and `MAT bench` there and shares the results.
   Known setup: driver 580.178.04, FFmpeg 9.0.1 (too new for torchcodec 0.7), the desktop already uses about 930 MiB of GPU memory. It has an HF token and API keys. Stage 2 smoke numbers are in `docs/roadmap.md`.
 
