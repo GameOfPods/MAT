@@ -124,7 +124,27 @@ def test_the_banner_names_both_versions():
     import MAT
     from MAT.banner import banner, versions
 
-    text = banner()
-    assert "|_|  |_/_/   \\_\\_|" in text
-    assert MAT.__version__ in text and mat_format.__version__ in text and "RedRem" in text
+    for blocks in (True, False):
+        lines = banner(blocks=blocks).splitlines()
+        # a closed frame: every line as wide as the first
+        assert len({len(line) for line in lines}) == 1
+        text = "\n".join(lines)
+        assert MAT.__version__ in text and mat_format.__version__ in text and "RedRem" in text
+    assert "█" in banner(blocks=True) and "|_|  |_/_/" in banner(blocks=False)
     assert versions() == f"MAT {MAT.__version__}, result format {mat_format.__version__}"
+
+
+def test_block_letters_only_where_they_can_be_written(monkeypatch):
+    import io
+
+    from MAT.banner import supports_blocks
+
+    monkeypatch.delenv("MAT_BANNER", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    utf8 = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+    latin = io.TextIOWrapper(io.BytesIO(), encoding="latin-1")
+    assert supports_blocks(utf8) and not supports_blocks(latin)
+    monkeypatch.setenv("TERM", "dumb")
+    assert not supports_blocks(utf8)
+    monkeypatch.setenv("MAT_BANNER", "block")
+    assert supports_blocks(latin)

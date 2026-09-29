@@ -189,6 +189,10 @@ gold-labels = "speakers/"
 
 The order is: defaults, then the config file, then `--set`. Unknown sections, misspelled options and wrong types stop the run before any file is processed. Sections for backends that aren't installed only give a warning.
 
+### Banner
+
+`MAT run` and `MAT bench run` start with a banner showing the MAT version and the result format version. It uses block letters when the console can write them (UTF-8, not `TERM=dumb`) and plain ASCII otherwise. `MAT_BANNER=block` or `MAT_BANNER=ascii` picks one by hand.
+
 ### Step cache
 
 Transcription, diarization and sound events are kept in `~/.cache/mat/steps`, keyed by the file content, the backend, its options and the versions involved. Running an episode again, for example after a failed summary or with another summary model, starts right after them. `--no-cache` runs everything again, `--set podcast.cache=/other/folder` moves the cache, and deleting the folder is always fine.

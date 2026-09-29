@@ -15,13 +15,25 @@ AUTHOR = "RedRem"
 HOMEPAGE = "github.com/GameOfPods/MAT"
 LICENSE = "GPL-3.0"
 
-_ART = r"""
-  __  __    _  _____
- |  \/  |  / \|_   _|
- | |\/| | / _ \ | |
- | |  | |/ ___ \| |
- |_|  |_/_/   \_\_|
-"""
+# plain ASCII for consoles that can't show the block characters
+_ART_ASCII = [
+    r" __  __    _  _____",
+    r"|  \/  |  / \|_   _|",
+    r"| |\/| | / _ \ | |",
+    r"| |  | |/ ___ \| |",
+    r"|_|  |_/_/   \_\_|",
+]
+# figlet font "ANSI Shadow"
+_ART_BLOCK = [
+    "███╗   ███╗ █████╗ ████████╗",
+    "████╗ ████║██╔══██╗╚══██╔══╝",
+    "██╔████╔██║███████║   ██║",
+    "██║╚██╔╝██║██╔══██║   ██║",
+    "██║ ╚═╝ ██║██║  ██║   ██║",
+    "╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝",
+]
+_FRAME_ASCII = "+-+|++"
+_FRAME_BLOCK = "╔═╗║╚╝"
 
 
 def versions() -> str:
@@ -32,28 +44,57 @@ def versions() -> str:
     return f"MAT {__version__}, result format {format_version}"
 
 
-def banner() -> str:
+def supports_blocks(stream=None) -> bool:
+    """Whether the block letters will come out right. MAT_BANNER=block or ascii decides by hand. Otherwise the
+    stream's encoding has to be able to write them, and the terminal must not be a dumb one. Whether the font has
+    the glyphs can't be asked, a UTF-8 terminal almost always has them."""
+    import os
+
+    choice = os.environ.get("MAT_BANNER", "").strip().lower()
+    if choice in ("block", "ascii"):
+        return choice == "block"
+    if os.environ.get("TERM", "") == "dumb":
+        return False
+    stream = stream or sys.stderr
+    try:
+        "".join(_ART_BLOCK + [_FRAME_BLOCK]).encode(getattr(stream, "encoding", None) or "ascii")
+    except (UnicodeEncodeError, LookupError):
+        return False
+    return True
+
+
+def banner(blocks: bool = False) -> str:
+    """The MAT letters, the name and the versions in a frame, centered on each other."""
     from MAT import __version__
     from mat_format import __version__ as format_version
 
-    rows = [
-        ("", "Media Analytics Toolset"),
-        ("version", __version__),
-        ("result format", format_version),
-        ("by", AUTHOR),
-        ("license", LICENSE),
-        ("home", HOMEPAGE),
-    ]
-    width = max(len(key) for key, _ in rows)
-    lines = [f"  {key.rjust(width)}  {value}" if key else f"  {' ' * width}  {value}" for key, value in rows]
-    return _ART.strip("\n") + "\n\n" + "\n".join(lines) + "\n"
+    art = _ART_BLOCK if blocks else _ART_ASCII
+    top_left, horizontal, top_right, vertical, bottom_left, bottom_right = _FRAME_BLOCK if blocks else _FRAME_ASCII
+    title = " ".join("MEDIA ANALYTICS TOOLSET") if blocks else "Media Analytics Toolset"
+    rows = [("version", __version__), ("result format", format_version), ("by", AUTHOR), ("license", LICENSE),
+            ("home", HOMEPAGE)]
+    key_width = max(len(key) for key, _ in rows)
+    info = [f"{key.rjust(key_width)}  {value}" for key, value in rows]
+
+    art_width, info_width = max(len(line) for line in art), max(len(line) for line in info)
+    inner = max(art_width, info_width, len(title)) + 6
+
+    def block(lines, width):
+        # a block of lines keeps its own alignment and is centered as a whole
+        return [(" " * ((inner - width) // 2) + line.ljust(width)).ljust(inner) for line in lines]
+
+    body = block(art, art_width) + [""] + [title.center(inner)] + [""] + block(info, info_width)
+    lines = [top_left + horizontal * inner + top_right]
+    lines += [vertical + line.ljust(inner) + vertical for line in body]
+    lines += [bottom_left + horizontal * inner + bottom_right]
+    return "\n".join(lines) + "\n"
 
 
 def print_banner(stream=None) -> None:
     """To stderr like the logs, stdout stays for command output."""
     stream = stream or sys.stderr
-    stream.write(banner() + "\n")
+    stream.write(banner(blocks=supports_blocks(stream)) + "\n")
     stream.flush()
 
 
-__all__ = ["AUTHOR", "HOMEPAGE", "LICENSE", "versions", "banner", "print_banner"]
+__all__ = ["AUTHOR", "HOMEPAGE", "LICENSE", "versions", "supports_blocks", "banner", "print_banner"]
