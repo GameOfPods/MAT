@@ -98,7 +98,7 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 
 - The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
 - No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models work. The default diarizer (pyannote community-1) needs that login; `--diarizer sortformer` and WeSpeaker don't. Backends can check such things before the first file with `preflight`.
-- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`. `en_core_web_md` and `de_core_news_md` are declared in the `spacy` extra (wheel URLs in `[tool.uv.sources]`), other spaCy models get pip-installed at runtime by `spacy_download` and removed again by every `uv sync`.
+- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`, `fastino/gliner2-multi-v1` (the NER default), `sat-3l-sm` (sentences). `en_core_web_md` and `de_core_news_md` are declared in the `spacy` extra (wheel URLs in `[tool.uv.sources]`), other spaCy models get pip-installed at runtime by `spacy_download` and removed again by every `uv sync`.
 - This dev machine is a QEMU VM with a generic CPU model. torch's CPU build now and then dies with SIGILL ("trap
   invalid opcode in libtorch_cpu.so" in the kernel log, a core dump in the shell). That's the VM, not MAT: run it
   again. Host CPU passthrough in the VM settings would fix it.

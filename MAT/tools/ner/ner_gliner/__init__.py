@@ -40,7 +40,10 @@ DEFAULT_LABELS = {
 
 class GlinerOptions(Options):
     version: Literal[1, 2] = Field(2, description="GLiNER generation. 1 needs a GLiNER v1 model.")
-    model: str = Field("fastino/gliner2-large-v1", description="GLiNER model.")
+    model: str = Field("fastino/gliner2-multi-v1", description="GLiNER model. multi-v1 made far fewer mistakes than "
+                                                             "large-v1 on German and English in our test (common "
+                                                             "nouns like Frau or river as entities) and is twice as "
+                                                             "fast.")
     labels: Union[List[str], Dict[str, str]] = Field(
         default_factory=lambda: dict(DEFAULT_LABELS),
         description="Entity labels to look for, as a list or as label = description. GLiNER2 uses the "
