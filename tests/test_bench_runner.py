@@ -72,7 +72,7 @@ def test_system_config_never_summarizes(tmp_path, caplog):
         {"name": "a", "set": ["podcast.summarizer=llm"]},
         {"name": "b", "set": ["podcast.identifier=pyannote", "whisper.beam-size=2"]}]}, base_dir=tmp_path)
     a, b = (system_config(s, tmp_path) for s in bench.systems)
-    assert a.values["podcast"] == {"summarizer": "none", "identifier": "none"}
+    assert a.values["podcast"] == {"summarizer": "none", "identifier": "none", "cache": None}
     assert "summaries don't run" in caplog.text
     assert b.values["podcast"]["identifier"] == "pyannote"
     assert b.values["whisper"]["beam-size"] == 2
@@ -173,3 +173,11 @@ def test_gpu_sampler_without_nvidia_smi(monkeypatch):
     with GpuMemorySampler() as sampler:
         pass
     assert sampler.peak is None
+
+
+def test_benchmarks_never_use_the_step_cache(tmp_path):
+    from MAT.bench.runner import SystemSettings
+    from MAT.pipelines.Podcast import PodcastPipeline
+
+    config = system_config(SystemSettings(name="x", set=["podcast.cache=/tmp/somewhere"]), tmp_path)
+    assert config.options(PodcastPipeline).cache is None

@@ -8,6 +8,8 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
+import functools
+import os
 from typing import Callable, Dict, Any, Optional
 
 
@@ -16,15 +18,21 @@ def get_hash(obj) -> str:
     return hashlib.sha1(obj).hexdigest()
 
 def get_hash_file(file_path: str) -> str:
-    with open(file_path, "rb") as file_handle:
-        return get_hash(file_handle.read())
+    """sha1 of a file, read in pieces. Remembered per path, size and modification time, the writer and the step
+    cache both need it and a 3 hour episode takes a moment to hash."""
+    stat = os.stat(file_path)
+    return _hash_file(os.path.abspath(file_path), stat.st_size, stat.st_mtime_ns)
 
-def get_hash_pipeline(step_input: "PipelineStepInput") -> "PipelineStepResult":
-    from MAT.pipelines import PipelineStepInput, PipelineStepResult
-    return PipelineStepResult(
-        name="Hash",
-        data=get_hash(step_input.file)
-    )
+
+@functools.lru_cache(maxsize=64)
+def _hash_file(path: str, size: int, mtime: int) -> str:
+    import hashlib
+
+    digest = hashlib.sha1()
+    with open(path, "rb") as file_handle:
+        for block in iter(lambda: file_handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def get_all_concrete_subclasses(cls):

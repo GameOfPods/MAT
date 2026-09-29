@@ -43,8 +43,9 @@ def main():
     assert PodcastPipeline in Pipeline.get_pipelines(f=str(audio)), "PodcastPipeline did not accept the audio file"
 
     values = {
+        # no step cache: the smoke test is there to run the models
         "podcast": {"summarizer": "llm" if args.summary else "none", "transcriber": args.transcriber,
-                    "diarizer": args.diarizer},
+                    "diarizer": args.diarizer, "cache": None},
         "whisper": {"device": device}, "parakeet": {"device": device}, "sortformer": {"device": device},
         "pyannote-diarization": {"device": device}, "pyannote": {"device": device},
     }

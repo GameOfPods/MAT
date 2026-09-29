@@ -76,6 +76,8 @@ def _load_config(args: argparse.Namespace, validate: bool = True):
     from MAT.utils.config import Config
 
     overrides = list(getattr(args, "set", None) or []) + _slot_overrides(args)
+    if getattr(args, "no_cache", False):
+        overrides.append("podcast.cache=null")
     return Config.load(file=getattr(args, "config", None), overrides=overrides, validate=validate)
 
 
@@ -124,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Save the config that was used as config.toml in every result")
     output.add_argument("-wd", "--work-dir", default=os.getcwd(), metavar="FOLDER",
                         help="Where temporary files go, default: current directory")
+    output.add_argument("--no-cache", action="store_true", help="Don't use cached step results (podcast.cache)")
     logs = run.add_argument_group("logging")
     logs.add_argument("--verbose", action="store_true", help="Debug logging")
     logs.add_argument("--log-file", metavar="FILE", help="Also write the log to this file")

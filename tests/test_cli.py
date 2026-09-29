@@ -12,7 +12,9 @@ def test_run_help_stays_short(capsys):
     assert "--transcriber" in out
     # backend options are not flags, they are listed by `MAT backends show`
     assert "beam-size" not in out
-    assert len(out.splitlines()) < 80
+    # one flag per pipeline slot, which grew with entities, events and chapter summaries. Hundreds of lines would
+    # mean backend options leaked in again
+    assert len(out.splitlines()) < 100
 
 
 def test_bench_help_and_datasets(capsys):

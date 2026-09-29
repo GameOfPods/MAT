@@ -153,6 +153,8 @@ def system_config(system: SystemSettings, base_dir: Path) -> Config:
     if podcast.get("summarizer", "none") != "none":
         _LOGGER.warning(f"System {system.name}: summaries don't run in benchmarks, ignoring the summarizer")
     config.set("podcast", "summarizer", "none")
+    # a benchmark measures the steps, a cached transcription would make them look instant
+    config.set("podcast", "cache", None)
     if "identifier" not in podcast:
         config.set("podcast", "identifier", "none")
     try:

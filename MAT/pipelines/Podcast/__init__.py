@@ -24,6 +24,7 @@ from MAT.tools import (
     AudioEvent, EventInput,
 )
 from MAT.utils.config import Config, ConfigError, Options
+from MAT.utils.step_cache import DEFAULT_FOLDER as DEFAULT_CACHE
 from MAT.utils.diarization import (
     align_diarization_with_transcription, assign_speakers, squish_word_speaker, word_speaker_to_transcript
 )
@@ -208,6 +209,10 @@ class PodcastOptions(Options):
     events: str = Field("none", description='Sound events: "audioset" for music, laughter and applause, "clap" for '
                                             'labels you describe in words (jingle, intro music). "none" skips it.')
     summarizer: str = Field("llm", description='Summary backend. "none" skips the summary.')
+    cache: Optional[str] = Field(DEFAULT_CACHE, description="Folder for the results of transcription, "
+                                                                   "diarization and sound events, so running an "
+                                                                   "episode again starts after them. Empty or "
+                                                                   "`MAT run --no-cache` turns it off.")
 
 
 class PodcastPipeline(Pipeline):
@@ -265,6 +270,18 @@ class PodcastPipeline(Pipeline):
         import pydub
         used = {}
 
+        def cached(step_input: PipelineStepInput, step: str, backend, compute, **extra):
+            """compute() unless the cache has this step for this file, backend and options already."""
+            from MAT.utils.step_cache import StepCache
+
+            cache = StepCache(step_input.config.options(self).cache)
+            key = StepCache.key(backend, step_input.config, **extra) if cache.enabled else {}
+            value = cache.get(step_input.file, step, key)
+            if value is None:
+                value = compute()
+                cache.put(step_input.file, step, key, value)
+            return value
+
         def audio_path(step_input: PipelineStepInput) -> str:
             """The 16 kHz mono wav the audio step wrote, the input file if it didn't run."""
             return (step_input.data("Audio") or {}).get("path") or step_input.file
@@ -291,8 +308,10 @@ class PodcastPipeline(Pipeline):
             transcriber = self.backend("transcriber", step_input.config)
             used["transcriber"] = transcriber
             vocabulary = load_vocabulary(step_input.config.options(self).vocabulary)
-            d = transcriber.process(origin_data=TranscriptionInput(audio_path(step_input), vocabulary=vocabulary),
-                                    config=step_input.config)
+            d = cached(step_input, "transcription", transcriber, vocabulary=vocabulary,
+                       compute=lambda: transcriber.process(
+                           origin_data=TranscriptionInput(audio_path(step_input), vocabulary=vocabulary),
+                           config=step_input.config))
             return PipelineStepResult(name="Transcription", data=d)
 
         def diarize(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -301,7 +320,9 @@ class PodcastPipeline(Pipeline):
                 transcription = step_input.data("Transcription")
                 return PipelineStepResult(name="Diarization", data=getattr(transcription, "diarization", None))
             diarizer = self.backend("diarizer", step_input.config)
-            d = diarizer.process(origin_data=DiarizerInput(in_file=audio_path(step_input)), config=step_input.config)
+            d = cached(step_input, "diarization", diarizer,
+                       compute=lambda: diarizer.process(origin_data=DiarizerInput(in_file=audio_path(step_input)),
+                                                        config=step_input.config))
             return PipelineStepResult(name="Diarization", data=d)
 
         def speaker_matching(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -515,8 +536,9 @@ class PodcastPipeline(Pipeline):
             tagger = self.backend("events", step_input.config)
             if tagger is None:
                 return PipelineStepResult(name="Audio events", data=None)
-            result = tagger.process(origin_data=EventInput(step_input.file), config=step_input.config)
-            return PipelineStepResult(name="Audio events", data=None if result is None else result.events)
+            events = cached(step_input, "events", tagger, compute=lambda: getattr(
+                tagger.process(origin_data=EventInput(step_input.file), config=step_input.config), "events", None))
+            return PipelineStepResult(name="Audio events", data=events)
 
         def media_infos(step_input: PipelineStepInput) -> PipelineStepResult:
             transcription: TranscriptionResult = step_input.data("Transcription")
