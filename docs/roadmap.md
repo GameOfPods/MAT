@@ -275,9 +275,9 @@ Drop whatever stage 4 already solved.
 - [x] Speaker matching ran even when it couldn't match anything. With the default `identifier = pyannote` and no gold labels it decoded the whole file and concatenated every segment per speaker, and the identifier then returned None without looking at the audio: 2:35 of a 30:30 run on a 3 hour episode. Identifiers now answer `can_match(config)` (pyannote: are there gold labels), the pipeline skips the step when they can't and leaves the identifier out of the models in the result.
 - [ ] Cache step results per input file (keyed by file hash plus the options of the step) in the work directory or a cache folder, so a re-run after a failed summary doesn't transcribe and diarize the whole episode again. `MAT/utils` already has an unused `get_hash_pipeline`.
 - [ ] `PodcastPipeline.accept` decodes the whole file just to check the type. Use a probe instead.
-- [ ] Word/speaker alignment is O(words x segments). Use a sweep over sorted segments.
+- [x] Word/speaker alignment is O(words x segments). Use a sweep over sorted segments. Done with the new word assignment in stage 7 (bisect per speaker, 43 ms instead of 4.6 s on a 3 hour episode). `word-speakers = "overlap"` keeps the old slow way.
 - [ ] Models are loaded again for every file. Keep them between files when memory allows.
-- [ ] `import MAT` pulls in torch and all tools, so even `MAT --help` is slow. Import heavy libraries lazily.
+- [x] `import MAT` pulls in torch and all tools, so even `MAT --help` is slow. Import heavy libraries lazily. Done: two type hints imported torch at startup. `MAT --help` 1.9 s -> 0.4 s on the dev machine, a test keeps torch out of `import MAT.cli`.
 
 ## Stage 10: robustness and cleanup
 

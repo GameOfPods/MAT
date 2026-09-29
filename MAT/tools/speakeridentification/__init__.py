@@ -8,12 +8,16 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
-from torch import Tensor
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Optional, Tuple, Union
+
 import numpy as np
 import pydub
+
+if TYPE_CHECKING:  # torch is only needed once a model runs, importing it here slowed down `MAT --help`
+    from torch import Tensor
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config

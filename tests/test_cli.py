@@ -105,3 +105,13 @@ def test_config_show_merges_file_and_set(tmp_path, capsys):
 def test_config_show_reports_typos(capsys):
     assert main(["config", "show", "--set", "whisper.beam-sise=3"]) == 2
     assert "beam-sise" in capsys.readouterr().err
+
+
+def test_the_cli_starts_without_torch():
+    """MAT --help used to take 2 s because a type hint imported torch."""
+    import subprocess
+    import sys
+
+    code = "import sys, MAT.cli; print('torch' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "False"

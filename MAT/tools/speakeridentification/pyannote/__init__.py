@@ -8,15 +8,19 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
+from __future__ import annotations
+
 import logging
 import os
 from contextlib import contextmanager
-from typing import Dict, Any, Tuple, List, Union, Optional
+from typing import TYPE_CHECKING, Dict, Any, Tuple, List, Union, Optional
 
 import numpy as np
 import pydub
+
+if TYPE_CHECKING:  # torch is only needed once a model runs, importing it here slowed down `MAT --help`
+    from torch import Tensor
 from pydantic import Field, field_validator
-from torch import Tensor
 
 from MAT.registry import register, require
 
