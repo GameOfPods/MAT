@@ -50,6 +50,11 @@ When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, .
 - CLI: `MAT/cli.py` with `run`, `backends [show NAME]`, `config init|show`. Backend options are never argparse flags
   (keeps `run -h` short), only the slot flags (`--transcriber` ...) are. `main()` returns an exit code.
   Logs go to stderr, stdout is for command output.
+- Podcast steps start with `prepare_audio`: the file is decoded once into a 16 kHz mono wav in the work directory,
+  backends get that path and in-process steps the kept `AudioSegment`. Transcription, diarization and sound events go
+  through the step cache (`MAT/utils/step_cache.py`, `podcast.cache`, off in benchmarks, smoke tests and unit tests).
+  A step that isn't in the pipeline's `required_steps` may fail: it's logged, left out and listed in
+  `meta.json` `failed_steps`.
 - Pipelines: `MAT/pipelines`. `Pipeline.backend(slot, config)` creates the chosen backend and records `describe()`
   (backend, model, package versions) in `pipeline.models`, which ends up in the result. Steps are closures
   `PipelineStepInput -> PipelineStepResult(name, data)` and read earlier results with `step_input.data(name)`.
