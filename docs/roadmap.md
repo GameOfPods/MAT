@@ -260,6 +260,11 @@ Transcript quality (seen on the first real German episode):
 - [x] Chapter summaries with the same LLM settings as podcasts Done: `--chapter-summarizer llm`, one summary per chapter in `chapters[].summary`, with prompts for books (`CHAPTER_PROMPTS`) that forbid anything from later chapters or outside knowledge. Not tried on a real book with a real LLM yet.
 - [x] Try coreference resolution for characters in German and English. Keep it only if the results are usable. Tried coreferee 1.5 (2026-09, supports spaCy 3.8, English and German, installed in a throwaway environment) on a five sentence Davos/Stannis passage: in English it linked Davos with "her" and Stannis with "woman", in German Stannis with "Frau", and missed "the king" = Stannis in both. Wrong links are worse than none for a character list, so it's not in. maverick-coref-de (KONVENS 2025) is German only research code without a clear license. If this comes back, it's as an LLM job next to the chapter summaries.
 
+## After stage 8: proposals
+
+- [ ] Nicknames, ambiguous short names and coreference for character counts: [proposal](proposals/character-aliases-and-coreference.md). Alias file, pattern candidates, an LLM that judges candidate pairs with evidence, and a coreference experiment where two systems have to agree.
+- [ ] NLP tools research (sentences with SaT, GLiNER2 multi for German, keywords, episode chapters, structured LLM output): [proposal](proposals/nlp-tools-2026.md).
+
 ## Stage 9: speed
 
 Drop whatever stage 4 already solved.
