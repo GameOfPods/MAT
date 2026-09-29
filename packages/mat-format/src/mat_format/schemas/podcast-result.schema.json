@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/podcast-result.schema.json",
-  "$comment": "MAT result format 2.5.0, describes podcast/result.json. Generated from mat_format/models.py, don't edit by hand.",
-  "version": "2.5.0",
+  "$comment": "MAT result format 2.6.0, describes podcast/result.json. Generated from mat_format/models.py, don't edit by hand.",
+  "version": "2.6.0",
   "$defs": {
     "Event": {
       "description": "A sound event like music or laughter (MAT 0.3 with podcast.events, empty otherwise).",
@@ -261,6 +261,66 @@
       "title": "TranscriptEntity",
       "type": "object"
     },
+    "TranscriptSentence": {
+      "description": "A sentence of the transcript. Sentences never go across a change of speaker.",
+      "properties": {
+        "start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds from the start of the audio file.",
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds from the start of the audio file.",
+          "title": "End"
+        },
+        "speakers": {
+          "description": "Speaker ids, as in speakers[].id.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Speakers",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "first_word": {
+          "description": "Index of its first word in words.",
+          "title": "First Word",
+          "type": "integer"
+        },
+        "last_word": {
+          "description": "Index of its last word in words (inclusive).",
+          "title": "Last Word",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "first_word",
+        "last_word"
+      ],
+      "title": "TranscriptSentence",
+      "type": "object"
+    },
     "Word": {
       "description": "A word or, in segments, several words of the same speakers merged into one line.",
       "properties": {
@@ -412,6 +472,14 @@
         "$ref": "#/$defs/TranscriptEntity"
       },
       "title": "Entities",
+      "type": "array"
+    },
+    "sentences": {
+      "description": "The transcript in sentences. Empty when splitting didn't run (since 2.6).",
+      "items": {
+        "$ref": "#/$defs/TranscriptSentence"
+      },
+      "title": "Sentences",
       "type": "array"
     }
   },

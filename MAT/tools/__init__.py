@@ -85,11 +85,15 @@ from MAT.tools.speakernaming import __all__ as speakernaming_all
 from MAT.tools.events import *
 from MAT.tools.events import __all__ as events_all
 
+from MAT.tools.sentences import *
+from MAT.tools.sentences import __all__ as sentences_all
+
 __all__ = ["Tool", "ToolInput", "ToolResult"]
 __all__ += ner_all + summary_all + diarizators_all + speakeridentification_all + transcription_all + splitter_all
-__all__ += speakernaming_all + events_all
+__all__ += speakernaming_all + events_all + sentences_all
 del speakernaming_all
 del events_all
+del sentences_all
 
 del ner_all
 del summary_all

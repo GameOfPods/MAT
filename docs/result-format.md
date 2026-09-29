@@ -1,6 +1,6 @@
 # MAT result format
 
-This describes what MAT writes, so other programs can read it without MAT. The current version is **format 2**, in its minor version **2.5** (see the [changelog](#changelog)).
+This describes what MAT writes, so other programs can read it without MAT. The current version is **format 2**, in its minor version **2.6** (see the [changelog](#changelog)).
 
 Machine readable definitions (JSON Schema, draft 2020-12):
 
@@ -83,6 +83,7 @@ episode_2026-09-15_20-15-02/        or episode_2026-09-15_20-15-02.zip
 | `summary` | string or null | Markdown. Null if the summary was skipped or failed. |
 | `events` | list | Sound events (`label`, `start`, `end`, `score`), times in seconds. Empty unless `podcast.events` is set. |
 | `entities` | list | Named entities in the transcript (`label`, `text`, `start`, `end`, `speakers`), times in seconds. Empty unless `podcast.ner` is set. `PodcastResult.entity_counts()` in mat-format sums them up per label. |
+| `sentences` | list | The transcript in sentences (`start`, `end`, `speakers`, `text`, `first_word`, `last_word`, the last two are indexes into `words`). A sentence never crosses a change of speaker. Empty when splitting didn't run. Since 2.6 |
 
 A **speaker** is `{"id": "alice", "name": "Alice", "library_id": "alice-9f2c1a", "segments": [{"start": 6.72, "end": 7.28}, ...]}`. The id is the gold label name when the speaker was matched, otherwise the diarizer label like `sprecher_0`. Segments are sorted by start.
 
@@ -152,4 +153,5 @@ Minor versions of format 2, each only adds fields:
 | 2.3 | book `characters`, `chapters[].summary` |
 | 2.4 | `meta.failed_steps` |
 | 2.5 | `meta.format_version`, the version in every schema file |
+| 2.6 | podcast `sentences` |
 - **Format 1** (MAT 0.2.0 and older): `0.PodcastOutput/` style folders with several JSON files, undocumented, not readable anymore.

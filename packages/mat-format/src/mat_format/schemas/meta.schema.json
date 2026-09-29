@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/meta.schema.json",
-  "$comment": "MAT result format 2.5.0, describes meta.json. Generated from mat_format/models.py, don't edit by hand.",
-  "version": "2.5.0",
+  "$comment": "MAT result format 2.6.0, describes meta.json. Generated from mat_format/models.py, don't edit by hand.",
+  "version": "2.6.0",
   "$defs": {
     "FailedStep": {
       "description": "A step that failed, so its part of the result is missing.",

@@ -57,3 +57,42 @@ def test_entity_counts_sum_up_per_label():
         TranscriptEntity(label="PERSON", text="Stannis"), TranscriptEntity(label="PERSON", text="stannis"),
         TranscriptEntity(label="LOCATION", text="Drachenstein"), TranscriptEntity(label="PERSON", text="Davos")])
     assert result.entity_counts() == {"PERSON": {"Stannis": 2, "Davos": 1}, "LOCATION": {"Drachenstein": 1}}
+
+
+class FakeSplitter:
+    """Splits after every word that ends with a full stop, like a sentence model would."""
+
+    def __init__(self):
+        self.seen = []
+
+    def process(self, origin_data, config):
+        import re
+
+        from MAT.tools.sentences import SentenceResult
+
+        self.seen = origin_data.texts
+        return SentenceResult([re.findall(r".*?\.\s*|.+$", text) for text in origin_data.texts])
+
+
+def test_sentences_follow_the_words_and_never_cross_speakers():
+    from MAT.pipelines.Podcast import split_sentences
+
+    words = _words("alex", "Hallo zusammen. Heute geht es um Davos.", 0.0) + _words("max", "Schön. Ja", 20.0)
+    splitter = FakeSplitter()
+    sentences = split_sentences(words, splitter, Config({}), language="de")
+    assert splitter.seen == ["Hallo zusammen. Heute geht es um Davos.", "Schön. Ja"]
+    assert [(s["text"], s["speakers"], s["first_word"], s["last_word"]) for s in sentences] == [
+        ("Hallo zusammen.", ["alex"], 0, 1), ("Heute geht es um Davos.", ["alex"], 2, 6),
+        ("Schön.", ["max"], 7, 7), ("Ja", ["max"], 8, 8)]
+    assert (sentences[1]["start"], sentences[1]["end"]) == (2.0, 6.5)
+
+
+def test_entities_run_per_sentence_when_there_are_sentences():
+    from MAT.pipelines.Podcast import split_sentences
+
+    words = _words("alex", "Hallo zusammen. Heute geht es um Stannis Baratheon.", 0.0)
+    sentences = split_sentences(words, FakeSplitter(), Config({}))
+    ner = FakeNER(["Stannis Baratheon"])
+    entities = transcript_entities(words, ner, Config({}), sentences=sentences)
+    assert ner.texts == ["Hallo zusammen.", "Heute geht es um Stannis Baratheon."]
+    assert [(e["text"], e["start"], e["end"]) for e in entities] == [("Stannis Baratheon", 6.0, 7.5)]

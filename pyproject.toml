@@ -20,7 +20,6 @@ requires-python = ">=3.12,<3.14"
 # Only what MAT itself needs. Backends come as extras, see [project.optional-dependencies].
 dependencies = [
     "beautifulsoup4",
-    "deepmultilingualpunctuation",
     "ebooklib",
     "huggingface-hub",
     "langdetect>=1.0.9",
@@ -87,7 +86,9 @@ gliner = ["gliner", "gliner2[local]>=2"]
 bench = ["jiwer>=4", "pyannote-metrics>=4"]
 # audio events: AudioSet tagging (AST) and CLAP, both through transformers
 events = ["transformers>=4.40"]
-all = ["mat[whisper,sortformer,parakeet,pyannote,llm,spacy,gliner,bench,events]"]
+# sentences of a transcript with SaT (Segment any Text), works without punctuation
+sentences = ["wtpsplit>=2.2"]
+all = ["mat[whisper,sortformer,parakeet,pyannote,llm,spacy,gliner,bench,events,sentences]"]
 
 [dependency-groups]
 dev = [

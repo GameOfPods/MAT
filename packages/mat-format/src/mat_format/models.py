@@ -129,6 +129,17 @@ class TranscriptEntity(_Model):
     speakers: List[str] = Field(default_factory=list, description="Speaker ids that said it.")
 
 
+class TranscriptSentence(_Model):
+    """A sentence of the transcript. Sentences never go across a change of speaker."""
+
+    start: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    end: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    speakers: List[str] = Field(default_factory=list, description="Speaker ids, as in speakers[].id.")
+    text: str
+    first_word: int = Field(description="Index of its first word in words.")
+    last_word: int = Field(description="Index of its last word in words (inclusive).")
+
+
 class PodcastResult(_Model):
     """Content of podcast/result.json."""
 
@@ -146,6 +157,9 @@ class PodcastResult(_Model):
     summary: Optional[str] = Field(description="Summary as Markdown, null if the summary was skipped or failed.")
     events: List[Event]
     entities: List[TranscriptEntity]
+    sentences: List[TranscriptSentence] = Field(default_factory=list, description="The transcript in sentences. "
+                                                                                  "Empty when splitting didn't run "
+                                                                                  "(since 2.6).")
 
     @property
     def speaker_ids(self) -> Set[str]:
@@ -223,4 +237,4 @@ class BookResult(_Model):
 
 
 __all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "FailedStep", "TimeRange", "Speaker", "Word", "Media", "Event",
-           "TranscriptEntity", "PodcastResult", "TextEntity", "Sentence", "Chapter", "Character", "BookResult"]
+           "TranscriptEntity", "TranscriptSentence", "PodcastResult", "TextEntity", "Sentence", "Chapter", "Character", "BookResult"]

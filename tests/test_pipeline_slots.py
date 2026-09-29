@@ -43,7 +43,8 @@ def audio(tmp_path):
 
 
 def _config(tmp_path, **podcast):
-    values = {"transcriber": "test-joint", "diarizer": "test-never", "identifier": "none", "summarizer": "test-echo"}
+    values = {"transcriber": "test-joint", "diarizer": "test-never", "identifier": "none", "summarizer": "test-echo",
+              "sentences": "none"}
     values.update(podcast)
     config = Config({"podcast": values}, work_directory=str(tmp_path / "work"))
     config.validate()

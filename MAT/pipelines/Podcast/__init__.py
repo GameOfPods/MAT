@@ -59,6 +59,8 @@ class PodcastOutput(PipelineResult):
     speaker_library: Dict[str, Dict[str, str]] = field(default_factory=dict)
     # {"label", "text", "start", "end", "speakers"} per named entity in the transcript
     entities: List[Dict[str, Any]] = field(default_factory=list)
+    # {"start", "end", "speakers", "text", "first_word", "last_word"} per sentence
+    sentences: List[Dict[str, Any]] = field(default_factory=list)
     # sound events like music or laughter
     events: List[AudioEvent] = field(default_factory=list)
 
@@ -93,35 +95,84 @@ def load_vocabulary(value: Union[None, str, Sequence[str]]) -> List[str]:
     return [str(word).strip() for word in value if str(word).strip()]
 
 
-def transcript_entities(words: List[WordTupleSpeaker], ner, config: Config,
-                        max_words: int = 150) -> List[Dict[str, Any]]:
-    """Named entities of a transcript with times and speakers. Runs NER on the lines of the transcript (cut into
-    pieces of at most max_words, the models read about 400 tokens) and maps the character spans back to words."""
+Spans = List[Tuple[int, int, int]]  # (start, end) in the text and the index of the word
+
+
+def words_as_text(words: Sequence[WordTupleSpeaker], indexes: Sequence[int]) -> Tuple[str, Spans]:
+    """The words joined with single spaces, and where each of them is in that text."""
+    text, spans = "", []
+    for index in indexes:
+        token = (words[index].word.word or "").strip()
+        if not token:
+            continue
+        if text:
+            text += " "
+        spans.append((len(text), len(text) + len(token), index))
+        text += token
+    return text, spans
+
+
+def speaker_turns(words: Sequence[WordTupleSpeaker]) -> List[List[int]]:
+    """Indexes of the words, grouped into runs of the same speaker."""
+    turns: List[List[int]] = []
+    for index, word in enumerate(words):
+        if turns and word.speaker == words[turns[-1][-1]].speaker:
+            turns[-1].append(index)
+        else:
+            turns.append([index])
+    return turns
+
+
+def split_sentences(words: Sequence[WordTupleSpeaker], splitter, config: Config,
+                    language: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Sentences of a transcript, never across a change of speaker: {"start", "end", "speakers", "text",
+    "first_word", "last_word"}, the last two are indexes into the words."""
+    from MAT.tools.sentences import SentenceInput
+
+    turns = [words_as_text(words, turn) for turn in speaker_turns(words)]
+    turns = [(text, spans) for text, spans in turns if text]
+    if not turns:
+        return []
+    result = splitter.process(origin_data=SentenceInput([text for text, _ in turns], language=language),
+                              config=config)
+    sentences = []
+    for (text, spans), pieces in zip(turns, result.sentences):
+        offset = 0
+        for piece in pieces:
+            begin, finish = offset, offset + len(piece)
+            offset = finish
+            covered = [index for a, b, index in spans if a < finish and b > begin]
+            if not covered or not piece.strip():
+                continue
+            # a word split by the model counts for the sentence it starts in
+            covered = [index for index in covered if not sentences or index > sentences[-1]["last_word"]]
+            if not covered:
+                continue
+            starts = [words[i].word.start for i in covered if words[i].word.start is not None]
+            ends = [words[i].word.end for i in covered if words[i].word.end is not None]
+            sentences.append({"start": min(starts) if starts else None, "end": max(ends) if ends else None,
+                              "speakers": sorted(words[covered[0]].speaker), "text": piece.strip(),
+                              "first_word": covered[0], "last_word": covered[-1]})
+    return sentences
+
+
+def transcript_entities(words: List[WordTupleSpeaker], ner, config: Config, max_words: int = 150,
+                        sentences: Optional[Sequence[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Named entities of a transcript with times and speakers. Runs NER per sentence when there are sentences,
+    else per speaker turn, in pieces of at most max_words (the models read about 400 tokens), and maps the character
+    spans back to words."""
     from MAT.tools.ner import NERInput
 
-    pieces: List[Tuple[str, List[Tuple[int, int, WordTupleSpeaker]]]] = []
-    run: List[WordTupleSpeaker] = []
-
-    def close(run_words: List[WordTupleSpeaker]):
-        for first in range(0, len(run_words), max_words):
-            text, spans = "", []
-            for word in run_words[first:first + max_words]:
-                token = (word.word.word or "").strip()
-                if not token:
-                    continue
-                if text:
-                    text += " "
-                spans.append((len(text), len(text) + len(token), word))
-                text += token
+    if sentences:
+        groups = [list(range(s["first_word"], s["last_word"] + 1)) for s in sentences]
+    else:
+        groups = speaker_turns(words)
+    pieces = []
+    for group in groups:
+        for first in range(0, len(group), max_words):
+            text, spans = words_as_text(words, group[first:first + max_words])
             if text:
                 pieces.append((text, spans))
-
-    for word in words:
-        if run and word.speaker != run[-1].speaker:
-            close(run)
-            run = []
-        run.append(word)
-    close(run)
     if not pieces:
         return []
 
@@ -130,7 +181,7 @@ def transcript_entities(words: List[WordTupleSpeaker], ner, config: Config,
     for (text, spans), found in zip(pieces, result.ner):
         for label, hits in found.items():
             for entity_text, start, end in hits:
-                covered = [word for a, b, word in spans if a < end and b > start]
+                covered = [words[index] for a, b, index in spans if a < end and b > start]
                 if not covered:
                     continue
                 starts = [w.word.start for w in covered if w.word.start is not None]
@@ -204,6 +255,8 @@ class PodcastOptions(Options):
     speaker_library_learns: Literal["gold", "all", "never"] = Field(
         "gold", description='What the library learns: "gold" only names that came from gold label clips, "all" also '
                             'names the transcript gave us, "never" only reads and writes nothing.')
+    sentences: str = Field("sat", description='Splits the transcript into sentences, which named entities use '
+                                               'too. "none" skips it.')
     entities: str = Field("none", description='Named entities in the transcript (people, places, ...) with speaker '
                                               'and time. "gliner" turns it on, the labels are gliner.labels.')
     events: str = Field("none", description='Sound events: "audioset" for music, laughter and applause, "clap" for '
@@ -220,7 +273,7 @@ class PodcastPipeline(Pipeline):
     description = "Transcript, speakers and summary for audio files (anything ffmpeg can decode)."
     Options = PodcastOptions
     slots = {"transcriber": Slot(), "diarizer": Slot(), "identifier": Slot(optional=True),
-             "namer": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
+             "namer": Slot(optional=True), "sentences": Slot(optional=True), "entities": Slot(optional=True, kind="ner"),
              "events": Slot(optional=True), "summarizer": Slot(optional=True)}
     required_steps = {"prepare_audio", "transcribe"}
 
@@ -521,6 +574,17 @@ class PodcastPipeline(Pipeline):
                 summary = None
             return PipelineStepResult(name="Summarize transcript", data=summary)
 
+        def find_sentences(step_input: PipelineStepInput) -> PipelineStepResult:
+            state = _speaker_state(step_input.data)
+            if state is None or not state["word_speaker"]:
+                return PipelineStepResult(name="Sentences", data=None)
+            splitter = self.backend("sentences", step_input.config)
+            if splitter is None:
+                return PipelineStepResult(name="Sentences", data=None)
+            language = getattr(step_input.data("Transcription"), "language", None)
+            return PipelineStepResult(name="Sentences", data=split_sentences(
+                state["word_speaker"], splitter, step_input.config, language=language))
+
         def find_entities(step_input: PipelineStepInput) -> PipelineStepResult:
             state = _speaker_state(step_input.data)
             if state is None or not state["word_speaker"]:
@@ -528,7 +592,8 @@ class PodcastPipeline(Pipeline):
             ner = self.backend("entities", step_input.config)
             if ner is None:
                 return PipelineStepResult(name="Entities", data=None)
-            entities = transcript_entities(state["word_speaker"], ner, step_input.config)
+            entities = transcript_entities(state["word_speaker"], ner, step_input.config,
+                                           sentences=step_input.data("Sentences"))
             self.__class__._LOGGER.info(f"Found {len(entities)} entities, "
                                         f"{len({(e['label'], e['text'].casefold()) for e in entities})} different")
             return PipelineStepResult(name="Entities", data=entities)
@@ -561,7 +626,7 @@ class PodcastPipeline(Pipeline):
             )
 
         return [prepare_audio, transcribe, diarize, speaker_matching, creating_speaker_transcript, speaker_library,
-                name_speakers, find_entities, find_events, summarize_transcript, media_infos]
+                name_speakers, find_sentences, find_entities, find_events, summarize_transcript, media_infos]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> PodcastOutput:
 
@@ -595,6 +660,7 @@ class PodcastPipeline(Pipeline):
             speaker_library=library,
             entities=_try_get("Entities") or [],
             events=_try_get("Audio events") or [],
+            sentences=_try_get("Sentences") or [],
         )
 
 
