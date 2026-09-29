@@ -272,6 +272,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         logging.getLogger().addHandler(
             logging.FileHandler(args.log_file, mode="a" if args.log_file_append else "w", encoding="utf-8"))
 
+    from MAT.banner import print_banner, versions
+    from mat_format import __version__ as format_version
+
+    print_banner()
+    _LOGGER.info(f"MAT {__version__} starts, results are written in format {format_version}")
     config = _load_config(args)
     _selected_sections(config)  # warns about chosen backends that aren't installed
 
@@ -325,7 +330,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                         if not args.keep_uncompressed:
                             shutil.rmtree(written_folder)
                         written_folder = zipped_folder
-                    _LOGGER.info(f"Wrote {written_folder}")
+                    _LOGGER.info(f"Wrote {written_folder} (result format {format_version})")
                 except Exception as e:
                     failed += 1
                     _LOGGER.exception(f"Got error during execution for file {file}", exc_info=e)
@@ -336,7 +341,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     finally:
         shutil.rmtree(work_directory, ignore_errors=True)
     _LOGGER.info(f"Whole Process took {timedelta(seconds=perf_counter() - t_whole_start)} "
-                 f"for {len(input_files)} files, {failed} failed")
+                 f"for {len(input_files)} files, {failed} failed ({versions()})")
     return 1 if failed else 0
 
 

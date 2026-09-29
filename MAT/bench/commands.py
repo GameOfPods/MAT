@@ -93,6 +93,11 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
     from MAT.bench.runner import BenchFile, collect_rows, prepare, run_benchmark
 
+    if args.bench_command == "run":
+        from MAT.banner import print_banner
+
+        print_banner()
+
     if args.limit is not None and args.limit < -1:
         raise ConfigError("--limit has to be a positive number, or 0 or -1 for everything")
     if args.verbose:

@@ -117,3 +117,14 @@ def test_the_cli_starts_without_torch():
     code = "import sys, MAT.cli; print('torch' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert out.strip() == "False"
+
+
+def test_the_banner_names_both_versions():
+    import mat_format
+    import MAT
+    from MAT.banner import banner, versions
+
+    text = banner()
+    assert "|_|  |_/_/   \\_\\_|" in text
+    assert MAT.__version__ in text and mat_format.__version__ in text and "RedRem" in text
+    assert versions() == f"MAT {MAT.__version__}, result format {mat_format.__version__}"
