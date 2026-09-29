@@ -11,10 +11,16 @@
 #   MAT_TEST_OUT        folder for logs and results, has to be empty or not exist yet
 #   MAT_TEST_AUDIO      audio file for the complete run, empty skips it. Longer than 5 minutes also tests
 #                       diarization in pieces and speaker linking.
-#   HF_TOKEN            Hugging Face token with access to pyannote/embedding, empty uses a saved `hf auth login`
-#   OPENAI_API_KEY      API key for the summary, empty runs without a summary
-#   OPENAI_API_BASE     OpenAI compatible endpoint, empty uses the OpenAI API
-#   MAT_TEST_LLM_MODEL  model for the summary, empty uses MAT's default
+#   HF_TOKEN            Hugging Face token with access to pyannote community-1, empty uses a saved `hf auth login`
+#   MAT_TEST_LLM        LLM for summary and speaker naming in the complete run:
+#                         openai    OpenAI or any hosted OpenAI compatible API (DeepSeek, OpenRouter, ...)
+#                         llamacpp  a local OpenAI compatible server (llama.cpp, vLLM)
+#                         ollama    Ollama, on this machine or another one
+#                         none      no summary, no speaker naming
+#   OPENAI_API_KEY      openai/llamacpp: API key (llamacpp: any value if the server doesn't check it)
+#   OPENAI_API_BASE     openai: endpoint, empty uses the OpenAI API. llamacpp: needed, like http://host:8080/v1
+#   OLLAMA_HOST         ollama: where it listens, empty uses http://localhost:11434
+#   MAT_TEST_LLM_MODEL  model name at that service, empty uses MAT's default (openai only)
 #
 # The settings of a run (without tokens) end up in $MAT_TEST_OUT/full_test.env, `source` it to skip the questions.
 # Output of the tools goes to log files in $MAT_TEST_OUT/logs, the console only shows the steps and their results.
@@ -78,14 +84,36 @@ clean_path MAT_TEST_AUDIO
 [ -z "$MAT_TEST_AUDIO" ] || [ -f "$MAT_TEST_AUDIO" ] || die "MAT_TEST_AUDIO file not found: '$MAT_TEST_AUDIO'"
 
 ask HF_TOKEN "Hugging Face token, Enter uses a saved login" secret
-ask OPENAI_API_KEY "LLM API key, Enter runs without a summary" secret
-if [ -n "$OPENAI_API_KEY" ]; then
-  ask OPENAI_API_BASE "LLM endpoint, OpenAI compatible, Enter uses the OpenAI API"
-  ask MAT_TEST_LLM_MODEL "LLM model, Enter uses MAT's default"
-else
-  OPENAI_API_BASE=${OPENAI_API_BASE:-}
-  MAT_TEST_LLM_MODEL=${MAT_TEST_LLM_MODEL:-}
-fi
+ask MAT_TEST_LLM "LLM for summary and speaker naming: openai, llamacpp, ollama or none"
+case "$MAT_TEST_LLM" in
+  openai)
+    ask OPENAI_API_KEY "API key" secret
+    [ -n "$OPENAI_API_KEY" ] || die "MAT_TEST_LLM=openai needs OPENAI_API_KEY"
+    ask OPENAI_API_BASE "Endpoint, OpenAI compatible, Enter uses the OpenAI API"
+    ask MAT_TEST_LLM_MODEL "Model, Enter uses MAT's default"
+    OLLAMA_HOST=${OLLAMA_HOST:-}
+    ;;
+  llamacpp)
+    ask OPENAI_API_BASE "Endpoint of the server, like http://localhost:8080/v1"
+    [ -n "$OPENAI_API_BASE" ] || die "MAT_TEST_LLM=llamacpp needs OPENAI_API_BASE"
+    ask OPENAI_API_KEY "API key, Enter if the server doesn't check one" secret
+    # the OpenAI client wants a key even when the server ignores it
+    OPENAI_API_KEY=${OPENAI_API_KEY:-local}
+    ask MAT_TEST_LLM_MODEL "Model name as the server calls it"
+    OLLAMA_HOST=${OLLAMA_HOST:-}
+    ;;
+  ollama)
+    ask OLLAMA_HOST "Ollama address, Enter uses http://localhost:11434"
+    ask MAT_TEST_LLM_MODEL "Model, like qwen3:8b"
+    [ -n "$MAT_TEST_LLM_MODEL" ] || die "MAT_TEST_LLM=ollama needs MAT_TEST_LLM_MODEL"
+    OPENAI_API_KEY="" OPENAI_API_BASE=""
+    ;;
+  none | "")
+    MAT_TEST_LLM=none OPENAI_API_KEY="" OPENAI_API_BASE="" OLLAMA_HOST="" MAT_TEST_LLM_MODEL=""
+    ;;
+  *) die "MAT_TEST_LLM has to be openai, llamacpp, ollama or none, got '$MAT_TEST_LLM'" ;;
+esac
+MAT_TEST_LLM_MODEL=${MAT_TEST_LLM_MODEL:-}
 
 mkdir -p "$MAT_TEST_OUT/logs" || die "can't create $MAT_TEST_OUT"
 OUT=$(cd "$MAT_TEST_OUT" && pwd)
@@ -97,17 +125,12 @@ ENV_FILE=$OUT/full_test.env
   echo "# Settings of the MAT full test from $(date '+%F %H:%M'). Load them before the next run with:"
   echo "#   source $(printf '%q' "$ENV_FILE")"
   echo "# MAT_TEST_OUT has to be an empty folder, change it before the next run."
-  printf 'export %s=%q\n' MAT_TEST_DEVICE "$MAT_TEST_DEVICE" MAT_TEST_OUT "$OUT" MAT_TEST_AUDIO "$MAT_TEST_AUDIO"
-  if [ -n "$OPENAI_API_KEY" ]; then
-    printf 'export %s=%q\n' OPENAI_API_BASE "$OPENAI_API_BASE" MAT_TEST_LLM_MODEL "$MAT_TEST_LLM_MODEL"
-  else
-    echo "# This run had no summary. With an API key these two get asked for as well:"
-    echo "# export OPENAI_API_BASE="
-    echo "# export MAT_TEST_LLM_MODEL="
-  fi
+  printf 'export %s=%q\n' MAT_TEST_DEVICE "$MAT_TEST_DEVICE" MAT_TEST_OUT "$OUT" MAT_TEST_AUDIO "$MAT_TEST_AUDIO" \
+    MAT_TEST_LLM "$MAT_TEST_LLM" OPENAI_API_BASE "$OPENAI_API_BASE" OLLAMA_HOST "$OLLAMA_HOST" \
+    MAT_TEST_LLM_MODEL "$MAT_TEST_LLM_MODEL"
   echo "# Tokens aren't saved. Export them yourself, set them to \"\" to skip them, or leave them out to get asked:"
   echo "# export HF_TOKEN="
-  echo "# export OPENAI_API_KEY="
+  [ "$MAT_TEST_LLM" = openai ] || [ "$MAT_TEST_LLM" = llamacpp ] && echo "# export OPENAI_API_KEY="
 } > "$ENV_FILE"
 
 cd "$REPO" || exit 2
@@ -180,8 +203,10 @@ printf '    %-19s %s\n' \
   MAT_TEST_OUT "$OUT" \
   MAT_TEST_AUDIO "${MAT_TEST_AUDIO:-(empty, no complete run)}" \
   HF_TOKEN "$([ -n "$HF_TOKEN" ] && echo set || echo "empty, saved login: $([ -f "$HOME/.cache/huggingface/token" ] && echo yes || echo no)")" \
-  OPENAI_API_KEY "$([ -n "$OPENAI_API_KEY" ] && echo set || echo "empty, no summary")" \
+  MAT_TEST_LLM "$MAT_TEST_LLM" \
+  OPENAI_API_KEY "$([ -n "$OPENAI_API_KEY" ] && echo set || echo "(empty)")" \
   OPENAI_API_BASE "${OPENAI_API_BASE:-(empty)}" \
+  OLLAMA_HOST "${OLLAMA_HOST:-(empty)}" \
   MAT_TEST_LLM_MODEL "${MAT_TEST_LLM_MODEL:-(empty, MAT default)}"
 echo
 
@@ -243,18 +268,23 @@ if [ -n "$MAT_TEST_AUDIO" ]; then
   # entities and sound events are off by default, the full test turns them on to see them work
   ARGS=(run --yes --export-config -o "$OUT/run" -i "$(sed 's/[][*?]/[&]/g' <<< "$MAT_TEST_AUDIO")"
         --entities gliner --events audioset)
-  if [ -z "$OPENAI_API_KEY" ]; then
-    ARGS+=(--summarizer none)
-  elif [ -n "$MAT_TEST_LLM_MODEL" ]; then
-    ARGS+=(--set "llm.model=$MAT_TEST_LLM_MODEL")
-  fi
+  # speaker naming follows [llm], so one preset and model cover both
+  case "$MAT_TEST_LLM" in
+    none) ARGS+=(--summarizer none) ;;
+    *)
+      ARGS+=(--namer llm-names)
+      [ "$MAT_TEST_LLM" = openai ] || ARGS+=(--set "llm.preset=$MAT_TEST_LLM")
+      [ -z "$MAT_TEST_LLM_MODEL" ] || ARGS+=(--set "llm.model=$MAT_TEST_LLM_MODEL")
+      ;;
+  esac
   # the tokens only go into the environment of this one command
   run "complete run" run env \
     ${HF_TOKEN:+HF_TOKEN="$HF_TOKEN"} \
     ${OPENAI_API_KEY:+OPENAI_API_KEY="$OPENAI_API_KEY"} \
     ${OPENAI_API_BASE:+OPENAI_API_BASE="$OPENAI_API_BASE"} \
+    ${OLLAMA_HOST:+OLLAMA_HOST="$OLLAMA_HOST"} \
     uv run --no-sync MAT "${ARGS[@]}"
-  grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed|Found [0-9]+ (entities|events)" \
+  grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed|Found [0-9]+ (entities|events)|Using ollama|Speaker naming takes|is called|Named " \
     "$LOGS/run.log" | grep -E " - +[A-Z]+ +- " | sed -E 's/^.* - +[A-Z]+ +- [^:]*: //' | detail
 
   run "check result" check uv run --no-sync python -W ignore - "$OUT/run" <<'PY'
