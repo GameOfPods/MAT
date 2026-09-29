@@ -77,6 +77,22 @@ def check_llm_access(service: str, model: str, base_url: Optional[str], what: st
                           f"OPENAI_API_BASE). Set it, use a local model (--set llm.preset=ollama), or {skip}.")
 
 
+def structured_output(service: str, setting: str = "auto") -> str:
+    """How to make the model answer in JSON: "schema" (the server enforces a JSON schema), "json" (any JSON) or
+    "off". auto picks what the server is known to support: Ollama and the OpenAI API take a schema, DeepSeek only
+    JSON mode, other OpenAI compatible servers get nothing, some reject what they don't know."""
+    if setting != "auto":
+        return setting
+    if service == "Ollama":
+        return "schema"
+    base = (os.environ.get("OPENAI_API_BASE") or "").lower()
+    if not base or "api.openai.com" in base:
+        return "schema"
+    if "deepseek" in base:
+        return "json"
+    return "off"
+
+
 def ollama_url(base_url: Optional[str] = None) -> str:
     """Where Ollama listens: the option, then $OLLAMA_HOST, then the default. A bare host:port gets a scheme."""
     url = (base_url or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").strip().rstrip("/")
@@ -89,7 +105,10 @@ class LLM(Enum):
 
     def get_llm(self, model: str, max_tokens: int, temperature: float = None, reasoning_effort: Optional[str] = None,
                 extra_body: Optional[dict] = None, first_token_timeout: float = 900.0, idle_timeout: float = 120.0,
-                max_retries: int = 2, base_url: Optional[str] = None, num_ctx: Optional[int] = None):
+                max_retries: int = 2, base_url: Optional[str] = None, num_ctx: Optional[int] = None,
+                schema: Optional[dict] = None, structured: str = "off"):
+        """structured is what structured_output() decided: "schema" makes the server stick to the JSON schema,
+        "json" only asks for any JSON, "off" leaves the answer free (the caller parses it either way)."""
         from MAT.tools.summary.llm.robust import StreamingChatModel
 
         if self == self.Ollama:
@@ -110,6 +129,10 @@ class LLM(Enum):
             thinking = REASONING_TO_THINKING.get(reasoning_effort)
             if thinking is not None:
                 kwargs["reasoning"] = thinking
+            if structured == "schema" and schema:
+                kwargs["format"] = schema
+            elif structured in ("schema", "json"):
+                kwargs["format"] = "json"
             logging.getLogger("LLM-Service").info(f"Using ollama at {kwargs['base_url']}"
                                                   + (f" with a context of {num_ctx} tokens" if num_ctx else ""))
 
@@ -138,6 +161,11 @@ class LLM(Enum):
                 kwargs["reasoning_effort"] = reasoning_effort
             if extra_body:
                 kwargs["extra_body"] = extra_body
+            if structured == "schema" and schema:
+                kwargs["model_kwargs"] = {"response_format": {
+                    "type": "json_schema", "json_schema": {"name": "answer", "schema": schema, "strict": True}}}
+            elif structured in ("schema", "json"):
+                kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
 
             def factory(http_async_client):
                 return ChatOpenAI(http_async_client=http_async_client, **kwargs)

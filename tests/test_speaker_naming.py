@@ -197,3 +197,43 @@ def test_a_library_name_beats_the_llm_and_the_mismatch_is_logged(tmp_path, caplo
     _, result = _name_step([SpeakerName(speaker="alex", name="Chris", evidence="danke chris")], library=state)
     assert result.data is None
     assert "speaker library" in caplog.text and "Chris" in caplog.text
+
+
+def test_a_quote_has_to_be_in_what_the_model_saw():
+    from MAT.tools.speakernaming.llm import quoted_in
+
+    text = "sprecher_1 [12.3 - 13.0]: Danke, Alex! Schön, dass du da bist.\nsprecher_0 [14.0 - 15.0]: Gerne."
+    assert quoted_in("sprecher_1 [12.3 - 13.0]: danke alex", text)
+    assert quoted_in("Danke, Alex -- Gerne", text)
+    assert not quoted_in("Danke, Max", text)
+    answer = json.dumps({"speakers": [{"id": "sprecher_1", "name": "Max", "confidence": "high",
+                                       "evidence": "sprecher_0: Hallo Max"}]})
+    assert SpeakerNamingLLM._parse(answer, known=["sprecher_0", "sprecher_1"], lines=text) == []
+
+
+@pytest.mark.parametrize("base, expected", [
+    ("", "schema"), ("https://api.openai.com/v1", "schema"), ("https://api.deepseek.com", "json"),
+    ("http://localhost:8080/v1", "off")])
+def test_structured_output_follows_the_server(monkeypatch, base, expected):
+    from MAT.tools.summary.llm import structured_output
+
+    monkeypatch.setenv("OPENAI_API_BASE", base)
+    assert structured_output("OpenAI") == expected
+    assert structured_output("Ollama") == "schema"
+    assert structured_output("OpenAI", "off") == "off"
+
+
+def test_the_schema_reaches_the_client(monkeypatch):
+    import langchain_ollama
+    import langchain_openai
+
+    from MAT.tools.speakernaming.llm import ANSWER_SCHEMA
+    from MAT.tools.summary.llm import LLM
+
+    seen = {}
+    monkeypatch.setattr(langchain_ollama, "ChatOllama", lambda **kwargs: seen.setdefault("ollama", kwargs))
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", lambda **kwargs: seen.setdefault("openai", kwargs))
+    LLM.Ollama.get_llm(model="m", max_tokens=10, schema=ANSWER_SCHEMA, structured="schema").factory(None)
+    LLM.OpenAI.get_llm(model="m", max_tokens=10, schema=ANSWER_SCHEMA, structured="json").factory(None)
+    assert seen["ollama"]["format"] == ANSWER_SCHEMA
+    assert seen["openai"]["model_kwargs"] == {"response_format": {"type": "json_object"}}

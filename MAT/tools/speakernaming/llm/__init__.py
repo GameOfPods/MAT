@@ -33,6 +33,37 @@ from MAT.utils.config import Config, Options  # noqa: E402
 
 # A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
 # underscores, so a model that echoes "sprecher_0" back at us doesn't get through.
+# what the model has to answer, for servers that can enforce it (see structured_output)
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {"speakers": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "name": {"type": "string"},
+                       "confidence": {"type": "string", "enum": ["high", "low"]}, "evidence": {"type": "string"}},
+        "required": ["id", "name", "confidence", "evidence"], "additionalProperties": False}}},
+    "required": ["speakers"], "additionalProperties": False,
+}
+
+
+def quoted_in(quote: str, text: str) -> bool:
+    """Whether a quote is really in the text. Case, spaces and punctuation don't count, and a quote that
+    starts with the line's label ("sprecher_1 [12.3 - 13.0]: ...") or leaves out the start of the line is fine.
+    Parts joined with "--" or "..." have to be there each."""
+    def simple(value: str) -> str:
+        return " ".join(re.sub(r"[^\w\s]", " ", value.casefold()).split())
+
+    haystack = simple(text)
+    parts = [p for p in re.split(r"\s*(?:--|\.\.\.|…)\s*", quote) if p.strip()]
+    if not parts:
+        return False
+    for part in parts:
+        # drop a leading "speaker [start - end]:" so the check is about what was said
+        part = re.sub(r"^\s*\S+(?:\s*&\s*\S+)*\s*\[[^\]]*\]\s*:\s*", "", part)
+        if simple(part) and simple(part) not in haystack:
+            return False
+    return True
+
+
 # what the namer takes from [llm] while it has no preset of its own
 INHERITED = ("preset", "service", "model", "base_url")
 
@@ -55,6 +86,10 @@ class SpeakerNamingOptions(Options):
     opening_minutes: float = Field(10.0, gt=0, description="Minutes from the start of the episode the model sees. "
                                                            "People introduce themselves early.")
     lines_per_speaker: int = Field(40, ge=1, description="Lines of every speaker the model sees on top of that.")
+    structured: Literal["auto", "schema", "json", "off"] = Field(
+        "auto", description='Make the model answer in JSON: "schema" lets the server enforce the answer format '
+                            '(Ollama, OpenAI), "json" only asks for JSON (DeepSeek), "off" relies on the prompt. '
+                            'auto picks by server.')
     system_message: str = Field(SYSTEM_MESSAGE, description="Instructions, sent as a system message.")
     prompt: str = Field(PROMPT, description="Prompt, has to contain {speakers}, {opening} and {samples}.")
 
@@ -79,14 +114,19 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         # Ollama has to be told how much context to load, the others take what the prompt brings
         num_ctx = (len_fun(options.system_message) + len_fun(prompt) + options.max_tokens + 512
                    if options.service == "Ollama" else None)
+        from MAT.tools.summary.llm import structured_output
+
+        structured = structured_output(options.service, options.structured)
         llm = LLM.parse_str(name=options.service).get_llm(
             model=options.model, max_tokens=options.max_tokens, reasoning_effort=options.reasoning_effort,
             first_token_timeout=options.first_token_timeout, idle_timeout=options.idle_timeout,
             max_retries=options.max_retries, base_url=options.base_url, num_ctx=num_ctx,
+            schema=ANSWER_SCHEMA, structured=structured,
         )
         self._LOGGER.info(f"Asking {options.model} for the names of {len(origin_data.speakers)} speakers")
         answer = llm.invoke([SystemMessage(options.system_message), HumanMessage(prompt)])
-        found = self._parse(str(getattr(answer, "content", answer) or ""), known=origin_data.speakers)
+        found = self._parse(str(getattr(answer, "content", answer) or ""), known=origin_data.speakers,
+                            lines=prompt)
         for name in found:
             self._LOGGER.info(f"{name.speaker} is called {name.name} ({name.evidence})")
         if not found:
@@ -162,8 +202,9 @@ class SpeakerNamingLLM(SpeakerNamingTool):
         return "\n".join(opening), samples
 
     @classmethod
-    def _parse(cls, answer: str, known: List[str]) -> List[SpeakerName]:
-        """Keeps only what is usable: a known speaker, high confidence, a real name and a quoted line."""
+    def _parse(cls, answer: str, known: List[str], lines: Optional[str] = None) -> List[SpeakerName]:
+        """Keeps only what is usable: a known speaker, high confidence, a real name and a quoted line. With lines
+        (what the model was shown) the quote has to be in there, an invented line doesn't count."""
         start, end = answer.find("{"), answer.rfind("}")
         if start < 0 or end <= start:
             cls._LOGGER.warning("The model didn't answer with JSON, no names taken from it")
@@ -187,6 +228,9 @@ class SpeakerNamingLLM(SpeakerNamingTool):
                 continue
             if not evidence:
                 cls._LOGGER.info(f"Not naming {speaker} {name}, the model gave no line to back it up")
+                continue
+            if lines is not None and not quoted_in(evidence, lines):
+                cls._LOGGER.info(f"Not naming {speaker} {name}, the quoted line isn't in the transcript: {evidence}")
                 continue
             if not _NAME.match(name) or len(name) > 60 or name.casefold() == speaker.casefold():
                 cls._LOGGER.info(f'Not naming {speaker}, "{name}" doesn\'t look like a name')
