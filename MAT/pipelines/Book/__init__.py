@@ -29,6 +29,7 @@ class Chapter:
     sentences: Optional[List[str]] = None
     sentence_words: Optional[List[Dict[str, int]]] = None
     ner: Optional[List[Dict[str, List[Tuple[str, int, int]]]]] = None
+    summary: Optional[str] = None
 
     def get_beautiful_heading(self) -> str:
         return self.heading_beautified if self.heading_beautified is not None else self.heading
@@ -51,11 +52,19 @@ class BookOutput(PipelineResult):
     language: Optional[str]
     chapter_data: List[Chapter]
     models: Dict[str, Any] = field(default_factory=dict)
+    # {"name", "mentions", "variants", "chapters"} per character, see MAT/utils/characters.py
+    characters: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class BookOptions(Options):
     splitter: str = Field("spacy", description="Splits chapters into sentences and counts lemmas.")
     ner: str = Field("gliner", description='Named entities per sentence. "none" skips it.')
+    character_labels: List[str] = Field(["PERSON"], description="NER labels that count as characters for the "
+                                                                "character list.")
+    min_mentions: int = Field(2, ge=1, description="Characters mentioned less often stay off the character list.")
+    chapter_summarizer: str = Field("none", description='Summary of every chapter, with the [llm] settings and '
+                                                        'prompts written for chapters (no spoilers from later '
+                                                        'chapters). "llm" turns it on.')
     chapter_names: List[str] = Field(default_factory=list, description="Headings that always count as chapters.")
 
 
@@ -63,7 +72,8 @@ class BookPipeline(Pipeline):
     section = "book"
     description = "Chapters, sentences, lemma counts and named entities for EPUB books."
     Options = BookOptions
-    slots = {"splitter": Slot(), "ner": Slot(optional=True)}
+    slots = {"splitter": Slot(), "ner": Slot(optional=True),
+             "chapter_summarizer": Slot(optional=True, kind="summarizer")}
     _LOGGER = logging.getLogger(__name__)
     _SPECIAL_CHAPTERS = {"prologue", "introduction", "epilogue", "prolog", "epilog"}
     _CHAPTER_NUMBER_REGEX = {re.compile(r"chapter \d+$"), re.compile(r"kapitel \d+$")}
@@ -149,29 +159,74 @@ class BookPipeline(Pipeline):
             if not chapters:
                 return PipelineStepResult(name="Word Counter", data=None)
             splitter = self.backend("splitter", step_input.config)
+            language = step_input.data("Language")
             for c in tqdm.tqdm(chapters, leave=False, desc="Working on chapters", unit="chapter"):
-                splitted = splitter.process(origin_data=SplitterInput("\n".join(c.content)), config=step_input.config)
+                splitted = splitter.process(origin_data=SplitterInput("\n".join(c.content), language=language),
+                                            config=step_input.config)
                 c.sentences = list(splitted.sentences) if splitted.sentences is not None else None
                 c.sentence_words = list(splitted.words) if splitted.words is not None else None
             return PipelineStepResult(name="Word Counter", data=chapters)
 
         def ner_task(step_input: PipelineStepInput) -> PipelineStepResult:
-            from tqdm import tqdm
             chapters: List[Chapter] = step_input.data("Word Counter")
             if not chapters:
                 return PipelineStepResult(name="NER", data=None)
             ner = self.backend("ner", step_input.config)
             if ner is None:
                 return PipelineStepResult(name="NER", data=chapters)
-            self.__class__._LOGGER.info(f"Using {ner.backend_name} for {len(chapters)} chapters")
-            for c in tqdm(chapters, leave=False, desc="NER on chapters", unit="chapter"):
-                if not c.sentences:
-                    continue
-                res = ner.process(origin_data=NERInput(*c.sentences), config=step_input.config)
-                c.ner = list(res.ner)
+            # all sentences of the book in one call, so the model loads once and not once per chapter
+            sentences = [sentence for c in chapters for sentence in (c.sentences or [])]
+            self.__class__._LOGGER.info(f"Using {ner.backend_name} on {len(sentences)} sentences of "
+                                        f"{len(chapters)} chapters")
+            found = list(ner.process(origin_data=NERInput(*sentences), config=step_input.config).ner)
+            for c in chapters:
+                if c.sentences:
+                    c.ner, found = found[:len(c.sentences)], found[len(c.sentences):]
             return PipelineStepResult(name="NER", data=chapters)
 
-        return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task]
+        def character_task(step_input: PipelineStepInput) -> PipelineStepResult:
+            from MAT.utils.characters import character_list
+
+            chapters: List[Chapter] = step_input.data("NER")
+            if not chapters:
+                return PipelineStepResult(name="Characters", data=None)
+            options = step_input.config.options(self)
+            wanted = {label.casefold() for label in options.character_labels}
+            mentions = [(c.get_beautiful_heading(), text) for c in chapters for sentence in (c.ner or [])
+                        for label, found in sentence.items() if label.casefold() in wanted for text, _, _ in found]
+            characters = character_list(mentions, min_mentions=options.min_mentions)
+            self.__class__._LOGGER.info(f"{len(characters)} characters, most mentioned: "
+                                        + ", ".join(f"{c['name']} ({c['mentions']})" for c in characters[:8]))
+            return PipelineStepResult(name="Characters", data=characters)
+
+        def summary_task(step_input: PipelineStepInput) -> PipelineStepResult:
+            from MAT.tools.summary import SummaryInput
+
+            chapters: List[Chapter] = step_input.data("Chapters Beauty") or step_input.data("Chapters")
+            if not chapters:
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            summarizer = self.backend("chapter_summarizer", step_input.config)
+            if summarizer is None:
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            book = step_input.data("Read Book")
+            texts = [f"{c.get_beautiful_heading()}\n\n" + "\n\n".join(c.content) for c in chapters]
+            self.__class__._LOGGER.info(f"Summarizing {len(texts)} chapters")
+            # like the podcast summary: a failing LLM must not cost the rest of the results
+            try:
+                result = summarizer.process(
+                    origin_data=SummaryInput(*texts, kind="chapter",
+                                             additional_metadata={"book": getattr(book, "title", "") or ""}),
+                    config=step_input.config)
+            except Exception as e:
+                self.__class__._LOGGER.exception("Chapter summaries failed, writing the book without them",
+                                                 exc_info=e)
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            for chapter, summary in zip(chapters, list(result.text) if result is not None else []):
+                chapter.summary = summary or None
+            return PipelineStepResult(name="Chapter summaries", data=chapters)
+
+        return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task,
+                character_task, summary_task]
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> BookOutput:
 
@@ -188,6 +243,7 @@ class BookPipeline(Pipeline):
             language=language if language is not None else "",
             chapter_data=chapters if chapters is not None else [],
             models=dict(self.models),
+            characters=_try_get("Characters") or [],
         )
 
     @classmethod

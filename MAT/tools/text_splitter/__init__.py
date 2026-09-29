@@ -25,6 +25,8 @@ class SplitterResult(ToolResult):
 @dataclass
 class SplitterInput(ToolInput):
     text: str
+    # ISO 639-1 code when the caller knows it, the backend guesses otherwise
+    language: Optional[str] = None
 
 
 class SplitterTool(Tool[SplitterInput, SplitterResult], ABC):

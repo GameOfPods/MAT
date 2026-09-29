@@ -182,6 +182,17 @@ class Chapter(_Model):
     heading_raw: str = Field(description="Heading as it is in the book.")
     paragraphs: List[str]
     sentences: List[Sentence] = Field(description="Empty if sentence splitting didn't run.")
+    summary: Optional[str] = Field(None, description="Summary of this chapter as Markdown, only from this chapter "
+                                                     "(no spoilers). Null when chapter summaries didn't run.")
+
+
+class Character(_Model):
+    """A person of the book, with the name variants that were joined for it."""
+
+    name: str = Field(description="The most used spelling of the full name.")
+    mentions: int = Field(description="How often any of the variants was found.")
+    variants: Dict[str, int] = Field(description="Spelling as found to count, for example Eddard: 12.")
+    chapters: Dict[str, int] = Field(description="Chapter heading (as in chapters[].heading) to count.")
 
 
 class BookResult(_Model):
@@ -193,7 +204,9 @@ class BookResult(_Model):
     title: str
     language: Optional[str] = Field(description="Detected language as ISO 639-1 code.")
     chapters: List[Chapter]
+    characters: List[Character] = Field(default_factory=list, description="Characters from the PERSON entities, "
+                                                                          "most mentioned first. Empty without NER.")
 
 
 __all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "TimeRange", "Speaker", "Word", "Media", "Event",
-           "TranscriptEntity", "PodcastResult", "TextEntity", "Sentence", "Chapter", "BookResult"]
+           "TranscriptEntity", "PodcastResult", "TextEntity", "Sentence", "Chapter", "Character", "BookResult"]

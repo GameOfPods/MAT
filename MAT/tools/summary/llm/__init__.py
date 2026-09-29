@@ -229,6 +229,11 @@ class SummaryLLM(SummaryTool):
         from langchain_core.messages import HumanMessage, SystemMessage
 
         options = self._apply_preset(config.options(self))
+        if getattr(origin_data, "kind", "transcript") == "chapter":
+            from MAT.tools.summary.llm.prompts import CHAPTER_PROMPTS
+
+            # book chapters get their own instructions, the llm.prompt* options are written for transcripts
+            options = options.model_copy(update=CHAPTER_PROMPTS)
         return_summaries: List[str] = []
 
         len_fun = self._get_len_fun()

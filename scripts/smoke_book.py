@@ -38,7 +38,7 @@ def write_epub(path: Path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--spacy-model", default="en_core_web_sm", help="spaCy model, default: %(default)s")
+    parser.add_argument("--spacy-model", default=None, help="spaCy model, default: picked by language")
     parser.add_argument("--out", type=Path, default=None, help="Output folder, default: a temp folder")
     args = parser.parse_args()
 

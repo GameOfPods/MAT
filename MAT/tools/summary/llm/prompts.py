@@ -96,4 +96,77 @@ REDUCE_PROMPT = (
     "SUMMARY:"
 )
 
-__all__ = ["SYSTEM_MESSAGE", "PROMPT", "REFINE_PROMPT", "MAP_PROMPT", "REDUCE_PROMPT"]
+# Book chapters. Same shape as the transcript prompts, but about a written story, and without spoilers: a chapter
+# summary must not know what happens later.
+CHAPTER_SYSTEM_MESSAGE = (
+    "You summarize chapters of books.\n"
+    "\n"
+    "Rules:\n"
+    "- Use only what the chapter says. Nothing from later chapters, other books, films or series, even when you know "
+    "the book. A reader who is at this chapter must not learn anything new about the rest of the story.\n"
+    "- Write in the language of the chapter.\n"
+    "- Answer in Markdown: short paragraphs, no heading for the whole summary.\n"
+    "- Write no sentence about the text being a summary, no introduction of yourself and no closing remark.\n"
+    "- Keep names the way the chapter writes them."
+)
+
+CHAPTER_PROMPT = (
+    "Here is a chapter:\n"
+    "\n"
+    '"{text}"\n'
+    "\n"
+    "Summarize it: what happens, in order, who takes part, and what changes for them. Stay much shorter than the "
+    "chapter.\n"
+    "\n"
+    "SUMMARY:"
+)
+
+CHAPTER_REFINE_PROMPT = (
+    "You are extending the summary of a long chapter.\n"
+    "\n"
+    "The summary so far:\n"
+    "{existing_answer}\n"
+    "\n"
+    "The next part of the chapter:\n"
+    "------------\n"
+    "{text}\n"
+    "------------\n"
+    "\n"
+    "Return the complete summary with this part added in the order of events. Don't repeat what it already says "
+    "and don't mention that it was extended.\n"
+    "\n"
+    "SUMMARY:"
+)
+
+CHAPTER_MAP_PROMPT = (
+    "Here is part {part} of {parts} of a chapter:\n"
+    "\n"
+    '"{text}"\n'
+    "\n"
+    "Write notes on this part for a summary of the whole chapter: what happens, in order, and who takes part. Short "
+    "bullet points, nothing about this being a part.\n"
+    "\n"
+    "NOTES:"
+)
+
+CHAPTER_REDUCE_PROMPT = (
+    "Here are notes on the parts of one chapter, in order:\n"
+    "\n"
+    "{text}\n"
+    "\n"
+    "Write the summary of the whole chapter from them, in the order of events, saying nothing twice and without "
+    "mentioning the parts or the notes.\n"
+    "\n"
+    "SUMMARY:"
+)
+
+# option name -> prompt, what a chapter summary uses instead of the transcript prompts
+CHAPTER_PROMPTS = {
+    "system_message": CHAPTER_SYSTEM_MESSAGE,
+    "prompt": CHAPTER_PROMPT,
+    "prompt_refine": CHAPTER_REFINE_PROMPT,
+    "prompt_map": CHAPTER_MAP_PROMPT,
+    "prompt_reduce": CHAPTER_REDUCE_PROMPT,
+}
+
+__all__ = ["SYSTEM_MESSAGE", "PROMPT", "REFINE_PROMPT", "MAP_PROMPT", "REDUCE_PROMPT", "CHAPTER_PROMPTS"]

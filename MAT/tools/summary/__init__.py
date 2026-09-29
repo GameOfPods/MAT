@@ -26,9 +26,11 @@ class SummaryResult(ToolResult):
 
 class SummaryInput(ToolInput):
 
-    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None):
+    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None, kind: str = "transcript"):
         self._text = text
         self._additional_metadata = {} if additional_metadata is None else additional_metadata
+        # "transcript" or "chapter": which instructions the summary gets
+        self.kind = kind
 
     @property
     def text(self):

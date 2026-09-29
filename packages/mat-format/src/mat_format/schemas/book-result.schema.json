@@ -29,6 +29,19 @@
           },
           "title": "Sentences",
           "type": "array"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Summary of this chapter as Markdown, only from this chapter (no spoilers). Null when chapter summaries didn't run.",
+          "title": "Summary"
         }
       },
       "required": [
@@ -38,6 +51,45 @@
         "sentences"
       ],
       "title": "Chapter",
+      "type": "object"
+    },
+    "Character": {
+      "description": "A person of the book, with the name variants that were joined for it.",
+      "properties": {
+        "name": {
+          "description": "The most used spelling of the full name.",
+          "title": "Name",
+          "type": "string"
+        },
+        "mentions": {
+          "description": "How often any of the variants was found.",
+          "title": "Mentions",
+          "type": "integer"
+        },
+        "variants": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Spelling as found to count, for example Eddard: 12.",
+          "title": "Variants",
+          "type": "object"
+        },
+        "chapters": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Chapter heading (as in chapters[].heading) to count.",
+          "title": "Chapters",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "mentions",
+        "variants",
+        "chapters"
+      ],
+      "title": "Character",
       "type": "object"
     },
     "ModelInfo": {
@@ -184,6 +236,14 @@
         "$ref": "#/$defs/Chapter"
       },
       "title": "Chapters",
+      "type": "array"
+    },
+    "characters": {
+      "description": "Characters from the PERSON entities, most mentioned first. Empty without NER.",
+      "items": {
+        "$ref": "#/$defs/Character"
+      },
+      "title": "Characters",
       "type": "array"
     }
   },

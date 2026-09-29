@@ -61,7 +61,8 @@ def _add_slot_flags(parser: argparse.ArgumentParser) -> None:
         if pipeline.slots[slot].optional:
             choices.append("none")
         field = pipeline.Options.model_fields[slot]
-        group.add_argument(f"--{slot}", choices=choices, default=None, metavar="NAME",
+        group.add_argument(f"--{slot.replace('_', '-')}", dest=slot, choices=choices, default=None,
+                           metavar="NAME",
                            help=f"{field.description} Installed: {', '.join(choices) or 'nothing'}. "
                                 f"Default: {field.default}")
 

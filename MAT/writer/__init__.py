@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple, Type
 
 from mat_format import (
-    BookResult, Chapter, Event, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
+    BookResult, Chapter, Character, Event, FORMAT_VERSION, Input, Media, Meta, ModelInfo, PodcastResult, Sentence, Speaker,
     TextEntity, TimeRange, TranscriptEntity, Word,
 )
 
@@ -104,10 +104,12 @@ def book_result(output: BookOutput) -> BookResult:
                         for label, found in ner.items() for entity, start, end in found]
             sentences.append(Sentence(text=text, lemmas=dict(lemmas), entities=entities))
         chapters.append(Chapter(heading=chapter.get_beautiful_heading(), heading_raw=chapter.heading,
-                                paragraphs=list(chapter.content), sentences=sentences))
+                                paragraphs=list(chapter.content), sentences=sentences,
+                                summary=getattr(chapter, "summary", None)))
     return BookResult(
         models={slot: ModelInfo(**info) for slot, info in output.models.items()},
         title=output.title, language=output.language or None, chapters=chapters,
+        characters=[Character(**c) for c in getattr(output, "characters", None) or []],
     )
 
 
