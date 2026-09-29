@@ -163,5 +163,3 @@ JSON: {"answer": "<one candidate>" | "unsure", "reason": "one short sentence"}
   German coreference model trained on novels.
 - Should the alias file be one per series that both books and podcast episodes use? That fits Game of Pods, where the
   podcast talks about the same characters as the books.
-</content>
-</invoke>

@@ -138,5 +138,3 @@ Ollama unloads it again before the next episode (`OLLAMA_KEEP_ALIVE=0`).
 - [KeyBERT](https://github.com/MaartenGr/KeyBERT), [BERTopic](https://maartengr.github.io/BERTopic/), [German embedding models 2026](https://wz-it.com/en/blog/best-embedding-models-german/), [BGE-M3](https://huggingface.co/BAAI/bge-m3)
 - [PODTILE](https://arxiv.org/pdf/2410.16148), [TreeSeg](https://arxiv.org/pdf/2407.12028), [multi-level transcript segmentation](https://arxiv.org/html/2601.02128v1), [unsupervised topic segmentation with BERT](https://arxiv.org/html/2106.12978v1)
 - [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs)
-</content>
-</invoke>
