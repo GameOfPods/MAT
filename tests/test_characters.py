@@ -110,6 +110,17 @@ def test_read_trims_verbs_and_pronouns_off_a_name():
     assert sentence[0:10] == "Melisandre"
 
 
+def test_a_name_that_is_mostly_a_place_is_no_character():
+    from MAT.utils.characters import Mention, build, cluster, key
+
+    rows = ["Casterlystein"] * 3 + ["Davos"] * 3
+    # NER called Casterlystein a LOCATION 5 times and Davos once
+    clusters = cluster([Mention("1", name) for name in rows], min_full=1,
+                       elsewhere={key("Casterlystein"): 5, key("Davos"): 1})
+    assert [c["name"] for c in build(clusters, min_mentions=1)] == ["Davos"]
+    assert clusters.not_names == {"Casterlystein": 3}
+
+
 def test_groups_and_genitives():
     from MAT.utils.characters import Mention, build, cluster
 

@@ -198,7 +198,9 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="NER", data=chapters)
 
         def character_task(step_input: PipelineStepInput) -> PipelineStepResult:
-            from MAT.utils.characters import Mention, build, cluster, read
+            from collections import Counter
+
+            from MAT.utils.characters import Mention, build, clean, cluster, key, read
 
             chapters: List[Chapter] = step_input.data("NER")
             if not chapters:
@@ -206,11 +208,15 @@ class BookPipeline(Pipeline):
             options = step_input.config.options(self)
             wanted = {label.casefold() for label in options.character_labels}
             mentions = []
+            # how often the same words came back as a place or an organization, "Casterlystein" is both
+            elsewhere = Counter()
             for c in chapters:
                 for i, sentence in enumerate(c.ner or []):
                     words = c.sentence_tokens[i] if c.sentence_tokens and i < len(c.sentence_tokens) else None
                     for label, found in sentence.items():
                         if label.casefold() not in wanted:
+                            if label.casefold() in ("location", "organization"):
+                                elsewhere.update(key(clean(text)) for text, _, _ in found if clean(text))
                             continue
                         for text, start, end in found:
                             name, proper, article, plural = read(text, start, end, words)
@@ -218,7 +224,7 @@ class BookPipeline(Pipeline):
                                                     article=article, plural=plural,
                                                     sentence=c.sentences[i] if c.sentences and i < len(c.sentences)
                                                     else ""))
-            clusters = cluster(mentions, min_full=options.full_name_mentions)
+            clusters = cluster(mentions, min_full=options.full_name_mentions, elsewhere=elsewhere)
             if clusters.not_names:
                 self.__class__._LOGGER.info("Not names, left out of the characters: " + ", ".join(
                     f"{name} ({count})" for name, count in clusters.not_names.most_common(10)))

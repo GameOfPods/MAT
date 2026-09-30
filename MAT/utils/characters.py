@@ -137,16 +137,21 @@ def looks_like_a_name(name: str) -> bool:
     return bool(tokens) and tokens[0] not in PRONOUNS and not all(token in TITLES for token in tokens)
 
 
-def cluster(mentions: Iterable[Mention], min_full: int = 3) -> Clusters:
+def cluster(mentions: Iterable[Mention], min_full: int = 3, elsewhere: Optional[Dict[Key, int]] = None) -> Clusters:
     """Groups the mentions by the rules. A longer name takes in the short names that are part of it only once it was
     written min_full times itself: NER sometimes returns two people as one span ("fragte Arya Gendry", Arya asked
-    Gendry), and such a span would otherwise swallow every "Gendry" of the book."""
+    Gendry), and such a span would otherwise swallow every "Gendry" of the book.
+    elsewhere counts per key how often NER gave the same words another label (LOCATION, ORGANIZATION). A name that is
+    a place or a house at least as often as a person ("Casterlystein", "Freys") is no character."""
+    mentions = list(mentions)
+    elsewhere = elsewhere or {}
+    as_person = Counter(key(clean(m.name)) for m in mentions if clean(m.name))
     kept, not_names = [], Counter()
     for m in mentions:
         name = clean(m.name)
         if not name:
             continue
-        if not looks_like_a_name(name):
+        if not looks_like_a_name(name) or elsewhere.get(key(name), 0) >= as_person[key(name)]:
             not_names[name] += 1
             continue
         kept.append(Mention(chapter=m.chapter, name=name, sentence=m.sentence, proper=m.proper, article=m.article,
