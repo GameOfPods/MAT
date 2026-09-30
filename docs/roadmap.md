@@ -139,7 +139,7 @@ We have no reference transcripts of our own episodes, so the suite uses public d
 - [x] Audio without references (`audio` dataset): speed, memory, speaker count and agreement with the first system.
 - [x] Report as Markdown and CSV in the output folder.
 - [x] Checked on the dev machine: every dataset loader against the real servers (Bundestag and VoxConverse files out of the big zips, AMI meeting with annotations, FLEURS lists), and `MAT bench reference` plus `MAT bench run` with real models on CPU on the 30 second sample: WER and cpWER 0 against its own result, DER 20 % without a collar. Reference lines only cover words, diarizers also cover the pauses around them, so own references use a 0.25 s collar by default (6 % there), public datasets stay at 0.
-- [ ] Waiting for the user's corrected reference of about 10 minutes of a German episode.
+- [ ] Waiting for the user's corrected reference of about 10 minutes of a German episode. Moved to after the 0.3.0 release (2026-09-30), defaults for 0.3.0 come from the public datasets.
 - [ ] First run with the current backends on the GPU box, public dataset numbers into `docs/benchmarks/`. Every new backend from stage 6 gets benchmarked when it lands.
 - [ ] Numbers aren't normalized (5 vs five), which hurts WER on ASR Bundestag. Consider a German/English number normalizer if it matters for picking defaults.
 - [ ] Models load again for every file (stage 9). Packing FLEURS and Bundestag sentences into 10 minute files works around that for short clips.
@@ -280,6 +280,13 @@ From the [character proposal](proposals/character-aliases-and-coreference.md) an
 - [ ] maverick-coref-de and maverick-coref in their own environments (CC BY-NC-SA 4.0, like DiariZen: never imported into MAT, off by default, docs say results can't be used commercially), Stanza as the second system. A reference counts only when both agree and the cluster has exactly one character. `references` next to `mentions`, never summed, and only if hand-checked chapters show at least 97 % precision.
 
 Not in MAT (decided 2026-09-29): episode chapters, topic tags and keywords, topics across a season. They belong into the program reading the results.
+
+## After 0.3.0
+
+- [ ] Anthropic as its own LLM service (`langchain-anthropic`, `ANTHROPIC_API_KEY`, preset `anthropic`, for example `claude-sonnet-5` and `claude-haiku-4-5-20251001`), for the summary and the LLM tasks. Its structured outputs (`output_config.format` with a JSON schema) enforce the answer like OpenAI's `response_format`, which its OpenAI compatible endpoint ignores. Check our schemas against its limits (no `minimum`/`maximum`, no string lengths, no recursion) and add the models to the context table for `chunk-size = auto`. Until then the OpenAI service pointed at `https://api.anthropic.com/v1/` works with the prompt and our checks only.
+- [ ] OpenAI's `response_format` path (`llm-names.structured = schema` against api.openai.com) is only tested against fake models, nobody had credits for a real run.
+- [ ] Nicknames that come with an article ("der Bluthund", "der Gnom", "der Großjon") are left out with the plain nouns. Idea: keep them hidden instead of dropping them, and let the character judge join one to a character only through a sentence of the book that says so ("Sandor Clegane, den alle den Bluthund nannten"). Unclear how much it brings, such sentences are often in an earlier book.
+- [ ] GLiNER model per language (large for English?) if the English book and episode of the release test show that large is better there. Both pipelines know the language before NER runs.
 
 ## Stage 9: speed
 
