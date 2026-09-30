@@ -63,6 +63,49 @@ def quoted_in(quote: str, text: str) -> bool:
     return True
 
 
+_LABEL = re.compile(r"(\S+)\s*\[[\d.]+\s*-\s*[\d.]+\]\s*:")
+# words right before a name that make it the speaker's own ("ich bin Alex", "this is Alex")
+_INTRODUCTION = re.compile(r"(?:\bich\s+bin|\bich\s+hei(?:ß|ss)e|\bmein\s+name\s+ist|\bhier\s+(?:ist|spricht)|"
+                           r"\bi\s+am|\bi['’]?m|\bmy\s+name\s+is|\bthis\s+is|\bit['’]s)\s+(?:\w+\s+)?$",
+                           re.IGNORECASE)
+
+
+def contradicted(speaker: str, name: str, evidence: str, lines: str) -> Optional[str]:
+    """Why the quoted evidence doesn't make `speaker` the one called `name`, or None when it can. Two mistakes a
+    small model made on real episodes: it named sprecher_0 Alex from "Alexander Hamilton", and it named the speaker
+    who said "meine Freundin Carla" Carla. A name somebody says is usually the name of someone else, unless they
+    introduce themselves."""
+    first = name.split()[0]
+    word = re.compile(rf"(?<!\w){re.escape(first)}(?!\w)", re.IGNORECASE)
+    said_by = {}
+    for line in lines.splitlines():
+        found = _LABEL.match(line)
+        if found:
+            said_by[line[found.end():].strip()] = found.group(1)
+
+    def who(text: str) -> Optional[str]:
+        """The speaker of a quote without its label, when exactly one speaker has a line with it."""
+        speakers = {s for line, s in said_by.items() if quoted_in(text, line)}
+        return speakers.pop() if len(speakers) == 1 else None
+
+    # the evidence cut into what each speaker said: text before the first label has no speaker yet
+    pieces, labels = [], list(_LABEL.finditer(evidence))
+    if not labels or labels[0].start() > 0:
+        head = evidence[:labels[0].start() if labels else len(evidence)]
+        pieces += [(who(part), part) for part in re.split(r"\s*(?:--|\.\.\.|…| / )\s*", head) if part.strip()]
+    for i, label in enumerate(labels):
+        end = labels[i + 1].start() if i + 1 < len(labels) else len(evidence)
+        pieces.append((label.group(1), evidence[label.end():end]))
+
+    with_name = [(said, text, found) for said, text in pieces for found in word.finditer(text)]
+    if not with_name:
+        return f'the quoted lines don\'t contain "{first}"'
+    for said, text, found in with_name:
+        if said != speaker or _INTRODUCTION.search(text[:found.start()]):
+            return None
+    return f"only {speaker} says {first} in the quote, that's someone else being talked to or about"
+
+
 # A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
 # underscores, so a model that echoes "sprecher_0" back at us doesn't get through.
 _NAME = re.compile(r"^[^\W\d_]+(?:[ '’\-][^\W\d_]+)*$", re.UNICODE)
@@ -89,7 +132,7 @@ class SpeakerNamingLLM(LLMTask, SpeakerNamingTool):
 
         from MAT.tools.summary.llm import SummaryLLM
 
-        options = self._apply_preset(self._inherit(config.options(self), config))
+        options = self.effective_options(config)
         if not origin_data.speakers or not origin_data.lines:
             return SpeakerNamingResult()
 
@@ -165,6 +208,10 @@ class SpeakerNamingLLM(LLMTask, SpeakerNamingTool):
             if lines is not None and not quoted_in(evidence, lines):
                 cls._LOGGER.info(f"Not naming {speaker} {name}, the quoted line isn't in the transcript: {evidence}")
                 continue
+            why = contradicted(speaker, name, evidence, lines) if lines is not None else None
+            if why:
+                cls._LOGGER.info(f"Not naming {speaker} {name}, {why}: {evidence}")
+                continue
             if not _NAME.match(name) or len(name) > 60 or name.casefold() == speaker.casefold():
                 cls._LOGGER.info(f'Not naming {speaker}, "{name}" doesn\'t look like a name')
                 continue
@@ -176,4 +223,4 @@ class SpeakerNamingLLM(LLMTask, SpeakerNamingTool):
         return names
 
 
-__all__ = ["SpeakerNamingLLM", "SpeakerNamingOptions"]
+__all__ = ["SpeakerNamingLLM", "SpeakerNamingOptions", "quoted_in", "contradicted"]

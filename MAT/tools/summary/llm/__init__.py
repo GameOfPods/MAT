@@ -248,8 +248,12 @@ class SummaryLLM(SummaryTool):
 
     def describe(self, config: Config) -> Dict[str, Any]:
         info = super().describe(config)
-        info["service"] = config.options(self).service
-        if "OPENAI_API_BASE" in os.environ:
+        # with the preset applied: llm.preset=ollama talks to Ollama even though service isn't set
+        options = self.effective_options(config)
+        info.update(model=options.model, service=options.service)
+        if options.base_url:
+            info["api_base"] = options.base_url
+        elif "OPENAI_API_BASE" in os.environ and options.service != "Ollama":
             info["api_base"] = os.environ["OPENAI_API_BASE"]
         return info
 

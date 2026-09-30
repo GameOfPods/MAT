@@ -49,33 +49,45 @@ class LLMTask:
     SKIP = ""
 
     @classmethod
-    def effective_options(cls, config: Config):
-        return cls._apply_preset(cls._inherit(config.options(cls), config))
+    def effective_options(cls, config: Config, log: bool = False):
+        return cls._apply_preset(cls._inherit(config.options(cls), config, log=log))
 
     @classmethod
     def preflight(cls, config: Config) -> None:
         from MAT.tools.summary.llm import check_llm_access
 
-        options = cls.effective_options(config)
+        # the one place that says where the settings come from, the steps and the cache ask again later
+        options = cls.effective_options(config, log=True)
         check_llm_access(options.service, options.model, options.base_url, cls.TASK, cls.SKIP)
 
+    def describe(self, config: Config):
+        # what the task really talks to, not the section's defaults (a run with llm.preset=ollama wrote gpt-5.6-terra)
+        info = super().describe(config)
+        options = self.effective_options(config)
+        info.update(model=options.model, service=options.service)
+        if options.base_url:
+            info["api_base"] = options.base_url
+        return info
+
     @classmethod
-    def _inherit(cls, options, config: Config):
+    def _inherit(cls, options, config: Config, log: bool = False):
         """Without a preset of its own the task talks to the same model as the summary: whatever of preset, service,
         model and base-url you set in [llm] and not here. With its own preset nothing comes from [llm], so a cloud
         model name can't end up at Ollama."""
         from MAT.tools.summary.llm import SummaryLLM
 
         if "preset" in options.model_fields_set:
-            cls._LOGGER.info(f"{cls.TASK} uses its own settings ({cls.section}.preset = {options.preset})")
+            if log:
+                cls._LOGGER.info(f"{cls.TASK} uses its own settings ({cls.section}.preset = {options.preset})")
             return options
         summary = config.options(SummaryLLM)
         taken = {name: getattr(summary, name) for name in INHERITED
                  if name in summary.model_fields_set and name not in options.model_fields_set}
         if not taken:
             return options
-        cls._LOGGER.info(f"{cls.TASK} takes " + ", ".join(f"{name.replace('_', '-')}={value}"
-                                                          for name, value in sorted(taken.items())) + " from [llm]")
+        if log:
+            cls._LOGGER.info(f"{cls.TASK} takes " + ", ".join(f"{name.replace('_', '-')}={value}"
+                                                              for name, value in sorted(taken.items())) + " from [llm]")
         return options.model_copy(update=taken)
 
     @classmethod

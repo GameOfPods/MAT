@@ -155,6 +155,22 @@ def test_a_model_set_for_the_namer_always_wins():
     assert (options.service, options.model) == ("Ollama", "qwen3:14b")
 
 
+def test_the_result_names_the_model_that_was_asked(caplog):
+    import logging
+
+    from MAT.tools.summary.llm import SummaryLLM
+
+    # a GPU run with llm.preset=ollama wrote "llm-names (gpt-5.6-terra)" and service OpenAI into the result
+    config = Config({"llm": {"preset": "ollama", "model": "qwen3:8b"}})
+    with caplog.at_level(logging.INFO):
+        namer = SpeakerNamingLLM().describe(config)
+        summary = SummaryLLM().describe(config)
+    assert (namer["model"], namer["service"]) == ("qwen3:8b", "Ollama")
+    assert (summary["model"], summary["service"]) == ("qwen3:8b", "Ollama")
+    # where the settings come from is said once, before the first file, not by every step
+    assert "from [llm]" not in caplog.text
+
+
 def test_nothing_set_anywhere_keeps_the_defaults():
     options = _namer_options({})
     assert (options.preset, options.service, options.model) == ("none", "OpenAI", "gpt-5.6-terra")
@@ -237,3 +253,40 @@ def test_the_schema_reaches_the_client(monkeypatch):
     LLM.OpenAI.get_llm(model="m", max_tokens=10, schema=ANSWER_SCHEMA, structured="json").factory(None)
     assert seen["ollama"]["format"] == ANSWER_SCHEMA
     assert seen["openai"]["model_kwargs"] == {"response_format": {"type": "json_object"}}
+
+
+# lines and answers from real episodes on the GPU box, shortened
+HAMILTON = (
+    "sprecher_2 [0.22 - 12.32]: Und damit herzlich willkommen zurück zu Kino-Kompromisse mit meiner Freundin Carla.\n"
+    "sprecher_2 [24.635 - 27.9]: 6, schon ein Gast. Wir haben Max dabei.\n"
+    "sprecher_1 [28.804 - 31.92]: Einen wunderschönen guten Tag.\n"
+    "sprecher_1 [133.824 - 180.2]: Es geht um das Leben von Alexander Hamilton.\n"
+    "sprecher_1 [311.702 - 393.996]: Warum ist es bei dir nicht so, Alex?\n"
+    "sprecher_2 [394.036 - 436.453]: Nee, leider gar nicht. Carla, du guckst gerade schon wieder so.\n"
+    "sprecher_0 [437.0 - 440.0]: Ich bin Carla und ich gucke immer so.\n"
+)
+
+
+@pytest.mark.parametrize("speaker, name, evidence, wrong", [
+    # the speaker says the name themself: they talk to or about someone else
+    ("sprecher_2", "Carla", "sprecher_2 [0.22 - 12.32]: Und damit herzlich willkommen zurück zu Kino-Kompromisse mit "
+                            "meiner Freundin Carla.", True),
+    # "Alex" isn't in "Alexander Hamilton"
+    ("sprecher_0", "Alex", "sprecher_1 [133.824 - 180.2]: Es geht um das Leben von Alexander Hamilton.", True),
+    # somebody else says it: fine
+    ("sprecher_1", "Max", "sprecher_2 [24.635 - 27.9]: 6, schon ein Gast. Wir haben Max dabei.", False),
+    ("sprecher_2", "Alex", "sprecher_1 [311.702 - 393.996]: Warum ist es bei dir nicht so, Alex? / "
+                           "sprecher_2 [394.036 - 436.453]: Nee, leider gar nicht.", False),
+    # a quote without its label is looked up in the lines
+    ("sprecher_2", "Carla", "Carla, du guckst gerade schon wieder so.", True),
+    ("sprecher_0", "Carla", "Carla, du guckst gerade schon wieder so.", False),
+    # introducing yourself is the exception
+    ("sprecher_0", "Carla", "sprecher_0 [437.0 - 440.0]: Ich bin Carla und ich gucke immer so.", False),
+])
+def test_evidence_that_names_someone_else(speaker, name, evidence, wrong):
+    from MAT.tools.speakernaming.llm import contradicted
+
+    assert bool(contradicted(speaker, name, evidence, HAMILTON)) == wrong
+    answer = json.dumps({"speakers": [{"id": speaker, "name": name, "confidence": "high", "evidence": evidence}]})
+    names = SpeakerNamingLLM._parse(answer, known=["sprecher_0", "sprecher_1", "sprecher_2"], lines=HAMILTON)
+    assert (names == []) == wrong
