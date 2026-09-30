@@ -43,7 +43,9 @@ class ClapOptions(Options):
     background: Dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_BACKGROUND),
                                        description="Descriptions of the normal sound of an episode. They take part "
                                                    "in the comparison so plain talk doesn't become an event.")
-    threshold: float = Field(0.5, gt=0, lt=1, description="Minimum share of a label among all descriptions.")
+    threshold: float = Field(0.8, gt=0, lt=1, description="Minimum share of a label among all descriptions. At 0.5 a "
+                                                          "3 hour episode had 189 \"jingles\", nearly all talk. "
+                                                          "Above 0.8: intro, outro, one jingle and 3 laughs.")
     window: float = Field(10.0, gt=0, description="Seconds per window. CLAP reads at most 10 s.")
     hop: float = Field(5.0, gt=0, description="Seconds from one window to the next.")
     min_duration: float = Field(0.0, ge=0, description="Shorter events are dropped.")

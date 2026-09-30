@@ -13,7 +13,8 @@ Keeps the console readable.
 
 Most libraries use Python logging, so a level is enough. NeMo brings its own logger with its own handlers, prints
 to stdout in its own format and never reaches our log file. `quiet_nemo` takes those handlers away and lets the
-records go through Python logging like everything else, so `--log-file` gets them too.
+records go through Python logging like everything else, so `--log-file` gets them too. whisperx does the same,
+`quiet_whisperx` handles it.
 """
 import logging
 import os
@@ -41,6 +42,8 @@ NOISY: Dict[str, int] = {
     "torio": logging.WARNING,
     "datasets": logging.WARNING,
     "sentence_transformers": logging.WARNING,
+    # one warning per segment it can't align (138 on a 3 hour episode), the segment keeps whisper's times
+    "whisperx.alignment": logging.ERROR,
 }
 
 # (message pattern, category) of warnings that show up on every run and that we can't do anything about
@@ -130,4 +133,17 @@ def quiet_nemo(verbose: bool = False) -> None:
         logging.getLogger(__name__).debug(f"Could not quiet NeMo logging: {e}")
 
 
-__all__ = ["NOISY", "WARNINGS", "quiet_dependencies", "quiet_nemo"]
+def quiet_whisperx() -> None:
+    """whisperx gives its logger a stdout handler and stops the records from reaching ours. Call it after importing
+    whisperx. A NullHandler stays, so whisperx doesn't set its own up again."""
+    if "whisperx" not in sys.modules:
+        return
+    logger = logging.getLogger("whisperx")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    logger.addHandler(logging.NullHandler())
+    logger.setLevel(logging.NOTSET)
+    logger.propagate = True
+
+
+__all__ = ["NOISY", "WARNINGS", "quiet_dependencies", "quiet_nemo", "quiet_whisperx"]

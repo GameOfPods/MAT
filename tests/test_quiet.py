@@ -54,3 +54,22 @@ def test_quiet_nemo_survives_a_broken_logger(monkeypatch):
     broken = SimpleNamespace(logging=SimpleNamespace())
     monkeypatch.setitem(sys.modules, "nemo.utils", broken)
     quiet_nemo()
+
+
+def test_quiet_whisperx_sends_its_records_through_our_logging(monkeypatch, capsys):
+    import logging
+    import sys
+    import types
+
+    from MAT.utils.quiet import quiet_whisperx
+
+    logger = logging.getLogger("whisperx")
+    # what whisperx sets up on import: its own stdout handler, nothing reaches the root logger
+    monkeypatch.setitem(sys.modules, "whisperx", types.ModuleType("whisperx"))
+    monkeypatch.setattr(logger, "handlers", [logging.StreamHandler(sys.stdout)])
+    monkeypatch.setattr(logger, "propagate", False)
+    quiet_whisperx()
+    assert logger.propagate
+    assert all(isinstance(h, logging.NullHandler) for h in logger.handlers) and logger.handlers
+    logging.getLogger("whisperx.asr").error("from whisperx")
+    assert "from whisperx" not in capsys.readouterr().out

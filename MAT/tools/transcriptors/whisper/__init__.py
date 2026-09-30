@@ -50,7 +50,9 @@ class TransciptorWhisper(TransciptionTool):
         import math
 
         from MAT.utils.device import ct2_compute_type, resolve_device
+        from MAT.utils.quiet import quiet_whisperx
 
+        quiet_whisperx()
         options = config.options(self)
         device = resolve_device(options.device)
         compute_type = ct2_compute_type(device=device, requested=options.compute_type)
