@@ -28,8 +28,8 @@ class Chapter:
     heading_beautified: Optional[str] = None
     sentences: Optional[List[str]] = None
     sentence_words: Optional[List[Dict[str, int]]] = None
-    # per sentence (start, end, part of speech, has an article), see SplitterResult.tokens. Not written to the result
-    sentence_tokens: Optional[List[List[Tuple[int, int, str, bool]]]] = None
+    # per sentence (start, end, part of speech, article, plural), see SplitterResult.tokens. Not in the result
+    sentence_tokens: Optional[List[List[Tuple[int, int, str, bool, bool]]]] = None
     ner: Optional[List[Dict[str, List[Tuple[str, int, int]]]]] = None
     summary: Optional[str] = None
 
@@ -213,9 +213,9 @@ class BookPipeline(Pipeline):
                         if label.casefold() not in wanted:
                             continue
                         for text, start, end in found:
-                            name, proper, article = read(text, start, end, words)
+                            name, proper, article, plural = read(text, start, end, words)
                             mentions.append(Mention(chapter=c.get_beautiful_heading(), name=name, proper=proper,
-                                                    article=article,
+                                                    article=article, plural=plural,
                                                     sentence=c.sentences[i] if c.sentences and i < len(c.sentences)
                                                     else ""))
             clusters = cluster(mentions, min_full=options.full_name_mentions)

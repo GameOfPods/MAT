@@ -101,12 +101,24 @@ def test_read_trims_verbs_and_pronouns_off_a_name():
     from MAT.utils.characters import read
 
     sentence = "Melisandre seufzte leise."
-    words = [(0, 10, "PROPN", False), (11, 18, "VERB", False), (19, 24, "ADV", False), (24, 25, "PUNCT", False)]
-    assert read("Melisandre seufzte", 0, 18, words) == ("Melisandre", True, False)
-    assert read("seufzte leise", 11, 24, words) == ("", None, None)
+    words = [(0, 10, "PROPN", False, False), (11, 18, "VERB", False, False), (19, 24, "ADV", False, False),
+             (24, 25, "PUNCT", False, False)]
+    assert read("Melisandre seufzte", 0, 18, words) == ("Melisandre", True, False, False)
+    assert read("seufzte leise", 11, 24, words) == ("", None, None, None)
     # a model that doesn't tag leaves the name as it is
-    assert read("Melisandre seufzte", 0, 18, None) == ("Melisandre seufzte", None, None)
+    assert read("Melisandre seufzte", 0, 18, None) == ("Melisandre seufzte", None, None, None)
     assert sentence[0:10] == "Melisandre"
+
+
+def test_groups_and_genitives():
+    from MAT.utils.characters import Mention, build, cluster
+
+    # "Robbs Männer zogen los": a group, not a character. "Joffreys" is Joffrey's without an apostrophe
+    rows = [("Robbs Männer", True)] * 3 + [("Männer", True)] * 2 + [("Joffrey", False)] * 3 + [("Joffreys", False)]
+    clusters = cluster([Mention("1", name, proper=True, article=False, plural=plural) for name, plural in rows])
+    assert [(c["name"], c["mentions"], c["variants"]) for c in build(clusters, min_mentions=1)] == [
+        ("Joffrey", 4, {"Joffrey": 3, "Joffreys": 1})]
+    assert clusters.not_names == {"Robbs Männer": 3, "Männer": 2}
 
 
 def test_a_rare_long_name_does_not_swallow_short_ones():

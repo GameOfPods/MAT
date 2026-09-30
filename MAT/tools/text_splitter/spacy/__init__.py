@@ -86,6 +86,18 @@ class SplitterSpacy(SplitterTool):
         return (nlp.has_pipe("tagger") or nlp.has_pipe("morphologizer")) and nlp.has_pipe("parser")
 
     @staticmethod
+    def _plural(token) -> bool:
+        """A plural noun, going by what agrees with it. spaCy calls invented names like Edmure or Rickon plural
+        nouns, but "Edmure lachte" has a singular verb, "die Männer" a plural article and "Männer zogen" a plural
+        verb."""
+        plural = ["Plur"]
+        if token.pos_ != "NOUN" or token.morph.get("Number") != plural:
+            return False
+        if any(child.pos_ == "DET" and child.morph.get("Number") == plural for child in token.children):
+            return True
+        return token.dep_ in ("sb", "nsubj") and token.head.morph.get("Number") == plural
+
+    @staticmethod
     def _tokens(text: str, sent) -> list:
         # offsets into the stripped sentence text, so they fit the NER spans on it
         shift = sent.start_char + (len(sent.text) - len(sent.text.lstrip()))
@@ -95,5 +107,6 @@ class SplitterSpacy(SplitterTool):
                 continue
             article = any(child.pos_ == "DET" for child in token.children) or (
                 token.i > sent.start and token.nbor(-1).pos_ == "DET")
-            tokens.append((token.idx - shift, token.idx - shift + len(token.text), token.pos_, article))
+            plural = SplitterSpacy._plural(token)
+            tokens.append((token.idx - shift, token.idx - shift + len(token.text), token.pos_, article, plural))
         return tokens

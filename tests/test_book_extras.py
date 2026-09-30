@@ -85,9 +85,9 @@ def test_spacy_sentences_lose_their_line_breaks():
     assert list(result.sentences) == ["Alice met Bob.", "They both worked for Acme."]
     # words with offsets into their own sentence, so they line up with the NER spans
     second = list(result.sentences)[1]
-    for start, end, pos, article in result.tokens[1]:
+    for start, end, *_ in result.tokens[1]:
         assert second[start:end].strip() == second[start:end] != ""
-    assert [(second[s:e], pos) for s, e, pos, _ in result.tokens[1]][0] == ("They", "PRON")
+    assert [(second[s:e], pos) for s, e, pos, *_ in result.tokens[1]][0] == ("They", "PRON")
     assert result.tokens[0][0][:3] == (0, 5, "PROPN")
     # a second chapter reuses the loaded model
     splitter.process(SplitterInput("Bob left.", language="en"), Config({}))

@@ -52,8 +52,9 @@ _EDGES = re.compile(r"^[\W_]+|[\W_]+$", re.UNICODE)
 _POSSESSIVE = re.compile(r"(?:['’]s|['’])$", re.IGNORECASE)
 
 Key = Tuple[str, ...]
-# a word of a sentence: start, end, part of speech, whether an article or possessive belongs to it
-Word = Tuple[int, int, str, bool]
+# a word of a sentence: start, end, part of speech, whether an article or possessive belongs to it, whether it's a
+# plural noun
+Word = Tuple[int, int, str, bool, bool]
 
 
 def clean(name: str) -> str:
@@ -70,21 +71,23 @@ def key(name: str) -> Key:
 
 
 def read(name: str, start: int, end: int, words: Optional[Sequence[Word]]) -> Tuple[str, Optional[bool],
-                                                                                    Optional[bool]]:
-    """The name without verbs, pronouns and the like at its edges, whether a word of it is a proper noun, and whether
-    an article or possessive belongs to it. start and end are the name's place in the sentence the words are from.
-    Without words (a model that doesn't tag) the name as it is and None twice."""
+                                                                                    Optional[bool], Optional[bool]]:
+    """The name without verbs, pronouns and the like at its edges, whether a word of it is a proper noun, whether an
+    article or possessive belongs to it, and whether its last word is a plural noun ("Robbs Männer"). start and end
+    are the name's place in the sentence the words are from. Without words (a model that doesn't tag) the name as it
+    is and None for the rest."""
     if not words:
-        return name, None, None
+        return name, None, None, None
     inside = [w for w in words if w[0] < end and w[1] > start]
     while inside and inside[0][2] in _NOT_AT_EDGES:
         inside.pop(0)
     while inside and inside[-1][2] in _NOT_AT_EDGES:
         inside.pop()
     if not inside:
-        return "", None, None
+        return "", None, None, None
     trimmed = name[max(inside[0][0] - start, 0):inside[-1][1] - start]
-    return trimmed, any(w[2] == "PROPN" for w in inside), any(w[3] or w[2] == "DET" for w in inside)
+    plural = bool(inside[-1][4]) if len(inside[-1]) > 4 else None
+    return trimmed, any(w[2] == "PROPN" for w in inside), any(w[3] or w[2] == "DET" for w in inside), plural
 
 
 @dataclass
@@ -96,6 +99,7 @@ class Mention:
     # from read(), None when unknown
     proper: Optional[bool] = None
     article: Optional[bool] = None
+    plural: Optional[bool] = None
 
 
 @dataclass
@@ -145,21 +149,30 @@ def cluster(mentions: Iterable[Mention], min_full: int = 3) -> Clusters:
         if not looks_like_a_name(name):
             not_names[name] += 1
             continue
-        kept.append(Mention(chapter=m.chapter, name=name, sentence=m.sentence, proper=m.proper, article=m.article))
-    # [mentions with grammar, with an article, with a proper noun] per key
+        kept.append(Mention(chapter=m.chapter, name=name, sentence=m.sentence, proper=m.proper, article=m.article,
+                            plural=m.plural))
+    # [mentions with grammar, with an article, with a proper noun, plural] per key
     grammar: Dict[Key, List[int]] = {}
     for m in kept:
         if m.article is not None:
-            counts = grammar.setdefault(key(m.name), [0, 0, 0])
+            counts = grammar.setdefault(key(m.name), [0, 0, 0, 0])
             counts[0] += 1
             counts[1] += bool(m.article)
             counts[2] += bool(m.proper)
-    common = {k for k, (n, article, proper) in grammar.items() if article * 2 >= n and proper * 2 < n}
+            counts[3] += bool(m.plural)
+    # a group of people ("Männer", "Robbs Männer") is no character either
+    common = {k for k, (n, article, proper, plural) in grammar.items()
+              if (article * 2 >= n and proper * 2 < n) or plural * 2 > n}
     for m in kept:
         if key(m.name) in common:
             not_names[m.name] += 1
     kept = [m for m in kept if key(m.name) not in common]
     keys = [key(m.name) for m in kept]
+    # German genitive without an apostrophe: "Joffreys" is Joffrey, when Joffrey is written more often
+    written = Counter(keys)
+    genitive = {k: (k[0][:-1],) for k in written
+                if len(k) == 1 and k[0].endswith("s") and written.get((k[0][:-1],), 0) > written[k]}
+    keys = [genitive.get(k, k) for k in keys]
     written = Counter(keys)
     # longest names first, every shorter one joins the single longer name it is part of
     roots: List[Key] = []
