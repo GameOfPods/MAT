@@ -26,11 +26,14 @@ class SummaryResult(ToolResult):
 
 class SummaryInput(ToolInput):
 
-    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None, kind: str = "transcript"):
+    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None, kind: str = "transcript",
+                 language: Optional[str] = None):
         self._text = text
         self._additional_metadata = {} if additional_metadata is None else additional_metadata
         # "transcript" or "chapter": which instructions the summary gets
         self.kind = kind
+        # ISO 639-1 code of the text when known, the summary is written in it
+        self.language = language
 
     @property
     def text(self):

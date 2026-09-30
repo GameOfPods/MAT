@@ -243,7 +243,7 @@ class BookPipeline(Pipeline):
             # like the podcast summary: a failing LLM must not cost the rest of the results
             try:
                 result = summarizer.process(
-                    origin_data=SummaryInput(*texts, kind="chapter",
+                    origin_data=SummaryInput(*texts, kind="chapter", language=step_input.data("Language"),
                                              additional_metadata={"book": getattr(book, "title", "") or ""}),
                     config=step_input.config)
             except Exception as e:

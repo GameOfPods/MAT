@@ -302,3 +302,33 @@ def test_map_reduce_joins_notes_in_groups_when_they_are_too_long(monkeypatch):
 
     reduces = [p for p in llm.prompts if "Write the summary of the whole transcript" in p]
     assert len(reduces) > 1  # groups first, then the final one
+
+
+@pytest.mark.parametrize("strategy", ["refine", "map-reduce"])
+def test_every_prompt_ends_with_the_language_of_the_episode(monkeypatch, strategy):
+    llm = RecordingLLM(responses=[f"answer {i}" for i in range(40)])
+    llm.prompts = []
+    monkeypatch.setattr(LLM, "get_llm", lambda self, **kwargs: llm)
+
+    # qwen3:8b summarized German episodes in English when only the system message mentioned the language
+    config = Config({"llm": {"chunk-size": 50, "strategy": strategy}})
+    text = "\n\n".join(f"sprecher_0 [{i}.0 - {i}.5]: Absatz Nummer {i} über nichts." for i in range(12))
+    SummaryLLM().process(SummaryInput(text, additional_metadata={}, language="de"), config=config)
+
+    assert len(llm.prompts) > 2
+    for prompt in llm.prompts:
+        last_lines = prompt.rstrip().splitlines()[-3:]
+        assert "Write in German." in last_lines, last_lines
+
+
+def test_language_instruction():
+    from MAT.tools.summary.llm import language_instruction, with_instruction
+
+    assert language_instruction("de") == "Write in German."
+    assert language_instruction("en-US") == "Write in English."
+    assert language_instruction("xh") == "Write in the language with the code xh."
+    assert language_instruction(None) == ""
+    assert with_instruction("Summarize it.\n\nSUMMARY:", "Write in German.") == \
+        "Summarize it.\n\nWrite in German.\n\nSUMMARY:"
+    assert with_instruction("Summarize it.", "Write in German.") == "Summarize it.\n\nWrite in German."
+    assert with_instruction("Summarize it.", "") == "Summarize it."

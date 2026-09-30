@@ -10,6 +10,7 @@
 #  GNU General Public License for more details.
 from typing import Any, Dict, Literal, Optional, List, Union
 import os
+import re
 from enum import Enum, auto as enum_auto
 import logging
 
@@ -91,6 +92,32 @@ def structured_output(service: str, setting: str = "auto") -> str:
     if "deepseek" in base:
         return "json"
     return "off"
+
+
+_LANGUAGES = {
+    "de": "German", "en": "English", "fr": "French", "es": "Spanish", "it": "Italian", "nl": "Dutch",
+    "pl": "Polish", "pt": "Portuguese", "sv": "Swedish", "da": "Danish", "no": "Norwegian", "fi": "Finnish",
+    "cs": "Czech", "tr": "Turkish", "ru": "Russian", "uk": "Ukrainian", "ja": "Japanese", "zh": "Chinese",
+}
+
+
+def language_instruction(language: Optional[str]) -> str:
+    """ "Write in German." for "de", empty when the language isn't known."""
+    if not language:
+        return ""
+    code = language.split("-")[0].split("_")[0].casefold()
+    name = _LANGUAGES.get(code)
+    return f"Write in {name}." if name else f"Write in the language with the code {language}."
+
+
+def with_instruction(prompt: str, instruction: str) -> str:
+    """The instruction as the last thing the model reads, before a closing "SUMMARY:" or "NOTES:" line."""
+    if not instruction:
+        return prompt
+    head, sep, last = prompt.rstrip().rpartition("\n")
+    if sep and re.fullmatch(r"[A-Z ]+:", last.strip()):
+        return f"{head}\n{instruction}\n\n{last}"
+    return f"{prompt.rstrip()}\n\n{instruction}"
 
 
 def ollama_url(base_url: Optional[str] = None) -> str:
@@ -273,15 +300,19 @@ class SummaryLLM(SummaryTool):
         system = self._fill(options.system_message, metadata=metadata)
         if metadata and "{additional_metadata}" not in options.system_message:
             system = f"{system}\n\nAdditional information about the source:\n{metadata}"
+        # qwen3:8b wrote English summaries of German episodes with "write in the language of the transcript" in the
+        # system message. Naming the language at the end of every prompt fixed that.
+        write_in = language_instruction(getattr(origin_data, "language", None))
 
         # the instructions and the answer have to fit next to the transcript. A refine call also carries the summary
         # so far, which can be as long as one answer.
-        reserved = len_fun(system) + len_fun(options.prompt)
+        reserved = len_fun(system) + len_fun(options.prompt) + len_fun(write_in)
         if options.strategy == "map-reduce":
             # a map call carries one chunk, a reduce call notes of at most one chunk's size
-            refine_reserved = len_fun(system) + max(len_fun(options.prompt_map), len_fun(options.prompt_reduce))
+            refine_reserved = (len_fun(system) + max(len_fun(options.prompt_map), len_fun(options.prompt_reduce))
+                               + len_fun(write_in))
         else:
-            refine_reserved = len_fun(system) + len_fun(options.prompt_refine) + options.max_tokens
+            refine_reserved = len_fun(system) + len_fun(options.prompt_refine) + options.max_tokens + len_fun(write_in)
         longest = max((len_fun(text) for text in origin_data.text), default=0)
         chunk_size = self._resolve_chunk_size(options, reserved=reserved, len_fun=len_fun,
                                               refine_reserved=refine_reserved, longest=longest)
@@ -310,7 +341,8 @@ class SummaryLLM(SummaryTool):
             self.__class__._LOGGER.info(f"Summarizing {len_fun(text)} tokens in {len(chunks)} chunk(s) of at most "
                                         f"{chunk_size} tokens")
             if len(chunks) > 1 and options.strategy == "map-reduce":
-                return_summaries.append(self._map_reduce(llm, options, system, metadata, chunks, chunk_size, len_fun))
+                return_summaries.append(self._map_reduce(llm, options, system, metadata, chunks, chunk_size, len_fun,
+                                                         write_in=write_in))
                 continue
             summary: Optional[str] = None
             for number, chunk in enumerate(chunks, start=1):
@@ -320,7 +352,7 @@ class SummaryLLM(SummaryTool):
                     self.__class__._LOGGER.info(f"Refining the summary with chunk {number} of {len(chunks)}")
                     prompt = self._fill(options.prompt_refine, text=chunk, metadata=metadata, existing_answer=summary)
                 # the instructions go in as a real system message, not glued in front of the transcript
-                answer = llm.invoke([SystemMessage(system), HumanMessage(prompt)])
+                answer = llm.invoke([SystemMessage(system), HumanMessage(with_instruction(prompt, write_in))])
                 summary = str(getattr(answer, "content", answer) or "").strip()
             return_summaries.append(summary or "")
 
@@ -328,13 +360,13 @@ class SummaryLLM(SummaryTool):
 
     @classmethod
     def _map_reduce(cls, llm, options: "LLMOptions", system: str, metadata: str, chunks: List[str],
-                    chunk_size: int, len_fun) -> str:
+                    chunk_size: int, len_fun, write_in: str = "") -> str:
         """Notes per chunk, then the summary from the notes. Notes that don't fit into one call together are
         reduced in groups first."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         def ask(prompt: str) -> str:
-            answer = llm.invoke([SystemMessage(system), HumanMessage(prompt)])
+            answer = llm.invoke([SystemMessage(system), HumanMessage(with_instruction(prompt, write_in))])
             return str(getattr(answer, "content", answer) or "").strip()
 
         notes = []

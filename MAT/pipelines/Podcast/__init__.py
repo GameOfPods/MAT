@@ -571,7 +571,9 @@ class PodcastPipeline(Pipeline):
                 vocabulary = load_vocabulary(step_input.config.options(self).vocabulary)
                 if vocabulary:
                     metadata["names and words of the show, spelled right"] = ", ".join(vocabulary)
-                summary = summarizer.process(origin_data=SummaryInput(full_transcript, additional_metadata=metadata),
+                language = getattr(step_input.data("Transcription"), "language", None)
+                summary = summarizer.process(origin_data=SummaryInput(full_transcript, additional_metadata=metadata,
+                                                                      language=language),
                                              config=step_input.config)
             except Exception as e:
                 self.__class__._LOGGER.exception(f"Summary failed for {basename(step_input.file)}, "
