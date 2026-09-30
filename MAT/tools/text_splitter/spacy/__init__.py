@@ -105,7 +105,8 @@ class SplitterSpacy(SplitterTool):
         for token in sent:
             if token.is_space:
                 continue
-            article = any(child.pos_ == "DET" for child in token.children) or (
+            # English possessives ("his father") are pronouns with dep poss, German ones ("sein Vater") are DET
+            article = any(child.pos_ == "DET" or child.dep_ == "poss" for child in token.children) or (
                 token.i > sent.start and token.nbor(-1).pos_ == "DET")
             plural = SplitterSpacy._plural(token)
             tokens.append((token.idx - shift, token.idx - shift + len(token.text), token.pos_, article, plural))

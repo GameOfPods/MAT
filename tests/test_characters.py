@@ -138,3 +138,19 @@ def test_a_rare_long_name_does_not_swallow_short_ones():
                 + [("2", "Tywin")] * 4)
     characters = {c["name"]: c["mentions"] for c in character_list(mentions, min_mentions=1)}
     assert characters == {"Gendry": 5, "Arya Gendry": 2, "Tywin Lennister": 7}
+
+
+def test_joined_names_the_other_side_of_the_pair():
+    from MAT.utils.characters import Mention, build, cluster, key
+
+    # the GPU run showed "Walton <- Walton": the pair was (Stahlbein, Walton) and Walton leads by mentions
+    sentence = "Dieser Walton, den sie Stahlbein nannten, würde die Jagd anführen."
+    clusters = cluster([Mention("1", "Walton", sentence)] * 4 + [Mention("1", "Stahlbein", sentence)], min_full=1)
+    (walton,) = build(clusters, min_mentions=1, joins=[(key("Stahlbein"), key("Walton"), sentence)])
+    assert walton["name"] == "Walton" and walton["joined"] == [{"name": "Stahlbein", "evidence": sentence}]
+
+
+def test_lowercase_words_and_fillers_are_no_names():
+    # English "his father" (possessive pronoun, no article) and a German "Genau" at the start of an answer
+    mentions = [("1", "father")] * 3 + [("1", "Father")] + [("1", "Genau")] * 2 + [("1", "Davos")] * 2
+    assert {c["name"]: c["mentions"] for c in character_list(mentions, min_mentions=1)} == {"Davos": 2}

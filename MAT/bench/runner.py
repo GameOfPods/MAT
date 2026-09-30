@@ -353,7 +353,7 @@ def collect_rows(output: Path, prepared: Sequence[Tuple[Dataset, List[Item]]],
                                        "language": item.language}
                 podcast = None
                 if info is None:
-                    row["error"] = "not run"
+                    row["error"] = "not run"  # MAT.bench.report.NOT_RUN
                 elif info.error is not None:
                     row["error"] = info.error
                 else:

@@ -38,8 +38,14 @@ def _ratio(rows: Sequence[Dict[str, Any]], error_keys: Sequence[str], total_key:
     return sum(r.get(key) or 0 for r in scored for key in error_keys) / total
 
 
+# the error of a row whose run doesn't exist, see collect_rows
+NOT_RUN = "not run"
+
+
 def summarize(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Totals over files: error rates are total errors over the total reference, not a mean of per file rates."""
+    """Totals over files: error rates are total errors over the total reference, not a mean of per file rates.
+    Runs that were never started (a system left out with --system) don't count as files or failures."""
+    rows = [r for r in rows if r.get("error") != NOT_RUN]
     ok = [r for r in rows if not r.get("error")]
     audio = sum(r.get("audio_seconds") or 0 for r in ok)
     wall = sum(r.get("wall_seconds") or 0 for r in ok)
@@ -115,6 +121,9 @@ def render_markdown(rows: Sequence[Dict[str, Any]], prepared: Sequence[Tuple[Any
     for dataset, _ in prepared:
         dataset_rows = [r for r in rows if r["dataset"] == dataset.name]
         summaries = [(s.name, summarize([r for r in dataset_rows if r["system"] == s.name])) for s in systems]
+        summaries = [(name, summary) for name, summary in summaries if summary["files"]]
+        if not summaries:
+            continue
         shown = [c for c in COLUMNS if c[1] not in OPTIONAL or any(summary[c[1]] is not None
                                                                    for _, summary in summaries)]
         der = f", DER collar {dataset.collar(bench_collar)} s" if any(s["der"] is not None for _, s in summaries) else ""
@@ -129,6 +138,8 @@ def render_markdown(rows: Sequence[Dict[str, Any]], prepared: Sequence[Tuple[Any
         for dataset, _ in prepared:
             for system in systems[1:]:
                 summary = summarize([r for r in rows if r["dataset"] == dataset.name and r["system"] == system.name])
+                if not summary["files"]:
+                    continue
                 table.append([dataset.name, system.name, _percent(summary["agree_wer"]),
                               _percent(summary["agree_der"])])
         lines += _table(["dataset", "system", f"WER vs {systems[0].name}", f"DER vs {systems[0].name}"], table)

@@ -46,6 +46,11 @@ PRONOUNS = {
     "its", "we", "us", "our", "they", "them", "their", "themselves", "someone", "somebody", "anyone", "everyone",
     "nobody", "who", "whom",
 }
+# spoken words NER took for a person in transcripts ("Genau" 28 times in one episode)
+FILLERS = {
+    "genau", "ja", "nein", "nee", "okay", "ok", "also", "naja", "hallo", "danke", "bitte", "hm", "äh", "ähm", "yeah",
+    "yes", "no", "well", "hey", "oh", "um", "uh",
+}
 # parts of speech that don't belong to a name at its edges: "Melisandre seufzte", "Ich singe", "Jojen ernst"
 _NOT_AT_EDGES = {"VERB", "AUX", "ADV", "PRON", "ADP", "CCONJ", "SCONJ", "PART", "PUNCT", "INTJ"}
 _EDGES = re.compile(r"^[\W_]+|[\W_]+$", re.UNICODE)
@@ -132,9 +137,10 @@ class Clusters:
 
 
 def looks_like_a_name(name: str) -> bool:
-    """False for pronouns and titles on their own ("er", "Ich singe", "Der König")."""
+    """False for pronouns, filler words and titles on their own ("er", "Ich singe", "Genau", "Der König")."""
     tokens = [token.rstrip(".") for token in name.casefold().split()]
-    return bool(tokens) and tokens[0] not in PRONOUNS and not all(token in TITLES for token in tokens)
+    return (bool(tokens) and tokens[0] not in PRONOUNS and tokens[0] not in FILLERS
+            and not all(token in TITLES for token in tokens))
 
 
 def cluster(mentions: Iterable[Mention], min_full: int = 3, elsewhere: Optional[Dict[Key, int]] = None) -> Clusters:
@@ -168,6 +174,10 @@ def cluster(mentions: Iterable[Mention], min_full: int = 3, elsewhere: Optional[
     # a group of people ("Männer", "Robbs Männer") is no character either
     common = {k for k, (n, article, proper, plural) in grammar.items()
               if (article * 2 >= n and proper * 2 < n) or plural * 2 > n}
+    # names are capitalized, a word that is mostly written in lowercase isn't one ("father", "brother" in English)
+    written_as = Counter(key(m.name) for m in kept)
+    lowercase = Counter(key(m.name) for m in kept if m.name[:1].islower())
+    common |= {k for k, n in lowercase.items() if n * 2 > written_as[k]}
     for m in kept:
         if key(m.name) in common:
             not_names[m.name] += 1
@@ -300,13 +310,13 @@ def build(clusters: Clusters, min_mentions: int = 2, joins: Sequence[Tuple[Key, 
             root = group[root]
         return root
 
-    evidence: Dict[Key, List[Tuple[Key, str]]] = {}
+    evidence: Dict[Key, List[Tuple[Key, Key, str]]] = {}
     for a, b, quote in joins:
         ra, rb = find(a), find(b)
         if ra == rb:
             continue
         group[rb] = ra
-        evidence.setdefault(ra, []).append((b, quote))
+        evidence.setdefault(ra, []).append((a, b, quote))
         evidence[ra].extend(evidence.pop(rb, []))
 
     members: Dict[Key, List[int]] = {}
@@ -327,7 +337,9 @@ def build(clusters: Clusters, min_mentions: int = 2, joins: Sequence[Tuple[Key, 
             "mentions": len(found),
             "variants": dict(Counter(m.name for m in found).most_common()),
             "chapters": dict(Counter(m.chapter for m in found)),
-            "joined": [{"name": clusters.display(other), "evidence": quote} for other, quote in evidence.get(top, [])],
+            # the name that was joined to the character, not the character's own name (a pair has no order)
+            "joined": [{"name": clusters.display(b if a == leader else a), "evidence": quote}
+                       for a, b, quote in evidence.get(top, [])],
         })
     return sorted(characters, key=lambda c: (-c["mentions"], c["name"]))
 
@@ -338,5 +350,5 @@ def character_list(mentions: Sequence[Tuple[str, str]], min_mentions: int = 2, m
                  min_mentions=min_mentions)
 
 
-__all__ = ["TITLES", "PRONOUNS", "Word", "clean", "key", "read", "looks_like_a_name", "Mention", "Clusters", "cluster", "PairCandidate", "MentionCandidate",
+__all__ = ["TITLES", "PRONOUNS", "FILLERS", "Word", "clean", "key", "read", "looks_like_a_name", "Mention", "Clusters", "cluster", "PairCandidate", "MentionCandidate",
            "candidates", "build", "character_list"]

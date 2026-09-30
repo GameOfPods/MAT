@@ -161,11 +161,14 @@ def test_run_benchmark_resumes_and_records_failures(tmp_path):
 def test_summarize_uses_totals():
     rows = [{"wer_errors": 1, "wer_words": 10, "audio_seconds": 60, "wall_seconds": 10},
             {"wer_errors": 9, "wer_words": 90, "audio_seconds": 120, "wall_seconds": 20},
-            {"error": "boom", "wer_errors": 100, "wer_words": 100}]
+            {"error": "boom", "wer_errors": 100, "wer_words": 100},
+            # a system that was left out of this run with --system, the GPU box report counted 54 of those as failed
+            {"error": "not run"}]
     summary = summarize(rows)
     assert summary["wer"] == 0.1 and summary["rtfx"] == 6.0
     assert (summary["files"], summary["failed"]) == (3, 1)
     assert summary["der"] is None
+    assert summarize([{"error": "not run"}])["files"] == 0
 
 
 def test_gpu_sampler_without_nvidia_smi(monkeypatch):

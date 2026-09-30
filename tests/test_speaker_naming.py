@@ -273,20 +273,26 @@ HAMILTON = (
                             "meiner Freundin Carla.", True),
     # "Alex" isn't in "Alexander Hamilton"
     ("sprecher_0", "Alex", "sprecher_1 [133.824 - 180.2]: Es geht um das Leben von Alexander Hamilton.", True),
-    # somebody else says it: fine
-    ("sprecher_1", "Max", "sprecher_2 [24.635 - 27.9]: 6, schon ein Gast. Wir haben Max dabei.", False),
+    # somebody else says it and the named speaker answers: fine
+    ("sprecher_1", "Max", "sprecher_2 [24.635 - 27.9]: 6, schon ein Gast. Wir haben Max dabei. "
+                          "sprecher_1 [28.804 - 31.92]: Einen wunderschönen guten Tag.", False),
     ("sprecher_2", "Alex", "sprecher_1 [311.702 - 393.996]: Warum ist es bei dir nicht so, Alex? / "
                            "sprecher_2 [394.036 - 436.453]: Nee, leider gar nicht.", False),
     # a quote without its label is looked up in the lines
     ("sprecher_2", "Carla", "Carla, du guckst gerade schon wieder so.", True),
-    ("sprecher_0", "Carla", "Carla, du guckst gerade schon wieder so.", False),
+    ("sprecher_0", "Carla", "Carla, du guckst gerade schon wieder so. -- Ich bin Carla und ich gucke immer so.", False),
     # introducing yourself is the exception
     ("sprecher_0", "Carla", "sprecher_0 [437.0 - 440.0]: Ich bin Carla und ich gucke immer so.", False),
+    # three people: sprecher_1 asks Alex something, and sprecher_2 answers. qwen3:8b named sprecher_0
+    ("sprecher_0", "Alex", "sprecher_1 [311.702 - 393.996]: Warum ist es bei dir nicht so, Alex?", True),
+    ("sprecher_2", "Alex", "sprecher_1 [311.702 - 393.996]: Warum ist es bei dir nicht so, Alex?", False),
+    # what OpenAI answered: only the line with the name, the named speaker is the next to talk
+    ("sprecher_1", "Max", "sprecher_2 [24.635 - 27.9]: 6, schon ein Gast. Wir haben Max dabei.", False),
 ])
 def test_evidence_that_names_someone_else(speaker, name, evidence, wrong):
     from MAT.tools.speakernaming.llm import contradicted
 
-    assert bool(contradicted(speaker, name, evidence, HAMILTON)) == wrong
+    assert bool(contradicted(speaker, name, evidence, HAMILTON, speakers=3)) == wrong
     answer = json.dumps({"speakers": [{"id": speaker, "name": name, "confidence": "high", "evidence": evidence}]})
     names = SpeakerNamingLLM._parse(answer, known=["sprecher_0", "sprecher_1", "sprecher_2"], lines=HAMILTON)
     assert (names == []) == wrong

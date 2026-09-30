@@ -63,6 +63,7 @@ def quoted_in(quote: str, text: str) -> bool:
     return True
 
 
+_TIMED = re.compile(r"^(\S+)\s*\[([\d.]+)\s*-\s*([\d.]+)\]\s*:\s*(.*)$")
 _LABEL = re.compile(r"(\S+)\s*\[[\d.]+\s*-\s*[\d.]+\]\s*:")
 # words right before a name that make it the speaker's own ("ich bin Alex", "this is Alex")
 _INTRODUCTION = re.compile(r"(?:\bich\s+bin|\bich\s+hei(?:ß|ss)e|\bmein\s+name\s+ist|\bhier\s+(?:ist|spricht)|"
@@ -70,18 +71,30 @@ _INTRODUCTION = re.compile(r"(?:\bich\s+bin|\bich\s+hei(?:ß|ss)e|\bmein\s+name\
                            re.IGNORECASE)
 
 
-def contradicted(speaker: str, name: str, evidence: str, lines: str) -> Optional[str]:
-    """Why the quoted evidence doesn't make `speaker` the one called `name`, or None when it can. Two mistakes a
-    small model made on real episodes: it named sprecher_0 Alex from "Alexander Hamilton", and it named the speaker
-    who said "meine Freundin Carla" Carla. A name somebody says is usually the name of someone else, unless they
-    introduce themselves."""
+def contradicted(speaker: str, name: str, evidence: str, lines: str, speakers: int = 2) -> Optional[str]:
+    """Why the quoted evidence doesn't make `speaker` the one called `name`, or None when it can. Mistakes a small
+    model made on real episodes: it named sprecher_0 Alex from "Alexander Hamilton", it named the speaker who said
+    "meine Freundin Carla" Carla, and with three people it named sprecher_0 Alex because sprecher_1 asked "Alex?".
+    A name somebody says is usually the name of someone else, unless they introduce themselves. With more than two
+    speakers that doesn't say which of the others it is: the named speaker has to have a line in the quote, or be the
+    one who speaks next after the name was said (who is talked to usually answers)."""
     first = name.split()[0]
     word = re.compile(rf"(?<!\w){re.escape(first)}(?!\w)", re.IGNORECASE)
-    said_by = {}
+    said_by, timeline = {}, []
     for line in lines.splitlines():
-        found = _LABEL.match(line)
+        found = _TIMED.match(line)
         if found:
-            said_by[line[found.end():].strip()] = found.group(1)
+            said_by[found.group(4).strip()] = found.group(1)
+            timeline.append((float(found.group(2)), float(found.group(3)), found.group(1), found.group(4).strip()))
+    timeline = sorted(set(timeline))
+
+    def answered_by(said: Optional[str], text: str) -> Optional[str]:
+        """Who speaks first after the line the quote comes from."""
+        ends = [end for start, end, who_, line in timeline if who_ == said and quoted_in(text, line)]
+        if not ends:
+            return None
+        after = [(start, who_) for start, end, who_, line in timeline if start >= ends[0] and who_ != said]
+        return min(after)[1] if after else None
 
     def who(text: str) -> Optional[str]:
         """The speaker of a quote without its label, when exactly one speaker has a line with it."""
@@ -100,10 +113,15 @@ def contradicted(speaker: str, name: str, evidence: str, lines: str) -> Optional
     with_name = [(said, text, found) for said, text in pieces for found in word.finditer(text)]
     if not with_name:
         return f'the quoted lines don\'t contain "{first}"'
-    for said, text, found in with_name:
-        if said != speaker or _INTRODUCTION.search(text[:found.start()]):
-            return None
-    return f"only {speaker} says {first} in the quote, that's someone else being talked to or about"
+    if any(said in (speaker, None) and _INTRODUCTION.search(text[:found.start()]) for said, text, found in with_name):
+        return None
+    if all(said == speaker for said, _, _ in with_name):
+        return f"only {speaker} says {first} in the quote, that's someone else being talked to or about"
+    if speakers > 2 and not any(said == speaker for said, _ in pieces) and not any(
+            answered_by(said, text) == speaker for said, text, _ in with_name if said != speaker):
+        return (f"with {speakers} speakers a name said to someone doesn't tell which of them it is, and {speaker} "
+                f"neither speaks in the quote nor answers next")
+    return None
 
 
 # A name we accept: letters, optionally a second part after a space, hyphen or apostrophe. No digits and no
@@ -208,7 +226,7 @@ class SpeakerNamingLLM(LLMTask, SpeakerNamingTool):
             if lines is not None and not quoted_in(evidence, lines):
                 cls._LOGGER.info(f"Not naming {speaker} {name}, the quoted line isn't in the transcript: {evidence}")
                 continue
-            why = contradicted(speaker, name, evidence, lines) if lines is not None else None
+            why = contradicted(speaker, name, evidence, lines, speakers=len(known)) if lines is not None else None
             if why:
                 cls._LOGGER.info(f"Not naming {speaker} {name}, {why}: {evidence}")
                 continue

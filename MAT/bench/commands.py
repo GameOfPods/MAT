@@ -121,6 +121,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
         prepared = prepare(datasets, args.limit)
         rows = collect_rows(Path(args.output), prepared, systems, bench.settings.collar)
         write_report(Path(args.output), rows, prepared, systems, bench.settings.collar)
+    from MAT.bench.report import NOT_RUN
+
+    # a report over systems that only ran on some datasets has rows that were never run, those aren't failures
+    rows = [row for row in rows if row.get("error") != NOT_RUN]
     failed = sum(1 for row in rows if row.get("error"))
     print(f"Wrote {Path(args.output) / 'report.md'} and results.csv, {len(rows)} runs, {failed} failed")
     return 1 if failed else 0
