@@ -28,6 +28,8 @@ class Chapter:
     heading_beautified: Optional[str] = None
     sentences: Optional[List[str]] = None
     sentence_words: Optional[List[Dict[str, int]]] = None
+    # per sentence (start, end, part of speech, has an article), see SplitterResult.tokens. Not written to the result
+    sentence_tokens: Optional[List[List[Tuple[int, int, str, bool]]]] = None
     ner: Optional[List[Dict[str, List[Tuple[str, int, int]]]]] = None
     summary: Optional[str] = None
 
@@ -62,6 +64,10 @@ class BookOptions(Options):
     character_labels: List[str] = Field(["PERSON"], description="NER labels that count as characters for the "
                                                                 "character list.")
     min_mentions: int = Field(2, ge=1, description="Characters mentioned less often stay off the character list.")
+    full_name_mentions: int = Field(3, ge=1, description="How often a longer name has to be written before the short "
+                                                         "names in it join it (Stannis -> Stannis Baratheon). Guards "
+                                                         "against NER spans with two people in them. Lower it for "
+                                                         "short texts.")
     character_judge: str = Field("none", description='Decides with an LLM which names are one character, from '
                                                       'sentences that say so ("X, den alle Y nannten"), English '
                                                       'nicknames and ambiguous short names like a family name. '
@@ -171,6 +177,7 @@ class BookPipeline(Pipeline):
                                             config=step_input.config)
                 c.sentences = list(splitted.sentences) if splitted.sentences is not None else None
                 c.sentence_words = list(splitted.words) if splitted.words is not None else None
+                c.sentence_tokens = list(splitted.tokens) if getattr(splitted, "tokens", None) is not None else None
             return PipelineStepResult(name="Word Counter", data=chapters)
 
         def ner_task(step_input: PipelineStepInput) -> PipelineStepResult:
@@ -191,18 +198,30 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="NER", data=chapters)
 
         def character_task(step_input: PipelineStepInput) -> PipelineStepResult:
-            from MAT.utils.characters import Mention, build, cluster
+            from MAT.utils.characters import Mention, build, cluster, read
 
             chapters: List[Chapter] = step_input.data("NER")
             if not chapters:
                 return PipelineStepResult(name="Characters", data=None)
             options = step_input.config.options(self)
             wanted = {label.casefold() for label in options.character_labels}
-            mentions = [Mention(chapter=c.get_beautiful_heading(), name=text,
-                                sentence=c.sentences[i] if c.sentences and i < len(c.sentences) else "")
-                        for c in chapters for i, sentence in enumerate(c.ner or [])
-                        for label, found in sentence.items() if label.casefold() in wanted for text, _, _ in found]
-            clusters = cluster(mentions)
+            mentions = []
+            for c in chapters:
+                for i, sentence in enumerate(c.ner or []):
+                    words = c.sentence_tokens[i] if c.sentence_tokens and i < len(c.sentence_tokens) else None
+                    for label, found in sentence.items():
+                        if label.casefold() not in wanted:
+                            continue
+                        for text, start, end in found:
+                            name, proper, article = read(text, start, end, words)
+                            mentions.append(Mention(chapter=c.get_beautiful_heading(), name=name, proper=proper,
+                                                    article=article,
+                                                    sentence=c.sentences[i] if c.sentences and i < len(c.sentences)
+                                                    else ""))
+            clusters = cluster(mentions, min_full=options.full_name_mentions)
+            if clusters.not_names:
+                self.__class__._LOGGER.info("Not names, left out of the characters: " + ", ".join(
+                    f"{name} ({count})" for name, count in clusters.not_names.most_common(10)))
             joins, resolved = self._judge_characters(clusters, step_input)
             characters = build(clusters, min_mentions=options.min_mentions, joins=joins, resolved=resolved)
             self.__class__._LOGGER.info(f"{len(characters)} characters, most mentioned: "

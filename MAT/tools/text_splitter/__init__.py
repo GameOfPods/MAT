@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Optional, Iterable, Dict
+from typing import Optional, Iterable, Dict, List, Tuple
 from dataclasses import dataclass
 
 from MAT.utils.config import Config
@@ -20,6 +20,9 @@ from MAT.tools import ToolResult, ToolInput, Tool
 class SplitterResult(ToolResult):
     sentences: Iterable[str]
     words: Iterable[Dict[str, int]]
+    # per sentence its words as (start, end, part of speech, has an article or possessive), with offsets into the
+    # sentence text. None when the model doesn't tag parts of speech. Used to tell names from other words.
+    tokens: Optional[List[List[Tuple[int, int, str, bool]]]] = None
 
 
 @dataclass

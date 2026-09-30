@@ -74,7 +74,26 @@ class SplitterSpacy(SplitterTool):
         ret = SplitterResult(
             sentences=[text for text, _ in sentences],
             words=[Counter(e.lemma_ for e in sent if not any([e.is_space, e.is_punct, e.is_stop]))
-                   for _, sent in sentences]
+                   for _, sent in sentences],
+            tokens=[self._tokens(text, sent) for text, sent in sentences] if self._tags(nlp) else None,
         )
         del doc
         return ret
+
+    @staticmethod
+    def _tags(nlp) -> bool:
+        """Whether the model tags parts of speech and parses (xx_sent_ud_sm only splits sentences)."""
+        return (nlp.has_pipe("tagger") or nlp.has_pipe("morphologizer")) and nlp.has_pipe("parser")
+
+    @staticmethod
+    def _tokens(text: str, sent) -> list:
+        # offsets into the stripped sentence text, so they fit the NER spans on it
+        shift = sent.start_char + (len(sent.text) - len(sent.text.lstrip()))
+        tokens = []
+        for token in sent:
+            if token.is_space:
+                continue
+            article = any(child.pos_ == "DET" for child in token.children) or (
+                token.i > sent.start and token.nbor(-1).pos_ == "DET")
+            tokens.append((token.idx - shift, token.idx - shift + len(token.text), token.pos_, article))
+        return tokens

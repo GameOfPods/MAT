@@ -176,11 +176,16 @@ def transcript_entities(words: List[WordTupleSpeaker], ner, config: Config, max_
     if not pieces:
         return []
 
+    from MAT.utils.characters import clean, looks_like_a_name
+
     result = ner.process(origin_data=NERInput(*[text for text, _ in pieces]), config=config)
     entities = []
     for (text, spans), found in zip(pieces, result.ner):
         for label, hits in found.items():
             for entity_text, start, end in hits:
+                # NER calls "er" or "König" a PERSON now and then, that's never a person's name
+                if label.casefold() == "person" and not looks_like_a_name(clean(entity_text)):
+                    continue
                 covered = [words[index] for a, b, index in spans if a < end and b > start]
                 if not covered:
                     continue

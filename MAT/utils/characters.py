@@ -15,6 +15,11 @@ A book calls the same person "Lord Eddard Stark", "Eddard Stark", "Eddard" and "
 dropped, and a name that is part of exactly one longer name joins it ("Eddard" -> "Eddard Stark"). A name that fits
 several longer ones ("Stark") stays on its own, guessing would merge different people.
 
+NER also calls pronouns and plain nouns a PERSON ("er", "der Mann", "sein Vater"), and German writes those nouns
+capitalized like names. `cluster()` leaves out pronouns, titles on their own and words that mostly come with an
+article and that spaCy doesn't call a proper noun. On a real book the article is the better signal: spaCy tagged
+invented names like Cersei as nouns, but they almost never come with an article, "Mann" and "Vater" nearly always do.
+
 On top of that, `candidates()` finds what only understanding the text can decide: two names in one sentence that
 say they are the same person ("Davos, den alle den Zwiebelritter nannten"), English nicknames ("Ned" and
 "Edward"), and every sentence with an ambiguous short name. A judge (llm-characters) decides them, and `build()`
@@ -29,12 +34,26 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 TITLES = {
     "mr", "mrs", "ms", "miss", "dr", "sir", "ser", "lord", "lady", "king", "queen", "prince", "princess", "maester",
     "captain", "herr", "frau", "fräulein", "könig", "königin", "prinz", "prinzessin", "fürst", "fürstin", "graf",
-    "gräfin", "hauptmann", "meister", "the", "der", "die", "das",
+    "gräfin", "hauptmann", "meister", "the", "der", "die", "das", "mylord", "mylady", "milord", "milady", "majestät",
+    "hoheit", "septon", "septa",
 }
+# never a name, whatever NER says. Only checked at the start of a name, so "Aegon I" stays
+PRONOUNS = {
+    "ich", "du", "er", "sie", "es", "wir", "ihr", "mich", "dich", "sich", "uns", "euch", "mir", "dir", "ihm", "ihn",
+    "ihnen", "man", "jemand", "jemanden", "niemand", "niemanden", "wer", "wen", "wem", "sein", "seine", "seinen",
+    "seinem", "seiner", "ihre", "ihren", "ihrem", "ihrer", "mein", "meine", "dein", "deine", "euer", "eure", "unser",
+    "i", "me", "my", "myself", "you", "your", "yourself", "he", "him", "his", "himself", "she", "her", "herself", "it",
+    "its", "we", "us", "our", "they", "them", "their", "themselves", "someone", "somebody", "anyone", "everyone",
+    "nobody", "who", "whom",
+}
+# parts of speech that don't belong to a name at its edges: "Melisandre seufzte", "Ich singe", "Jojen ernst"
+_NOT_AT_EDGES = {"VERB", "AUX", "ADV", "PRON", "ADP", "CCONJ", "SCONJ", "PART", "PUNCT", "INTJ"}
 _EDGES = re.compile(r"^[\W_]+|[\W_]+$", re.UNICODE)
 _POSSESSIVE = re.compile(r"(?:['’]s|['’])$", re.IGNORECASE)
 
 Key = Tuple[str, ...]
+# a word of a sentence: start, end, part of speech, whether an article or possessive belongs to it
+Word = Tuple[int, int, str, bool]
 
 
 def clean(name: str) -> str:
@@ -50,12 +69,33 @@ def key(name: str) -> Key:
     return without_titles or tuple(tokens)
 
 
+def read(name: str, start: int, end: int, words: Optional[Sequence[Word]]) -> Tuple[str, Optional[bool],
+                                                                                    Optional[bool]]:
+    """The name without verbs, pronouns and the like at its edges, whether a word of it is a proper noun, and whether
+    an article or possessive belongs to it. start and end are the name's place in the sentence the words are from.
+    Without words (a model that doesn't tag) the name as it is and None twice."""
+    if not words:
+        return name, None, None
+    inside = [w for w in words if w[0] < end and w[1] > start]
+    while inside and inside[0][2] in _NOT_AT_EDGES:
+        inside.pop(0)
+    while inside and inside[-1][2] in _NOT_AT_EDGES:
+        inside.pop()
+    if not inside:
+        return "", None, None
+    trimmed = name[max(inside[0][0] - start, 0):inside[-1][1] - start]
+    return trimmed, any(w[2] == "PROPN" for w in inside), any(w[3] or w[2] == "DET" for w in inside)
+
+
 @dataclass
 class Mention:
     chapter: str
     name: str
     # the sentence it was found in, the judge needs it as evidence
     sentence: str = ""
+    # from read(), None when unknown
+    proper: Optional[bool] = None
+    article: Optional[bool] = None
 
 
 @dataclass
@@ -67,6 +107,8 @@ class Clusters:
     roots: List[Key]
     # short keys that fit several roots ("stark"), with those roots
     ambiguous: Dict[Key, List[Key]] = field(default_factory=dict)
+    # what NER called a name and cluster() didn't, with counts
+    not_names: Counter = field(default_factory=Counter)
 
     def display(self, root: Key) -> str:
         """The most used spelling of the full name, not of a short form. On a tie the shorter one."""
@@ -85,19 +127,46 @@ class Clusters:
         return seen
 
 
-def cluster(mentions: Iterable[Mention]) -> Clusters:
-    kept = []
+def looks_like_a_name(name: str) -> bool:
+    """False for pronouns and titles on their own ("er", "Ich singe", "Der König")."""
+    tokens = [token.rstrip(".") for token in name.casefold().split()]
+    return bool(tokens) and tokens[0] not in PRONOUNS and not all(token in TITLES for token in tokens)
+
+
+def cluster(mentions: Iterable[Mention], min_full: int = 3) -> Clusters:
+    """Groups the mentions by the rules. A longer name takes in the short names that are part of it only once it was
+    written min_full times itself: NER sometimes returns two people as one span ("fragte Arya Gendry", Arya asked
+    Gendry), and such a span would otherwise swallow every "Gendry" of the book."""
+    kept, not_names = [], Counter()
     for m in mentions:
         name = clean(m.name)
-        if name:
-            kept.append(Mention(chapter=m.chapter, name=name, sentence=m.sentence))
+        if not name:
+            continue
+        if not looks_like_a_name(name):
+            not_names[name] += 1
+            continue
+        kept.append(Mention(chapter=m.chapter, name=name, sentence=m.sentence, proper=m.proper, article=m.article))
+    # [mentions with grammar, with an article, with a proper noun] per key
+    grammar: Dict[Key, List[int]] = {}
+    for m in kept:
+        if m.article is not None:
+            counts = grammar.setdefault(key(m.name), [0, 0, 0])
+            counts[0] += 1
+            counts[1] += bool(m.article)
+            counts[2] += bool(m.proper)
+    common = {k for k, (n, article, proper) in grammar.items() if article * 2 >= n and proper * 2 < n}
+    for m in kept:
+        if key(m.name) in common:
+            not_names[m.name] += 1
+    kept = [m for m in kept if key(m.name) not in common]
     keys = [key(m.name) for m in kept]
+    written = Counter(keys)
     # longest names first, every shorter one joins the single longer name it is part of
     roots: List[Key] = []
     parent: Dict[Key, Key] = {}
     ambiguous: Dict[Key, List[Key]] = {}
     for current in sorted(set(keys), key=lambda k: (-len(k), k)):
-        containers = [root for root in roots if set(current) < set(root)]
+        containers = [root for root in roots if set(current) < set(root) and written[root] >= min_full]
         if len(containers) == 1:
             parent[current] = containers[0]
         else:
@@ -105,7 +174,7 @@ def cluster(mentions: Iterable[Mention]) -> Clusters:
             parent[current] = current
             if len(containers) > 1:
                 ambiguous[current] = containers
-    return Clusters(mentions=kept, keys=keys, parent=parent, roots=roots, ambiguous=ambiguous)
+    return Clusters(mentions=kept, keys=keys, parent=parent, roots=roots, ambiguous=ambiguous, not_names=not_names)
 
 
 # ---------------------------------------------------------------- candidates for the judge
@@ -245,10 +314,11 @@ def build(clusters: Clusters, min_mentions: int = 2, joins: Sequence[Tuple[Key, 
     return sorted(characters, key=lambda c: (-c["mentions"], c["name"]))
 
 
-def character_list(mentions: Sequence[Tuple[str, str]], min_mentions: int = 2) -> List[Dict]:
+def character_list(mentions: Sequence[Tuple[str, str]], min_mentions: int = 2, min_full: int = 3) -> List[Dict]:
     """mentions are (chapter, name as written). Only the rules, no judge."""
-    return build(cluster(Mention(chapter, name) for chapter, name in mentions), min_mentions=min_mentions)
+    return build(cluster((Mention(chapter, name) for chapter, name in mentions), min_full=min_full),
+                 min_mentions=min_mentions)
 
 
-__all__ = ["TITLES", "clean", "key", "Mention", "Clusters", "cluster", "PairCandidate", "MentionCandidate",
+__all__ = ["TITLES", "PRONOUNS", "Word", "clean", "key", "read", "looks_like_a_name", "Mention", "Clusters", "cluster", "PairCandidate", "MentionCandidate",
            "candidates", "build", "character_list"]

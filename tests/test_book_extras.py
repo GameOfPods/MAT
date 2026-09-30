@@ -22,7 +22,8 @@ def test_characters_come_from_person_entities_of_all_chapters():
     ]
     _, steps = _steps()
     result = steps["character_task"](PipelineStepInput(
-        file="book.epub", config=Config({}), previous_results={"NER": PipelineStepResult("NER", chapters)}))
+        file="book.epub", config=Config({"book": {"full-name-mentions": 1}}),
+        previous_results={"NER": PipelineStepResult("NER", chapters)}))
     assert result.data == [{"name": "Stannis Baratheon", "mentions": 3,
                             "variants": {"Stannis": 2, "Stannis Baratheon": 1}, "chapters": {"Davos": 2, "Jon": 1},
                             "joined": []}]
@@ -82,6 +83,12 @@ def test_spacy_sentences_lose_their_line_breaks():
     splitter = SplitterSpacy()
     result = splitter.process(SplitterInput("Alice met Bob.\nThey both worked for Acme.", language="en"), Config({}))
     assert list(result.sentences) == ["Alice met Bob.", "They both worked for Acme."]
+    # words with offsets into their own sentence, so they line up with the NER spans
+    second = list(result.sentences)[1]
+    for start, end, pos, article in result.tokens[1]:
+        assert second[start:end].strip() == second[start:end] != ""
+    assert [(second[s:e], pos) for s, e, pos, _ in result.tokens[1]][0] == ("They", "PRON")
+    assert result.tokens[0][0][:3] == (0, 5, "PROPN")
     # a second chapter reuses the loaded model
     splitter.process(SplitterInput("Bob left.", language="en"), Config({}))
     assert list(splitter._loaded) == ["en_core_web_md"]

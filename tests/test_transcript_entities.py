@@ -96,3 +96,9 @@ def test_entities_run_per_sentence_when_there_are_sentences():
     entities = transcript_entities(words, ner, Config({}), sentences=sentences)
     assert ner.texts == ["Hallo zusammen.", "Heute geht es um Stannis Baratheon."]
     assert [(e["text"], e["start"], e["end"]) for e in entities] == [("Stannis Baratheon", 6.0, 7.5)]
+
+
+def test_pronouns_and_titles_are_no_person():
+    words = _words("alex", "Er sagt der König und Davos kommen.", 0.0)
+    entities = transcript_entities(words, FakeNER(["Er", "König", "Davos"]), Config({}))
+    assert [e["text"] for e in entities] == ["Davos"]
