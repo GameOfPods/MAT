@@ -1,0 +1,94 @@
+# Runs when a release is published:
+# 1. the release tag has to be "v" + the MAT version from pyproject.toml (v0.2.0 for 0.2.0)
+# 2. the result format schemas are attached, also when they didn't change, so other projects can always download the
+#    newest ones from https://github.com/GameOfPods/MAT/releases/latest/download/<file name>. Each file is also attached
+#    with the format version in its name (podcast-result-2.5.0.schema.json), so a download says which version it is.
+# GitHub can't stop a release from being published, so a wrong tag fails the run and nothing gets attached.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing release to check and attach the schemas to
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  version:
+    name: Release tag matches the MAT version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Compare the tag with the version in pyproject.toml
+        run: python3 scripts/check_release_version.py "$TAG"
+
+  schemas:
+    name: Attach result format schemas
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install mat-format
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv" ./packages/mat-format
+
+      - name: Generate the schemas
+        run: '"$RUNNER_TEMP/venv/bin/python" -m mat_format.schema --output dist/schemas'
+
+      - name: Compare with the committed schemas
+        # the generated files are the ones that get attached, a difference means someone forgot to regenerate them
+        run: |
+          if ! diff -r dist/schemas packages/mat-format/src/mat_format/schemas; then
+            echo "::warning::committed schema files differ from the models, attaching the generated ones"
+          fi
+
+      - name: Bundle schemas, spec, examples and a README
+        # the spec's links are rewritten to work inside the zip, see the script
+        run: '"$RUNNER_TEMP/venv/bin/python" scripts/build_format_bundle.py --schemas dist/schemas --output dist --tag "$TAG"'
+
+      - name: Build the mat-format wheel
+        # Python programs can install the reader from the release instead of writing their own
+        run: uv build --package mat-format --wheel --out-dir dist/wheel
+
+      - name: Copies with the format version in the name
+        run: |
+          FORMAT=$("$RUNNER_TEMP/venv/bin/python" -c "import mat_format; print(mat_format.__version__)")
+          echo "Result format $FORMAT"
+          mkdir -p dist/versioned
+          for file in dist/schemas/*.schema.json; do
+            name=$(basename "$file" .schema.json)
+            cp "$file" "dist/versioned/$name-$FORMAT.schema.json"
+          done
+          cp dist/mat-result-format.zip "dist/versioned/mat-result-format-$FORMAT.zip"
+          ls -la dist/versioned
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --clobber replaces files of a previous run with the same name
+        run: |
+          gh release upload "$TAG" dist/schemas/*.schema.json dist/mat-result-format.zip dist/versioned/* dist/wheel/*.whl \
+            --clobber --repo "$GITHUB_REPOSITORY"

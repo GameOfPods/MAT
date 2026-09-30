@@ -10,9 +10,10 @@
 #  GNU General Public License for more details.
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Iterable, Optional
+from importlib import metadata
+from typing import Any, ClassVar, Dict, Generic, Optional, Tuple, TypeVar
 
-from MAT.utils.config import ConfigClass, Config
+from MAT.utils.config import Config, Configurable
 
 
 class ToolResult(ABC):
@@ -27,11 +28,37 @@ T_out = TypeVar("T_out", bound=ToolResult)
 T_in = TypeVar("T_in", bound=ToolInput)
 
 
-class Tool(Generic[T_in, T_out], ConfigClass, ABC):
+class Tool(Generic[T_in, T_out], Configurable, ABC):
+    slot: ClassVar[str] = ""
+    backend_name: ClassVar[str] = ""
+    # distribution names, their versions go into the result so you can tell what produced it
+    packages: ClassVar[Tuple[str, ...]] = ()
+    # what lowers the GPU memory of this backend, shown when it runs out
+    memory_hint: ClassVar[str] = ""
 
     @abstractmethod
     def process(self, origin_data: T_in, config: Config) -> Optional[T_out]:
         pass
+
+    @classmethod
+    def preflight(cls, config: Config) -> None:
+        """Cheap checks before the first file starts (a login, a server). Raise ConfigError with what to do, so a
+        run doesn't fail after an hour of transcribing. Must not fail when the network is down."""
+
+    def describe(self, config: Config) -> Dict[str, Any]:
+        info: Dict[str, Any] = {"backend": self.backend_name}
+        model = getattr(config.options(self), "model", None)
+        if model is not None:
+            info["model"] = model
+        versions = {}
+        for package in self.packages:
+            try:
+                versions[package] = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                pass
+        if versions:
+            info["packages"] = versions
+        return info
 
 
 from MAT.tools.ner import *
@@ -52,8 +79,29 @@ from MAT.tools.transcriptors import __all__ as transcription_all
 from MAT.tools.text_splitter import *
 from MAT.tools.text_splitter import __all__ as splitter_all
 
+from MAT.tools.speakernaming import *
+from MAT.tools.speakernaming import __all__ as speakernaming_all
+
+from MAT.tools.events import *
+from MAT.tools.events import __all__ as events_all
+
+from MAT.tools.sentences import *
+from MAT.tools.sentences import __all__ as sentences_all
+
+from MAT.tools.characters import *
+from MAT.tools.characters import __all__ as characters_all
+
 __all__ = ["Tool", "ToolInput", "ToolResult"]
-__all__ += ner_all + summary_all + speakeridentification_all + transcription_all + splitter_all
+__all__ += ner_all + summary_all + diarizators_all + speakeridentification_all + transcription_all + splitter_all
+__all__ += speakernaming_all + events_all + sentences_all + characters_all
+del speakernaming_all
+del events_all
+del sentences_all
+del characters_all
 
 del ner_all
 del summary_all
+del diarizators_all
+del speakeridentification_all
+del transcription_all
+del splitter_all

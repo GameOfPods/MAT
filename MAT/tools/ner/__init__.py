@@ -10,7 +10,7 @@
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Iterable, Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
@@ -41,7 +41,8 @@ class NERTool(Tool[NERInput, NERResult], ABC):
         pass
 
 
-from MAT.tools.ner.ner_gliner import NERGliner
+from MAT.registry import load_optional
 
-__all__ = ["NERResult", "NERInput", "NERTool", "NERGliner"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.ner.ner_gliner", slot="ner", name="gliner", extra="gliner")
+
+__all__ = ["NERResult", "NERInput", "NERTool"]

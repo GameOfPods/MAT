@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Dict
+from typing import Iterable, Optional, Dict
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
@@ -26,9 +26,14 @@ class SummaryResult(ToolResult):
 
 class SummaryInput(ToolInput):
 
-    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None):
+    def __init__(self, *text: str, additional_metadata: Optional[Dict[str, str]] = None, kind: str = "transcript",
+                 language: Optional[str] = None):
         self._text = text
         self._additional_metadata = {} if additional_metadata is None else additional_metadata
+        # "transcript" or "chapter": which instructions the summary gets
+        self.kind = kind
+        # ISO 639-1 code of the text when known, the summary is written in it
+        self.language = language
 
     @property
     def text(self):
@@ -46,7 +51,8 @@ class SummaryTool(Tool[SummaryInput, SummaryResult], ABC):
         pass
 
 
-from MAT.tools.summary.llm import SummaryLLM
+from MAT.registry import load_optional
 
-__all__ = ["SummaryResult", "SummaryInput", "SummaryTool", "SummaryLLM"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.summary.llm", slot="summarizer", name="llm", extra="llm")
+
+__all__ = ["SummaryResult", "SummaryInput", "SummaryTool"]

@@ -8,12 +8,16 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Union
+from __future__ import annotations
 
-from torch import Tensor
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Optional, Tuple, Union
+
 import numpy as np
 import pydub
+
+if TYPE_CHECKING:  # torch is only needed once a model runs, importing it here slowed down `MAT --help`
+    from torch import Tensor
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
@@ -35,20 +39,19 @@ class SpeakerIdentificationInput(ToolInput):
         return self._audio_files
 
 
-@property
-def in_file(self) -> str:
-    return self._in_file
-
-
 class SpeakerIdentificationTool(Tool[SpeakerIdentificationInput, SpeakerIdentificationResult], ABC):
+    def can_match(self, config: Config) -> bool:
+        """Whether this backend can match anything at all. When it can't (no gold labels), the pipeline skips the
+        step instead of concatenating hours of audio for an answer that is None anyway."""
+        return True
+
     @abstractmethod
     def process(self, origin_data: SpeakerIdentificationInput, config: Config) -> Optional[SpeakerIdentificationResult]:
         pass
 
 
-from MAT.tools.speakeridentification.pyannote import SpeakerIdetificationPyannote
-from MAT.tools.speakeridentification.speech_brain import SpeakerIdetificationSpeechBrain
+from MAT.registry import load_optional
+
+load_optional("MAT.tools.speakeridentification.pyannote", slot="identifier", name="pyannote", extra="pyannote")
 
 __all__ = ["SpeakerIdentificationResult", "SpeakerIdentificationInput", "SpeakerIdentificationTool"]
-__all__.extend(["SpeakerIdetificationPyannote", "SpeakerIdetificationSpeechBrain"])
-__all__.extend(["__all__"])

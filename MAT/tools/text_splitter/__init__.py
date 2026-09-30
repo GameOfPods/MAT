@@ -9,7 +9,7 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 from abc import ABC, abstractmethod
-from typing import Optional, Iterable, Dict, List
+from typing import Optional, Iterable, Dict, List, Tuple
 from dataclasses import dataclass
 
 from MAT.utils.config import Config
@@ -20,11 +20,17 @@ from MAT.tools import ToolResult, ToolInput, Tool
 class SplitterResult(ToolResult):
     sentences: Iterable[str]
     words: Iterable[Dict[str, int]]
+    # per sentence its words as (start, end, part of speech, has an article or possessive, is a plural noun), with
+    # offsets into the sentence text. None when the model doesn't tag parts of speech. Used to tell names from other
+    # words.
+    tokens: Optional[List[List[Tuple[int, int, str, bool, bool]]]] = None
 
 
 @dataclass
 class SplitterInput(ToolInput):
     text: str
+    # ISO 639-1 code when the caller knows it, the backend guesses otherwise
+    language: Optional[str] = None
 
 
 class SplitterTool(Tool[SplitterInput, SplitterResult], ABC):
@@ -33,7 +39,8 @@ class SplitterTool(Tool[SplitterInput, SplitterResult], ABC):
         pass
 
 
-from MAT.tools.text_splitter.spacy import SplitterSpacy
+from MAT.registry import load_optional
 
-__all__ = ["SplitterResult", "SplitterInput", "SplitterTool", "SplitterSpacy"]
-__all__.extend(["__all__"])
+load_optional("MAT.tools.text_splitter.spacy", slot="splitter", name="spacy", extra="spacy")
+
+__all__ = ["SplitterResult", "SplitterInput", "SplitterTool"]

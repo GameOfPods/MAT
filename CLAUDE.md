@@ -1,0 +1,156 @@
+# CLAUDE.md
+
+Notes for working on MAT (Media Analytics Toolset) with Claude Code.
+
+## What this is
+
+CLI that runs ML pipelines on media files and writes results to a folder/zip. Two pipelines:
+
+- `podcast` (any audio pydub/ffmpeg can open), slots: `transcriber` (whisper, parakeet), `diarizer` (pyannote-diarization = community-1 exclusive by default, sortformer, sortformer-streaming, diarizen), `identifier` (pyannote or none), `namer` (llm-names or none), `entities` (gliner or none, takes the `ner` backends via `Slot(kind=...)`),
+  `events` (audioset, clap or none), `summarizer` (llm or none).
+- `book` (EPUB), slots: `splitter` (spacy), `ner` (gliner or none), `character_judge` (llm-characters or none),
+  `chapter_summarizer` (llm or none, flag `--chapter-summarizer`). Characters come from the PERSON entities
+  (`MAT/utils/characters.py`: cluster by rules, candidates, build with what the judge confirmed).
+- Small LLM jobs (llm-names, llm-characters) share `MAT/tools/summary/llm/task.py`: own section following `[llm]`
+  until it has a preset, presets, preflight, and a client that answers in JSON by schema where the server can.
+
+`MAT/reader` loads written results back (format 2, see `MAT/writer`).
+
+## Commands
+
+This dev machine has no GPU and uses the CPU torch build. Put the group flags on **every** uv call here, otherwise uv
+swaps in the default CUDA 12.6 build (a ~3 GB download):
+
+```bash
+uv sync --no-default-groups --group dev --group cpu --group backends
+uv run --no-default-groups --group dev --group cpu --group backends pytest tests        # unit tests, no model downloads
+uv run --no-default-groups --group dev --group cpu --group backends MAT backends
+uv run --no-default-groups --group dev --group cpu --group backends python scripts/smoke_podcast.py --device cpu   # ~1-3 min
+uv run --no-default-groups --group dev --group cpu --group backends python scripts/smoke_book.py                   # ~1 min
+```
+
+`.venv/bin/python -m pytest tests` and `.venv/bin/MAT ...` also work once the env is synced.
+
+The GPU box uses the defaults: `uv sync`, `uv run python scripts/smoke_podcast.py --device cuda`.
+
+`bash scripts/full_test.sh 2>&1 | tee full_test.log` runs install, tests, smoke scripts and a complete run on one audio
+file. Settings come from `MAT_TEST_*` env vars or get asked for. Never put paths or names from the user's machines into
+it as defaults.
+
+When bumping torch, bump `torchcodec` with it (0.7 <-> torch 2.8, 0.8 <-> 2.9, ...). A mismatch only fails at runtime.
+
+## How the code is wired
+
+- Backends: `MAT/registry.py`. A backend module calls `require(modules..., extra=...)` first (find_spec only, raises
+  `MissingDependencies`), then defines its class with `@register(slot, name, description=...)`. The step package
+  `__init__.py` loads it with `load_optional(module, slot, name, extra)`, so a missing extra skips the backend.
+  Heavy imports stay inside `process`. Every backend has its own uv extra, `all` has all of them and the default
+  `backends` dependency group installs `all`.
+- Config: `MAT/utils/config`. Every pipeline/backend has an `Options` pydantic model (extra="forbid") and a section
+  (the backend name, or `podcast`/`book`). Keys are kebab-case in TOML and `--set` (`whisper.beam-size`), snake_case in
+  Python (`config.options(self).beam_size`). Values: defaults < `-c file.toml` < `--set`. `Config.validate()` fails on
+  unknown sections/options/types and unknown slot backends, and only warns for sections of backends that aren't installed.
+- CLI: `MAT/cli.py` with `run`, `backends [show NAME]`, `config init|show`. Backend options are never argparse flags
+  (keeps `run -h` short), only the slot flags (`--transcriber` ...) are. `main()` returns an exit code.
+  Logs go to stderr, stdout is for command output.
+- Podcast steps start with `prepare_audio`: the file is decoded once into a 16 kHz mono wav in the work directory,
+  backends get that path and in-process steps the kept `AudioSegment`. Transcription, diarization and sound events go
+  through the step cache (`MAT/utils/step_cache.py`, `podcast.cache`, off in benchmarks, smoke tests and unit tests).
+  A step that isn't in the pipeline's `required_steps` may fail: it's logged, left out and listed in
+  `meta.json` `failed_steps`.
+- Pipelines: `MAT/pipelines`. `Pipeline.backend(slot, config)` creates the chosen backend and records `describe()`
+  (backend, model, package versions) in `pipeline.models`, which ends up in the result. Steps are closures
+  `PipelineStepInput -> PipelineStepResult(name, data)` and read earlier results with `step_input.data(name)`.
+  A `TranscribeDiarizeTool` as transcriber replaces the diarizer step.
+- Output format 2: `<stem>_<time>/meta.json` plus `podcast/` or `book/` with `result.json` (and `transcript.txt`,
+  `summary.md`, `diarization.rttm`). Spec in `docs/result-format.md`. The data model, reader and JSON schemas live in the
+  uv workspace package `packages/mat-format` (only pydantic, no MAT imports). `MAT/writer` builds those models.
+  The format version is `version` in `packages/mat-format/pyproject.toml` (major = format, minor + 1 for every set of
+  new fields, and a line in the changelog of `docs/result-format.md`); it's independent of the MAT version, which is
+  `version` in the root `pyproject.toml`. Both are read at runtime from the package metadata, `uv run`/`uv sync`
+  reinstall the packages when the file changes.
+  After changing `mat_format/models.py`: run `.venv/bin/python -m mat_format.schema`, update the spec, and remember
+  that renaming/removing/retyping a field needs a new format version (adding fields doesn't). Other programs
+  (Mosaicast, Java) read results through the schemas, so don't break the format casually.
+- Backends with dependencies that clash with ours live in `envs/<name>` with their own venv and are started as a
+  process (`MAT/utils/external.py`, `MAT external install NAME`, docs in `docs/external-environments.md`). The
+  backend module calls `require_environment(name)` instead of `require(...)`, so a missing environment skips the
+  backend like a missing extra. Requests and answers are plain JSON plus a wav path, nothing else.
+- Console noise: `MAT/utils/quiet.py`. Noisy loggers get a level, NeMo's own logger loses its handlers and is
+  routed into Python logging (so `--log-file` gets it), and NeMo calls get `verbose=False`. `--verbose` undoes it.
+  When a new dependency prints past Python logging, handle it there.
+- Speakers get their names in three steps, in this order of authority: gold label clips (`identifier`), then the
+  speaker library (`MAT/utils/speaker_library.py`, one JSON file with voice prints, off unless
+  `podcast.speaker-library` is set), then the transcript (`namer`). The steps run in that order too, so a voice the
+  library knows costs no LLM call. Later steps never rename what an earlier one decided, and a disagreement is logged.
+  The state between them is a dict (`_speaker_state` in the podcast pipeline). `_rename_speakers` in the podcast pipeline renames in the diarization, the
+  words and the transcript at once.
+- Summaries: `MAT/tools/summary/llm`. No langchain chain any more, `process` splits the transcript and calls the
+  model itself, instructions go in as a system message and the prompts live in `prompts.py`. `chunk-size = auto`
+  asks the server for its context (llama.cpp `/props`, model listings, Ollama `/api/show`) and fills it, so a
+  transcript that fits is one call. `llm.preset` (openai, ollama, llamacpp) fills options the user didn't set.
+  Ollama runs through `langchain-ollama`, not its OpenAI endpoint, because only then can we send `num_ctx`.
+- Benchmarks: `MAT/bench` (`MAT bench`, docs in `docs/benchmarks.md`). Dataset types subclass
+  `MAT/bench/datasets/base.py:Dataset` and get `@register`, they download into the cache or read an existing copy
+  (`path`). Summaries never run in benchmarks. Unit tests use fake `process` functions and tiny generated files, no
+  models or downloads. Results of the user's own episodes stay local, never commit them.
+- Helpers for backends: `MAT/utils/device.py` (`resolve_device`, `ct2_compute_type`, `torch_dtype`, `free_gpu_memory`),
+  `MAT/utils/audio.py` (`plan_windows` cuts long audio at quiet spots, `Window.owns` decides who keeps results in overlaps).
+
+## Machines
+
+- The dev machine is low powered: CPU only, no CUDA. Don't run full pipelines on long audio. Use the smoke scripts in `scripts/` (30 second sample that ships with pyannote.audio, generated EPUB).
+- No `OPENAI_API_KEY` here, keep `--summarizer none` (the smoke script does that). A Hugging Face login exists since 2026-09-16, so gated models work. The default diarizer (pyannote community-1) needs that login; `--diarizer sortformer` and WeSpeaker don't. Backends can check such things before the first file with `preflight`.
+- Cached models: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, `Systran/faster-whisper-large-v2`, `nvidia/diar_sortformer_4spk-v1`, `fastino/gliner2-large-v1`, `fastino/gliner2-multi-v1` (the NER default), `sat-3l-sm` (sentences). `en_core_web_md` and `de_core_news_md` are declared in the `spacy` extra (wheel URLs in `[tool.uv.sources]`), other spaCy models get pip-installed at runtime by `spacy_download` and removed again by every `uv sync`.
+- This dev machine is a QEMU VM with a generic CPU model. torch's CPU build now and then dies with SIGILL ("trap
+  invalid opcode in libtorch_cpu.so" in the kernel log, a core dump in the shell). That's the VM, not MAT: run it
+  again. Host CPU passthrough in the VM settings would fix it.
+- Real runs and benchmarks happen on a separate GPU box with a GTX 1080 Ti (Pascal, compute capability 6.1, 11 GB), set up with uv. Claude can't reach it, the user runs GPU smoke tests and `MAT bench` there and shares the results.
+  Known setup: driver 580.178.04, FFmpeg 9.0.1 (too new for torchcodec 0.7), the desktop already uses about 930 MiB of GPU memory. It has an HF token and API keys. Stage 2 smoke numbers are in `docs/roadmap.md`.
+
+## GTX 1080 Ti limits
+
+Check every new dependency against these before adding it:
+
+- PyTorch only from the CUDA 12.6 index (Pascal kernels exist there up to torch 2.14). cu128/cu129/cu130 wheels fail with "no kernel image".
+- No bfloat16, no FlashAttention 2, no vLLM. Load bfloat16 models with `torch_dtype(device)` (float16 on Pascal) through transformers.
+- faster-whisper/CTranslate2: use `int8_float32` or `float32` (`ct2_compute_type` does that).
+- 11 GB VRAM: one model on the GPU at a time. `del model` then `free_gpu_memory()` before the next step.
+
+## Adding a backend
+
+- New extra in `pyproject.toml`, module with `require` + `Options` + `@register`, `load_optional` in the step package.
+- Unit test with a mocked model, benchmark run on the GPU box before it can become a default.
+- Library conflicts: newer libraries usually win, but ask the user before dropping or isolating a backend.
+
+## CI
+
+- `.github/workflows/ci.yml` runs on PRs and pushes to `master`: "Tests (all backends, CPU)" (`uv sync --locked`, so
+  `uv.lock` has to be committed and current), "Install without backends", "mat-format (Python 3.10/3.12/3.13)"
+  (mat-format installed alone, tests in `packages/mat-format/tests` must not import MAT).
+- `.github/workflows/release-schemas.yml` runs on every published release. First `scripts/check_release_version.py`
+  checks that the tag is `v` + the version in `pyproject.toml` (0.2.0 -> v0.2.0), then it attaches the generated schemas and
+  `mat-result-format.zip`. Keep the schema file names stable, other projects download them from
+  `releases/latest/download/`.
+- `mat-format`'s major version (`packages/mat-format/pyproject.toml`) has to equal `FORMAT_VERSION`, a test checks it.
+- `packages/mat-format` is Apache 2.0, MAT is GPL-3.0. Don't copy GPL code into `mat_format`.
+
+## Git, commits, PRs
+
+- Work on a branch, not on `master`.
+- Commits end with `Co-Authored-By: Claude <noreply@anthropic.com>`.
+- PR descriptions end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+- Never add a link to the Claude chat or session in commits or PRs. `.claude/settings.json` sets this up (`attribution`, `sessionUrl: false`).
+
+## Writing style for human facing text
+
+README, docs, CLI help, log messages, code comments and PR text use simple English and read like a developer on the project wrote them:
+
+- short, direct sentences with concrete technical details
+- plain developer words, contractions are fine, "I/we" where it fits
+- no marketing language, filler phrases, dramatic intros, rhetorical questions or forced conclusions
+- don't overuse em dashes
+
+## Open work
+
+`docs/roadmap.md` has the list of known problems and what's planned next.

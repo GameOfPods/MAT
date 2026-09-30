@@ -1,0 +1,350 @@
+#!/usr/bin/env bash
+# Full test of a MAT checkout: install, unit tests, schema check, both smoke scripts, a tiny `MAT bench` run on the
+# smoke result and one complete run on a real audio file, which gets read back and validated against the result
+# schemas. Works with a CUDA GPU and on CPU only machines (on CPU the complete run takes a long time for long audio).
+#
+#   bash scripts/full_test.sh 2>&1 | tee full_test.log
+#
+# Settings come from these environment variables. Anything that isn't set gets asked for at the start, tokens with
+# hidden input. Set a variable to an empty string to skip the question and use the "empty" behavior.
+#   MAT_TEST_DEVICE     cuda or cpu, cpu installs the CPU torch build
+#   MAT_TEST_OUT        folder for logs and results, has to be empty or not exist yet
+#   MAT_TEST_AUDIO      audio file for the complete run, empty skips it. Longer than 5 minutes also tests
+#                       diarization in pieces and speaker linking.
+#   HF_TOKEN            Hugging Face token with access to pyannote community-1, empty uses a saved `hf auth login`
+#   MAT_TEST_LLM        LLM for summary and speaker naming in the complete run:
+#                         openai    OpenAI or any hosted OpenAI compatible API (DeepSeek, OpenRouter, ...)
+#                         llamacpp  a local OpenAI compatible server (llama.cpp, vLLM)
+#                         ollama    Ollama, on this machine or another one
+#                         none      no summary, no speaker naming
+#   OPENAI_API_KEY      openai/llamacpp: API key (llamacpp: any value if the server doesn't check it)
+#   OPENAI_API_BASE     openai: endpoint, empty uses the OpenAI API. llamacpp: needed, like http://host:8080/v1
+#   OLLAMA_HOST         ollama: where it listens, empty uses http://localhost:11434
+#   MAT_TEST_LLM_MODEL  model name at that service, empty uses MAT's default (openai only)
+#
+# The settings of a run (without tokens) end up in $MAT_TEST_OUT/full_test.env, `source` it to skip the questions.
+# Output of the tools goes to log files in $MAT_TEST_OUT/logs, the console only shows the steps and their results.
+# Tokens are never printed or written to a file.
+
+set -uo pipefail
+START_DIR=$PWD
+REPO=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+
+die() {
+  echo "full_test: $*" >&2
+  exit 2
+}
+
+# ask NAME QUESTION [secret]   keeps NAME if it's set (also when empty), otherwise reads it from the terminal
+ask() {
+  local name=$1 question=$2 secret=${3:-} value=""
+  [ -n "${!name+x}" ] && return
+  { : </dev/tty; } 2>/dev/null || die "$name isn't set and there's no terminal to ask for it"
+  printf '%s [%s]: ' "$question" "$name" >/dev/tty
+  if [ "$secret" = secret ]; then
+    read -rs value </dev/tty
+    echo >/dev/tty
+  else
+    read -r value </dev/tty
+  fi
+  printf -v "$name" '%s' "$value"
+}
+
+# clean_path NAME   turns the path in NAME into an absolute one: removes surrounding spaces and quotes and "\ " escapes
+# (dragging a file into the terminal adds those), expands ~ and makes relative paths start at the folder the script
+# was started from
+clean_path() {
+  local name=$1 value=${!1} single="^'(.*)'$" double='^"(.*)"$'
+  value=$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' <<< "$value")
+  if [[ $value =~ $single || $value =~ $double ]]; then
+    value=${BASH_REMATCH[1]}
+  else
+    value=$(sed -E 's/\\(.)/\1/g' <<< "$value")
+  fi
+  [[ $value == "~" || $value == "~/"* ]] && value=$HOME${value:1}
+  [ -n "$value" ] && [[ $value != /* ]] && value=$START_DIR/$value
+  printf -v "$name" '%s' "$value"
+}
+
+# ---------------------------------------------------------------- settings
+ask MAT_TEST_DEVICE "Device, cuda or cpu"
+case "$MAT_TEST_DEVICE" in
+  cuda | cpu) ;;
+  *) die "MAT_TEST_DEVICE has to be cuda or cpu, got '$MAT_TEST_DEVICE'" ;;
+esac
+
+ask MAT_TEST_OUT "Output folder for logs and results, empty or new"
+clean_path MAT_TEST_OUT
+[ -n "$MAT_TEST_OUT" ] || die "MAT_TEST_OUT is needed"
+[ -e "$MAT_TEST_OUT" ] && [ ! -d "$MAT_TEST_OUT" ] && die "MAT_TEST_OUT isn't a folder: '$MAT_TEST_OUT'"
+[ -d "$MAT_TEST_OUT" ] && [ -n "$(ls -A "$MAT_TEST_OUT")" ] && die "MAT_TEST_OUT isn't empty: '$MAT_TEST_OUT'"
+
+ask MAT_TEST_AUDIO "Audio file for the complete run, Enter skips it"
+clean_path MAT_TEST_AUDIO
+[ -z "$MAT_TEST_AUDIO" ] || [ -f "$MAT_TEST_AUDIO" ] || die "MAT_TEST_AUDIO file not found: '$MAT_TEST_AUDIO'"
+
+ask HF_TOKEN "Hugging Face token, Enter uses a saved login" secret
+ask MAT_TEST_LLM "LLM for summary and speaker naming: openai, llamacpp, ollama or none"
+case "$MAT_TEST_LLM" in
+  openai)
+    ask OPENAI_API_KEY "API key" secret
+    [ -n "$OPENAI_API_KEY" ] || die "MAT_TEST_LLM=openai needs OPENAI_API_KEY"
+    ask OPENAI_API_BASE "Endpoint, OpenAI compatible, Enter uses the OpenAI API"
+    ask MAT_TEST_LLM_MODEL "Model, Enter uses MAT's default"
+    OLLAMA_HOST=${OLLAMA_HOST:-}
+    ;;
+  llamacpp)
+    ask OPENAI_API_BASE "Endpoint of the server, like http://localhost:8080/v1"
+    [ -n "$OPENAI_API_BASE" ] || die "MAT_TEST_LLM=llamacpp needs OPENAI_API_BASE"
+    ask OPENAI_API_KEY "API key, Enter if the server doesn't check one" secret
+    # the OpenAI client wants a key even when the server ignores it
+    OPENAI_API_KEY=${OPENAI_API_KEY:-local}
+    ask MAT_TEST_LLM_MODEL "Model name as the server calls it"
+    OLLAMA_HOST=${OLLAMA_HOST:-}
+    ;;
+  ollama)
+    ask OLLAMA_HOST "Ollama address, Enter uses http://localhost:11434"
+    ask MAT_TEST_LLM_MODEL "Model, like qwen3:8b"
+    [ -n "$MAT_TEST_LLM_MODEL" ] || die "MAT_TEST_LLM=ollama needs MAT_TEST_LLM_MODEL"
+    OPENAI_API_KEY="" OPENAI_API_BASE=""
+    ;;
+  none | "")
+    MAT_TEST_LLM=none OPENAI_API_KEY="" OPENAI_API_BASE="" OLLAMA_HOST="" MAT_TEST_LLM_MODEL=""
+    ;;
+  *) die "MAT_TEST_LLM has to be openai, llamacpp, ollama or none, got '$MAT_TEST_LLM'" ;;
+esac
+MAT_TEST_LLM_MODEL=${MAT_TEST_LLM_MODEL:-}
+
+mkdir -p "$MAT_TEST_OUT/logs" || die "can't create $MAT_TEST_OUT"
+OUT=$(cd "$MAT_TEST_OUT" && pwd)
+LOGS=$OUT/logs
+
+# the settings without tokens, `source` this file to skip the questions next time
+ENV_FILE=$OUT/full_test.env
+{
+  echo "# Settings of the MAT full test from $(date '+%F %H:%M'). Load them before the next run with:"
+  echo "#   source $(printf '%q' "$ENV_FILE")"
+  echo "# MAT_TEST_OUT has to be an empty folder, change it before the next run."
+  printf 'export %s=%q\n' MAT_TEST_DEVICE "$MAT_TEST_DEVICE" MAT_TEST_OUT "$OUT" MAT_TEST_AUDIO "$MAT_TEST_AUDIO" \
+    MAT_TEST_LLM "$MAT_TEST_LLM" OPENAI_API_BASE "$OPENAI_API_BASE" OLLAMA_HOST "$OLLAMA_HOST" \
+    MAT_TEST_LLM_MODEL "$MAT_TEST_LLM_MODEL"
+  echo "# Tokens aren't saved. Export them yourself, set them to \"\" to skip them, or leave them out to get asked:"
+  echo "# export HF_TOKEN="
+  [ "$MAT_TEST_LLM" = openai ] || [ "$MAT_TEST_LLM" = llamacpp ] && echo "# export OPENAI_API_KEY="
+} > "$ENV_FILE"
+
+cd "$REPO" || exit 2
+
+if [ "$MAT_TEST_DEVICE" = cpu ]; then
+  SYNC=(uv sync --locked --no-default-groups --group dev --group cpu --group backends)
+  # backends pick cuda when they see a GPU, hide it
+  export CUDA_VISIBLE_DEVICES=""
+else
+  SYNC=(uv sync --locked)
+fi
+
+# ---------------------------------------------------------------- helpers
+STEPS=0
+FAILED=()
+# GPU memory in use before the tests (desktop, other programs), peaks are shown on top of it
+GPU_IDLE=0
+
+detail() { sed 's/^/      /'; }
+
+# run NAME LOG COMMAND...   output goes to $LOGS/LOG.log, prints time, peak GPU memory and the log tail on failure
+run() {
+  # the GPU file is named here, before the shift: after it $2 is part of the command, which can be a token
+  local name=$1 log=$LOGS/$2.log gpu=$LOGS/$2.gpu sampler="" rc start seconds peak=""
+  shift 2
+  STEPS=$((STEPS + 1))
+  printf '%s  %-24s ' "$(date +%H:%M)" "$name"
+  if [ "$MAT_TEST_DEVICE" = cuda ] && command -v nvidia-smi >/dev/null; then
+    nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 500 > "$gpu" 2>/dev/null &
+    sampler=$!
+  fi
+  start=$(date +%s.%N)
+  "$@" > "$log" 2>&1
+  rc=$?
+  seconds=$(awk "BEGIN {printf \"%.1f\", $(date +%s.%N) - $start}")
+  if [ -n "$sampler" ]; then
+    kill "$sampler" 2>/dev/null
+    wait "$sampler" 2>/dev/null
+    peak=$(sort -n "$gpu" | tail -1)
+    if [ -n "$peak" ]; then
+      peak=", peak GPU memory +$(( peak > GPU_IDLE ? peak - GPU_IDLE : 0 )) MiB"
+    fi
+  fi
+  if [ "$rc" -eq 0 ]; then
+    echo "ok, ${seconds} s${peak}"
+  else
+    FAILED+=("$name")
+    echo "FAILED with exit code $rc after ${seconds} s${peak}, log: $log"
+    tail -15 "$log" | detail
+  fi
+  return "$rc"
+}
+
+# ---------------------------------------------------------------- environment
+echo "MAT full test"
+echo "  commit:  $(git log -1 --format='%h %s') ($(git branch --show-current))"
+echo "  device:  $MAT_TEST_DEVICE"
+if [ "$MAT_TEST_DEVICE" = cuda ]; then
+  echo "  gpu:     $(nvidia-smi --query-gpu=name,driver_version,memory.used,memory.total --format=csv,noheader 2>&1 | head -1)"
+  GPU_IDLE=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
+  GPU_IDLE=${GPU_IDLE:-0}
+  echo "           peak GPU memory of the steps is shown on top of the $GPU_IDLE MiB used now"
+fi
+echo "  ffmpeg:  $(ffmpeg -version 2>&1 | head -1)"
+echo "  uv:      $(uv --version)"
+echo "  memory:  $(free -g | awk '/^Mem:/ {print $2 " GB RAM, " $7 " GB available"}')"
+echo "  settings, saved without tokens to $ENV_FILE:"
+printf '    %-19s %s\n' \
+  MAT_TEST_DEVICE "$MAT_TEST_DEVICE" \
+  MAT_TEST_OUT "$OUT" \
+  MAT_TEST_AUDIO "${MAT_TEST_AUDIO:-(empty, no complete run)}" \
+  HF_TOKEN "$([ -n "$HF_TOKEN" ] && echo set || echo "empty, saved login: $([ -f "$HOME/.cache/huggingface/token" ] && echo yes || echo no)")" \
+  MAT_TEST_LLM "$MAT_TEST_LLM" \
+  OPENAI_API_KEY "$([ -n "$OPENAI_API_KEY" ] && echo set || echo "(empty)")" \
+  OPENAI_API_BASE "${OPENAI_API_BASE:-(empty)}" \
+  OLLAMA_HOST "${OLLAMA_HOST:-(empty)}" \
+  MAT_TEST_LLM_MODEL "${MAT_TEST_LLM_MODEL:-(empty, MAT default)}"
+echo
+
+# ---------------------------------------------------------------- steps
+if ! run "install" install "${SYNC[@]}"; then
+  echo "Install failed, stopping"
+  exit 1
+fi
+
+run "torch and device" torch uv run --no-sync python -W ignore -c "
+import sys, torch
+print(f'torch {torch.__version__}, CUDA build {torch.version.cuda}, CUDA available {torch.cuda.is_available()}')
+if sys.argv[1] == 'cuda':
+    if not torch.cuda.is_available():
+        sys.exit('CUDA is not available')
+    import ctranslate2
+    print(f'{torch.cuda.get_device_name(0)}, compute capability {torch.cuda.get_device_capability(0)}')
+    print(f'CTranslate2 compute types: {sorted(ctranslate2.get_supported_compute_types(\"cuda\"))}')
+" "$MAT_TEST_DEVICE" && detail < "$LOGS/torch.log"
+
+run "unit tests" pytest uv run --no-sync pytest tests packages/mat-format/tests -q -p no:cacheprovider
+tail -1 "$LOGS/pytest.log" | detail
+
+run "schema check" schema uv run --no-sync python -m mat_format.schema --check
+
+run "backends" backends uv run --no-sync MAT backends && {
+  echo "installed:     $(awk '$2 == "installed" {printf "%s ", $1}' "$LOGS/backends.log")"
+  echo "not installed: $(awk '$2 == "not" {printf "%s ", $1}' "$LOGS/backends.log")"
+} | detail
+
+run "smoke podcast" smoke_podcast uv run --no-sync python scripts/smoke_podcast.py --device "$MAT_TEST_DEVICE" \
+  --out "$OUT/smoke_podcast" && grep -E "^(language|speakers|peak torch)" "$LOGS/smoke_podcast.log" | detail
+
+run "smoke book" smoke_book uv run --no-sync python scripts/smoke_book.py --out "$OUT/smoke_book" \
+  && grep -E "^took" "$LOGS/smoke_book.log" | detail
+
+# The smoke result as its own reference: MAT bench runs the same system again, so WER should be about 0 and DER a
+# few percent (reference lines only cover the words, the diarizer also marks the pauses around them)
+BENCH=$OUT/bench
+SMOKE_RESULT=$(find "$OUT/smoke_podcast/results" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)
+mkdir -p "$BENCH"
+cat > "$BENCH/bench.toml" <<'TOML'
+[bench]
+cache = "cache"
+
+[[dataset]]
+type = "reference"
+name = "smoke"
+path = "reference"
+TOML
+run "bench reference" bench_reference uv run --no-sync MAT bench reference "${SMOKE_RESULT:-missing}" \
+  -o "$BENCH/reference/sample"
+run "bench run" bench uv run --no-sync MAT bench run -c "$BENCH/bench.toml" -o "$BENCH/results" \
+  && awk '/^## smoke/ {found = 1; next} found && /^\|/ {print} found && /^## / {exit}' "$BENCH/results/report.md" \
+  | detail
+
+if [ -n "$MAT_TEST_AUDIO" ]; then
+  # -i takes glob patterns, so [ ] * ? in the file name get escaped
+  # entities and sound events are off by default, the full test turns them on to see them work
+  ARGS=(run --yes --export-config -o "$OUT/run" -i "$(sed 's/[][*?]/[&]/g' <<< "$MAT_TEST_AUDIO")"
+        --entities gliner --events audioset)
+  # speaker naming follows [llm], so one preset and model cover both
+  case "$MAT_TEST_LLM" in
+    none) ARGS+=(--summarizer none) ;;
+    *)
+      ARGS+=(--namer llm-names)
+      [ "$MAT_TEST_LLM" = openai ] || ARGS+=(--set "llm.preset=$MAT_TEST_LLM")
+      [ -z "$MAT_TEST_LLM_MODEL" ] || ARGS+=(--set "llm.model=$MAT_TEST_LLM_MODEL")
+      ;;
+  esac
+  # the tokens only go into the environment of this one command
+  run "complete run" run env \
+    ${HF_TOKEN:+HF_TOKEN="$HF_TOKEN"} \
+    ${OPENAI_API_KEY:+OPENAI_API_KEY="$OPENAI_API_KEY"} \
+    ${OPENAI_API_BASE:+OPENAI_API_BASE="$OPENAI_API_BASE"} \
+    ${OLLAMA_HOST:+OLLAMA_HOST="$OLLAMA_HOST"} \
+    uv run --no-sync MAT "${ARGS[@]}"
+  grep -E "Detected language|Diarizing|also diarizes|Found gold labels|Step [0-9]+/[0-9]+ done|Answer complete|LLM call failed|Summary failed|isn't installed|Found [0-9]+ (entities|events)|Using ollama|Speaker naming takes|is called|Named " \
+    "$LOGS/run.log" | grep -E " - +[A-Z]+ +- " | sed -E 's/^.* - +[A-Z]+ +- [^:]*: //' | detail
+
+  run "check result" check uv run --no-sync python -W ignore - "$OUT/run" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+import jsonschema
+from mat_format import MATResult
+from mat_format import schema as format_schema
+
+folders = sorted(p for p in Path(sys.argv[1]).glob("*") if p.is_dir())
+if not folders:
+    sys.exit(f"no result folder in {sys.argv[1]}")
+folder = folders[-1]
+
+
+def validate(schema_file, data_file):
+    schema = json.loads((format_schema.SCHEMA_DIR / schema_file).read_text())
+    jsonschema.Draft202012Validator(schema).validate(json.loads(data_file.read_text()))
+
+
+validate("meta.schema.json", folder / "meta.json")
+for pipeline in json.loads((folder / "meta.json").read_text())["pipelines"]:
+    validate(f"{pipeline}-result.schema.json", folder / pipeline / "result.json")
+print("schemas valid, files:", " ".join(sorted(str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_file())))
+
+result = MATResult.read(folder)
+podcast = result.podcast
+print("models:", ", ".join(f"{slot} {info.backend} ({info.model})" for slot, info in podcast.models.items()))
+print(f"language {podcast.language}, duration {podcast.media.duration:.0f} s, speech {podcast.media.speech_duration:.0f} s")
+print("diarizer labels:", ", ".join(s.id for s in podcast.diarization))
+for speaker in podcast.speakers:
+    print(f"speaker {speaker.id}: {sum(s.end - s.start for s in speaker.segments):.0f} s in {len(speaker.segments)} segments")
+words = podcast.words
+print(f"words {len(words)}, without times {sum(w.start is None or w.end is None for w in words)}, "
+      f"more than one speaker {sum(len(w.speakers) > 1 for w in words)}, no speaker {sum(not w.speakers for w in words)}, "
+      f"segments {len(podcast.segments)}")
+counts = podcast.entity_counts()
+print(f"entities {len(podcast.entities)}: " + "; ".join(
+    f"{label} " + ", ".join(f"{name} {n}" for name, n in sorted(names.items(), key=lambda x: -x[1])[:6])
+    for label, names in counts.items()))
+print(f"sound events {len(podcast.events)}: " + ", ".join(
+    f"{e.label} {e.start:.0f}-{e.end:.0f} s" for e in podcast.events[:12]))
+print("transcript start:")
+for line in result.transcript().splitlines()[:8]:
+    print("  " + line[:160])
+print("summary start:")
+for line in (podcast.summary or "(no summary)")[:700].splitlines():
+    print("  " + line)
+PY
+  detail < "$LOGS/check.log"
+fi
+
+# ---------------------------------------------------------------- result
+echo
+if [ ${#FAILED[@]} -eq 0 ]; then
+  echo "All $STEPS steps ok"
+else
+  echo "${#FAILED[@]} of $STEPS steps failed: ${FAILED[*]}"
+fi
+echo "Logs and results: $OUT"
+[ ${#FAILED[@]} -eq 0 ]

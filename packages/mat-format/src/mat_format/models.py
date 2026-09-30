@@ -1,0 +1,251 @@
+"""
+Data model of MAT results in format 2.
+
+MAT's writer builds these models and dumps them to JSON, the reader parses the JSON back into them and the JSON schemas
+in `schemas/` are generated from them. Change a model and the schema changes with it.
+
+Rules for changes:
+- adding a field (optional or not) keeps the format version, readers ignore fields they don't know
+- renaming or removing a field, or changing its type or meaning, needs a new format version
+"""
+from typing import Dict, List, Literal, Optional, Set
+
+from pydantic import BaseModel, ConfigDict, Field
+
+FORMAT_VERSION = 2
+
+
+class _Model(BaseModel):
+    # unknown fields are ignored, so files from a newer MAT with extra fields still load
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+
+class ModelInfo(BaseModel):
+    """Which backend and model produced a step, and the versions of the Python packages it used."""
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+    backend: str = Field(description="MAT backend name, for example whisper or sortformer.")
+    model: Optional[str] = Field(None, description="Model the backend used, if it has one.")
+    packages: Dict[str, str] = Field(default_factory=dict, description="Python package name to version.")
+
+
+# ---------------------------------------------------------------- meta.json
+
+
+class Input(_Model):
+    """The media file that was processed."""
+
+    name: str = Field(description="File name without folders.")
+    path: str = Field(description="Absolute path on the machine that ran MAT.")
+    sha1: str = Field(description="SHA-1 of the file content, hex encoded.")
+
+
+class FailedStep(_Model):
+    """A step that failed, so its part of the result is missing."""
+
+    pipeline: str = Field(description='"podcast" or "book".')
+    step: str = Field(description="Name of the step, for example summarize_transcript.")
+    error: str = Field(description="Error type and message.")
+
+
+class Meta(_Model):
+    """Content of meta.json in the root of every result."""
+
+    format: Literal[2] = Field(FORMAT_VERSION, description="Result format version.")
+    format_version: Optional[str] = Field(None, description="Full version of the result format, for example 2.5.0. "
+                                                            "The minor version says which fields to expect. Missing "
+                                                            "in results from before 2.5.")
+    mat_version: str = Field(description="Version of MAT that wrote the result.")
+    created: str = Field(description="Local time the result was written, ISO 8601 without time zone.")
+    input: Input
+    pipelines: List[str] = Field(description='Pipelines that ran, each has a folder of the same name: "podcast", '
+                                             '"book".')
+    failed_steps: List[FailedStep] = Field(default_factory=list,
+                                             description="Steps that failed. Their part of the result is missing, "
+                                                         "everything else is there.")
+
+
+# ---------------------------------------------------------------- podcast/result.json
+
+
+class TimeRange(_Model):
+    """Seconds from the start of the audio file."""
+
+    start: float
+    end: float
+
+
+class Speaker(_Model):
+    """A speaker and when they talk."""
+
+    id: str = Field(description="Speaker label. The gold label name (for example alice) if the speaker was matched "
+                                "to a gold label clip, otherwise the diarizer label (for example sprecher_0). Only "
+                                "unique inside one result, not across episodes.")
+    name: Optional[str] = Field(None, description="Real name of the person, when MAT knows one: from a gold label "
+                                                  "clip, from the transcript or from the speaker library. Null when "
+                                                  "only the diarizer label is known.")
+    library_id: Optional[str] = Field(None, description="Id of this voice in the speaker library. Stays the same in "
+                                                        "every episode the voice shows up in, which makes statistics "
+                                                        "per person possible. Null when no library was used.")
+    segments: List[TimeRange] = Field(description="Time ranges this speaker talks, sorted by start.")
+
+
+class Word(_Model):
+    """A word or, in segments, several words of the same speakers merged into one line."""
+
+    start: Optional[float] = Field(description="Seconds from the start of the audio file, null if unknown.")
+    end: Optional[float] = Field(description="Seconds from the start of the audio file, null if unknown.")
+    text: str
+    speakers: List[str] = Field(description="Speaker ids talking during this word. Empty if nobody matched, more "
+                                            "than one if speakers overlap.")
+
+
+class Media(_Model):
+    """Technical data of the audio file."""
+
+    duration: float = Field(description="Length in seconds.")
+    speech_duration: Optional[float] = Field(description="Seconds of speech after voice activity detection.")
+    sample_rate: int = Field(description="Samples per second of the decoded audio.")
+    max_dbfs: Optional[float] = Field(description="Loudest sample in dBFS, null for silent audio.")
+    rms: Optional[float] = Field(description="Root mean square of the samples.")
+
+
+class Event(_Model):
+    """A sound event like music or laughter (MAT 0.3 with podcast.events, empty otherwise)."""
+
+    label: str
+    start: float
+    end: float
+    score: Optional[float] = Field(None, description="Confidence between 0 and 1, if the model gives one.")
+
+
+class TranscriptEntity(_Model):
+    """A named entity found in the transcript (MAT 0.3 with podcast.ner, empty otherwise)."""
+
+    label: str = Field(description="Entity type, for example PERSON.")
+    text: str
+    start: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    end: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    speakers: List[str] = Field(default_factory=list, description="Speaker ids that said it.")
+
+
+class TranscriptSentence(_Model):
+    """A sentence of the transcript. Sentences never go across a change of speaker."""
+
+    start: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    end: Optional[float] = Field(None, description="Seconds from the start of the audio file.")
+    speakers: List[str] = Field(default_factory=list, description="Speaker ids, as in speakers[].id.")
+    text: str
+    first_word: int = Field(description="Index of its first word in words.")
+    last_word: int = Field(description="Index of its last word in words (inclusive).")
+
+
+class PodcastResult(_Model):
+    """Content of podcast/result.json."""
+
+    schema_: Literal["mat.podcast"] = Field("mat.podcast", alias="schema")
+    format: Literal[2] = Field(FORMAT_VERSION, description="Result format version.")
+    models: Dict[str, ModelInfo] = Field(description="Step name (transcriber, diarizer, identifier, summarizer) to "
+                                                     "the backend that ran it. Steps that were skipped are missing.")
+    language: Optional[str] = Field(description="Detected language as ISO 639-1 code, for example de.")
+    media: Optional[Media]
+    speakers: List[Speaker] = Field(description="Speakers after matching them to gold label clips. This is the "
+                                                "list to use.")
+    diarization: List[Speaker] = Field(description="Speakers as the diarizer found them, before matching.")
+    words: List[Word] = Field(description="Every transcribed word, in order.")
+    segments: List[Word] = Field(description="Consecutive words with the same speakers merged into lines.")
+    summary: Optional[str] = Field(description="Summary as Markdown, null if the summary was skipped or failed.")
+    events: List[Event]
+    entities: List[TranscriptEntity]
+    sentences: List[TranscriptSentence] = Field(default_factory=list, description="The transcript in sentences. "
+                                                                                  "Empty when splitting didn't run "
+                                                                                  "(since 2.6).")
+
+    @property
+    def speaker_ids(self) -> Set[str]:
+        return {speaker.id for speaker in self.speakers}
+
+    def speaker(self, speaker_id: str) -> Optional[Speaker]:
+        return next((speaker for speaker in self.speakers if speaker.id == speaker_id), None)
+
+    def entity_counts(self) -> Dict[str, Dict[str, int]]:
+        """How often each entity was said, per label: {"PERSON": {"Stannis": 12, ...}}. Spellings that only
+        differ in case count together, under the one seen first."""
+        counts: Dict[str, Dict[str, int]] = {}
+        spelling: Dict[tuple, str] = {}
+        for entity in self.entities:
+            key = (entity.label, entity.text.casefold())
+            name = spelling.setdefault(key, entity.text)
+            per_label = counts.setdefault(entity.label, {})
+            per_label[name] = per_label.get(name, 0) + 1
+        return counts
+
+
+# ---------------------------------------------------------------- book/result.json
+
+
+class TextEntity(_Model):
+    """A named entity inside a sentence."""
+
+    label: str = Field(description="Entity type, for example PERSON.")
+    text: str
+    start: int = Field(description="Character offset in the sentence text where the entity starts.")
+    end: int = Field(description="Character offset in the sentence text where the entity ends (exclusive).")
+
+
+class Sentence(_Model):
+    text: str
+    lemmas: Dict[str, int] = Field(description="Lemma to count, without stop words and punctuation.")
+    entities: List[TextEntity]
+
+    def entities_by_label(self) -> Dict[str, List[str]]:
+        result: Dict[str, List[str]] = {}
+        for entity in self.entities:
+            result.setdefault(entity.label, []).append(entity.text)
+        return result
+
+
+class Chapter(_Model):
+    heading: str = Field(description='Heading to show. Repeated headings get a roman numeral, for example "Part II".')
+    heading_raw: str = Field(description="Heading as it is in the book.")
+    paragraphs: List[str]
+    sentences: List[Sentence] = Field(description="Empty if sentence splitting didn't run.")
+    summary: Optional[str] = Field(None, description="Summary of this chapter as Markdown, only from this chapter "
+                                                     "(no spoilers). Null when chapter summaries didn't run.")
+
+
+class JoinedName(_Model):
+    """A name that turned out to be the same character, and the sentence that shows it."""
+
+    name: str
+    evidence: str = Field(description="Sentence of the book that says both names are one person.")
+
+
+class Character(_Model):
+    """A person of the book, with the name variants that were joined for it."""
+
+    name: str = Field(description="The most used spelling of the full name.")
+    mentions: int = Field(description="How often any of the variants was found.")
+    variants: Dict[str, int] = Field(description="Spelling as found to count, for example Eddard: 12.")
+    chapters: Dict[str, int] = Field(description="Chapter heading (as in chapters[].heading) to count.")
+    joined: List[JoinedName] = Field(default_factory=list, description="Names of other characters that were joined "
+                                                                       "into this one by the character judge, with "
+                                                                       "the evidence (since 2.6).")
+
+
+class BookResult(_Model):
+    """Content of book/result.json."""
+
+    schema_: Literal["mat.book"] = Field("mat.book", alias="schema")
+    format: Literal[2] = Field(FORMAT_VERSION, description="Result format version.")
+    models: Dict[str, ModelInfo] = Field(description="Step name (splitter, ner) to the backend that ran it.")
+    title: str
+    language: Optional[str] = Field(description="Detected language as ISO 639-1 code.")
+    chapters: List[Chapter]
+    characters: List[Character] = Field(default_factory=list, description="Characters from the PERSON entities, "
+                                                                          "most mentioned first. Empty without NER.")
+
+
+__all__ = ["FORMAT_VERSION", "ModelInfo", "Input", "Meta", "FailedStep", "TimeRange", "Speaker", "Word", "Media",
+           "Event", "TranscriptEntity", "TranscriptSentence", "PodcastResult", "TextEntity", "Sentence", "Chapter",
+           "Character", "JoinedName", "BookResult"]

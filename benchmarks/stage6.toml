@@ -1,0 +1,73 @@
+# Stage 6: the speech backends against each other. Every system says which diarizer it uses, so the names keep
+# meaning the same after the defaults changed (2026-09: Sortformer -> community-1 exclusive).
+#   uv run MAT bench run -c benchmarks/stage6.toml -o bench-stage6
+# Try it with --limit 1 first. Finished runs are skipped, so systems can be added later.
+
+[[system]]
+name = "whisper-sortformer"
+set = ["podcast.diarizer=sortformer"]
+
+[[system]]
+name = "whisper-sortformer-streaming"
+set = ["podcast.diarizer=sortformer-streaming"]
+
+[[system]]
+name = "parakeet-sortformer"
+set = ["podcast.transcriber=parakeet", "podcast.diarizer=sortformer"]
+
+# Parakeet loses sentences in packed FLEURS and Bundestag files with long pieces, 30 s pieces don't
+[[system]]
+name = "parakeet-sortformer-30s"
+set = ["podcast.transcriber=parakeet", "parakeet.segment-length=30", "podcast.diarizer=sortformer"]
+
+[[system]]
+name = "whisper-community1"
+set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=false"]
+
+# the default since 2026-09
+[[system]]
+name = "whisper-community1-exclusive"
+set = ["podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=true"]
+
+[[system]]
+name = "parakeet-community1"
+set = ["podcast.transcriber=parakeet", "podcast.diarizer=pyannote-diarization", "pyannote-diarization.exclusive=false"]
+
+# Needs its own environment first: uv run MAT external install diarizen
+# The weights are non-commercial (CC BY-NC 4.0), see docs/external-environments.md
+[[system]]
+name = "whisper-diarizen"
+set = ["podcast.diarizer=diarizen"]
+
+[[dataset]]
+type = "fleurs"
+languages = ["de", "en"]
+limit = 100
+
+[[dataset]]
+type = "voxconverse"
+limit = 5
+
+[[dataset]]
+type = "ami"
+limit = 4
+
+[[dataset]]
+type = "bundestag"
+limit = 200
+
+# Your own episodes have no reference, so they give speed, GPU memory, speaker count and how far the systems are
+# apart. Real lengths (an hour or more) are the only way to see what the pipeline costs on a whole episode.
+# Keep your paths out of git: copy this file somewhere outside the repository and put them there.
+# [[dataset]]
+# type = "audio"
+# name = "episodes"
+# files = ["/path/to/episodes/*.mp3"]
+# limit = 1
+#
+# Once a part of an episode is corrected (MAT bench reference), the same episode gives real WER, cpWER and DER.
+# The systems still run on the whole file and are scored on the corrected part.
+# [[dataset]]
+# type = "reference"
+# name = "own"
+# path = "/path/to/references"

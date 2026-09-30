@@ -9,11 +9,17 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
-from typing import Optional, Dict, List, Tuple, Callable, Union
+from typing import Optional, Dict, List, Tuple, Literal, Union
 from dataclasses import dataclass
 
-from MAT.tools.ner import NERTool, NERResult, NERInput
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+require("gliner2", extra="gliner")
+
+from MAT.tools.ner import NERTool, NERResult, NERInput  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
 @dataclass
@@ -24,88 +30,74 @@ class GLiNERResult:
     end: int
 
 
+DEFAULT_LABELS = {
+    "PERSON": "name of a person or character",
+    "LOCATION": "name of a place, city or country",
+    "ORGANIZATION": "name of a company, group or institution",
+    "DATE": "a date, year or day",
+}
+
+
+class GlinerOptions(Options):
+    version: Literal[1, 2] = Field(2, description="GLiNER generation. 1 needs a GLiNER v1 model.")
+    model: str = Field("fastino/gliner2-multi-v1", description="GLiNER model. multi-v1 made far fewer mistakes than "
+                                                             "large-v1 on German and English in our test (common "
+                                                             "nouns like Frau or river as entities) and is twice as "
+                                                             "fast.")
+    labels: Union[List[str], Dict[str, str]] = Field(
+        default_factory=lambda: dict(DEFAULT_LABELS),
+        description="Entity labels to look for, as a list or as label = description. GLiNER2 uses the "
+                    "descriptions: with them it stopped calling pronouns (you, I) a PERSON in our tests.")
+    device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
+    batch_size: int = Field(8, ge=1, description="Texts per model call (GLiNER2).")
+    threshold: float = Field(0.5, gt=0, lt=1, description="Minimum confidence for an entity (GLiNER2).")
+
+
+@register("ner", "gliner", description="GLiNER / GLiNER2 zero shot named entities")
 class NERGliner(NERTool):
-    @classmethod
-    def config_name(cls) -> str:
-        return "GliNER"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "version": ConfigElement(
-                default_value=2,
-                argparse_kwargs={
-                    "help": "GliNER version to use. Choose from %(choices)s [Default: %(default)s]",
-                    "type": int, "choices": [1, 2]
-                }
-            ),
-            "model": ConfigElement(
-                default_value="fastino/gliner2-large-v1",
-                argparse_kwargs={
-                    "help": "GliNER model to use [Default: %(default)s]",
-                    "type": str,
-                }
-            ),
-            "labels": ConfigElement(
-                default_value=["PERSON", "LOCATION", "ORGANIZATION", "DATE"],
-                argparse_kwargs={
-                    "help": "GliNER labels to use [Default: %(default)s]",
-                    "type": str, "nargs": "+",
-                }
-            ),
-        }
-
+    Options = GlinerOptions
+    packages = ("gliner", "gliner2")
+    memory_hint = "--set gliner.batch-size=2, or --set gliner.device=cpu"
     _LOGGER = logging.getLogger(__name__)
 
     def process(self, origin_data: NERInput, config: Config) -> Optional[NERResult]:
-        import tqdm
-        model: Union["GLiNER", "GLiNER2"] = None
-        get_entities: Callable[[str, List[str]], List[GLiNERResult]]
-        cfg = config.get_config(key=self.__class__)
-        match cfg["version"]:
-            case 1:
-                from gliner import GLiNER
-                model = GLiNER.from_pretrained(cfg["model"])
+        from MAT.utils.device import free_gpu_memory, resolve_device
 
-                def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
-                    _result = model.predict_entities(txt, [label])
-                    _ret = []
-                    for _r in _result:
-                        _ret.append(GLiNERResult(text=_r["text"], start=_r["start"], end=_r["end"], label=_r["label"]))
-                    return _ret
+        options = config.options(self)
+        device = resolve_device(options.device)
+        labels = list(options.labels)
+        # GLiNER2 takes {label: description}, GLiNER 1 only the labels
+        asked = dict(options.labels) if isinstance(options.labels, dict) else labels
+        texts = origin_data.text
+        self._LOGGER.info(f"Looking for {', '.join(labels)} in {len(texts)} texts with {options.model} on {device}")
+        # All labels in one call. Asked one label at a time, the model finds something for every label, so Bob and
+        # Paris also came back as ORGANIZATION.
+        if options.version == 1:
+            from gliner import GLiNER
 
-            case 2:
-                from gliner2 import GLiNER2
-                GLiNER2._print_config = lambda *args, **kwargs: None
-                model = GLiNER2.from_pretrained(cfg["model"])
+            model = GLiNER.from_pretrained(options.model).to(device)
+            found = [[GLiNERResult(text=r["text"], start=r["start"], end=r["end"], label=r["label"])
+                      for r in model.predict_entities(text, labels, threshold=options.threshold)] for text in texts]
+        else:
+            from gliner2 import GLiNER2
 
-                def get_entities(_txt: str, _labels: List[str]) -> List[GLiNERResult]:
-                    _result = model.extract_entities(txt, [label], include_spans=True)
-                    _ret = []
-                    for _label, _entities in _result["entities"].items():
-                        for _e in _entities:
-                            _ret.append(GLiNERResult(text=_e["text"], start=_e["start"], end=_e["end"], label=_label))
-                    return _ret
-            case _:
-                self.__class__._LOGGER.error(f"Unknown GliNER version: {cfg['version']}")
-                return None
-
-        labels = cfg["labels"]
-        self.__class__._LOGGER.debug(f"Running GliNER{cfg['version']}-{cfg['model']} with labels: {', '.join(labels)}")
+            GLiNER2._print_config = lambda *args, **kwargs: None
+            model = GLiNER2.from_pretrained(options.model)
+            model.to(device)
+            answers = model.batch_extract_entities(texts, asked, batch_size=options.batch_size,
+                                                   threshold=options.threshold, include_spans=True) if texts else []
+            found = [[GLiNERResult(text=e["text"], start=e["start"], end=e["end"], label=label)
+                      for label, entities in (answer.get("entities") or {}).items() for e in entities]
+                     for answer in answers]
+        del model
+        free_gpu_memory()
 
         ret: List[Dict[str, List[Tuple[str, int, int]]]] = []
-        for txt in tqdm.tqdm(origin_data.text, leave=False, desc="NER on sentence", unit="sentences"):
-            ret.append({})
-            for label in labels:
-                ret[-1][label] = []
-            for label in labels:
-                result = get_entities(_txt=txt, _labels=[label])
-                for r in result:
-                    ret[-1][r.label].append((r.text, r.start, r.end))
-
-        if model is not None:
-            del model
-
+        for entities in found:
+            per_label: Dict[str, List[Tuple[str, int, int]]] = {label: [] for label in labels}
+            for e in entities:
+                per_label.setdefault(e.label, []).append((e.text, e.start, e.end))
+            ret.append(per_label)
         return NERResult(*ret)
 
 

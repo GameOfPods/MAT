@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/GameOfPods/MAT/master/packages/mat-format/src/mat_format/schemas/meta.schema.json",
+  "$comment": "MAT result format 2.6.0, describes meta.json. Generated from mat_format/models.py, don't edit by hand.",
+  "version": "2.6.0",
+  "$defs": {
+    "FailedStep": {
+      "description": "A step that failed, so its part of the result is missing.",
+      "properties": {
+        "pipeline": {
+          "description": "\"podcast\" or \"book\".",
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "step": {
+          "description": "Name of the step, for example summarize_transcript.",
+          "title": "Step",
+          "type": "string"
+        },
+        "error": {
+          "description": "Error type and message.",
+          "title": "Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pipeline",
+        "step",
+        "error"
+      ],
+      "title": "FailedStep",
+      "type": "object"
+    },
+    "Input": {
+      "description": "The media file that was processed.",
+      "properties": {
+        "name": {
+          "description": "File name without folders.",
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute path on the machine that ran MAT.",
+          "title": "Path",
+          "type": "string"
+        },
+        "sha1": {
+          "description": "SHA-1 of the file content, hex encoded.",
+          "title": "Sha1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "sha1"
+      ],
+      "title": "Input",
+      "type": "object"
+    }
+  },
+  "description": "Content of meta.json in the root of every result.",
+  "properties": {
+    "format": {
+      "const": 2,
+      "default": 2,
+      "description": "Result format version.",
+      "title": "Format",
+      "type": "integer"
+    },
+    "format_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Full version of the result format, for example 2.5.0. The minor version says which fields to expect. Missing in results from before 2.5.",
+      "title": "Format Version"
+    },
+    "mat_version": {
+      "description": "Version of MAT that wrote the result.",
+      "title": "Mat Version",
+      "type": "string"
+    },
+    "created": {
+      "description": "Local time the result was written, ISO 8601 without time zone.",
+      "title": "Created",
+      "type": "string"
+    },
+    "input": {
+      "$ref": "#/$defs/Input"
+    },
+    "pipelines": {
+      "description": "Pipelines that ran, each has a folder of the same name: \"podcast\", \"book\".",
+      "items": {
+        "type": "string"
+      },
+      "title": "Pipelines",
+      "type": "array"
+    },
+    "failed_steps": {
+      "description": "Steps that failed. Their part of the result is missing, everything else is there.",
+      "items": {
+        "$ref": "#/$defs/FailedStep"
+      },
+      "title": "Failed Steps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "mat_version",
+    "created",
+    "input",
+    "pipelines"
+  ],
+  "title": "Meta",
+  "type": "object"
+}

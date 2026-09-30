@@ -9,69 +9,105 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
-from MAT.tools.text_splitter import SplitterInput, SplitterResult, SplitterTool
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+require("spacy", "spacy_download", extra="spacy")
+
+from MAT.tools.text_splitter import SplitterInput, SplitterResult, SplitterTool  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
+class SpacyOptions(Options):
+    model: Optional[str] = Field(None, description="spaCy model. Not set: picked by the language of the book "
+                                                   "(en_core_web_md, de_core_news_md, fr_core_news_md, xx_sent_ud_sm "
+                                                   "for others). The English and German ones come with the spacy "
+                                                   "extra, others get downloaded.")
+
+
+@register("splitter", "spacy", description="spaCy sentences and lemma counts")
 class SplitterSpacy(SplitterTool):
+    Options = SpacyOptions
+    packages = ("spacy",)
     _LOGGER = logging.getLogger(__name__)
+    # md: the lemmas and sentence borders we need are as good as with lg, at a tenth of the size. The transformer
+    # models (*_trf) need spacy-transformers, which pins transformers to an old version.
     _DEFAULT_MODELS = {
-        "en": "en_core_web_trf",
-        "de": "de_core_news_lg",
-        "fr": "fr_dep_news_trf",
+        "en": "en_core_web_md",
+        "de": "de_core_news_md",
+        "fr": "fr_core_news_md",
         None: "xx_sent_ud_sm"
     }
 
-    @classmethod
-    def config_name(cls) -> str:
-        return "SpaCy"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "model": ConfigElement(
-                default_value=None,
-                argparse_kwargs={
-                    "help": "Model to use for spacy. If not given will try to guess best model from language",
-                    "type": str,
-                }
-            )
-        }
+    def __init__(self):
+        # a book calls this once per chapter, the model is loaded once
+        self._loaded = {}
 
     def process(self, origin_data: SplitterInput, config: Config) -> Optional[SplitterResult]:
-        from pprint import pformat
         from collections import Counter
-        cfg = config.get_config(self)
-        model = cfg["model"]
+
+        model = config.options(self).model
         if model is None:
-            self.__class__._LOGGER.debug("No model specified. Guessing best model by language")
-            try:
+            language = origin_data.language
+            if language is None:
                 from langdetect import detect
-                lang = detect(origin_data.text)
-            except ImportError:
-                lang = None
-            model = self.__class__._DEFAULT_MODELS.get(lang, self.__class__._DEFAULT_MODELS[None])
-        spacy_module_kwargs = {}
-        self.__class__._LOGGER.debug(f"Using {model} SpaCy model. With arguments: {pformat(spacy_module_kwargs)}")
-        try:
-            import spacy
-            nlp = spacy.load(model, **spacy_module_kwargs)
-        except:
-            from spacy_download import load_spacy
-            nlp = load_spacy(model, **spacy_module_kwargs)
+                language = detect(origin_data.text)
+            model = self._DEFAULT_MODELS.get(language, self._DEFAULT_MODELS[None])
+        nlp = self._loaded.get(model)
+        if nlp is None:
+            self._LOGGER.info(f"Using spaCy model {model}")
+            try:
+                import spacy
+                nlp = spacy.load(model)
+            except OSError:
+                from spacy_download import load_spacy
+                nlp = load_spacy(model)
+            self._loaded = {model: nlp}
 
         doc = nlp(origin_data.text)
-
+        # spaCy keeps the line break after a sentence ("Alice met Bob.\n"), nobody wants that stored
+        sentences = [(sent.text.strip(), sent) for sent in doc.sents]
+        sentences = [(text, sent) for text, sent in sentences if text]
         ret = SplitterResult(
-            sentences=[x.text for x in doc.sents],
-            words=[Counter(e.lemma_ for e in s if not any([e.is_space, e.is_punct, e.is_stop])) for s in doc.sents]
+            sentences=[text for text, _ in sentences],
+            words=[Counter(e.lemma_ for e in sent if not any([e.is_space, e.is_punct, e.is_stop]))
+                   for _, sent in sentences],
+            tokens=[self._tokens(text, sent) for text, sent in sentences] if self._tags(nlp) else None,
         )
-
         del doc
-
-        import gc
-        gc.collect()
-
         return ret
+
+    @staticmethod
+    def _tags(nlp) -> bool:
+        """Whether the model tags parts of speech and parses (xx_sent_ud_sm only splits sentences)."""
+        return (nlp.has_pipe("tagger") or nlp.has_pipe("morphologizer")) and nlp.has_pipe("parser")
+
+    @staticmethod
+    def _plural(token) -> bool:
+        """A plural noun, going by what agrees with it. spaCy calls invented names like Edmure or Rickon plural
+        nouns, but "Edmure lachte" has a singular verb, "die Männer" a plural article and "Männer zogen" a plural
+        verb."""
+        plural = ["Plur"]
+        if token.pos_ != "NOUN" or token.morph.get("Number") != plural:
+            return False
+        if any(child.pos_ == "DET" and child.morph.get("Number") == plural for child in token.children):
+            return True
+        return token.dep_ in ("sb", "nsubj") and token.head.morph.get("Number") == plural
+
+    @staticmethod
+    def _tokens(text: str, sent) -> list:
+        # offsets into the stripped sentence text, so they fit the NER spans on it
+        shift = sent.start_char + (len(sent.text) - len(sent.text.lstrip()))
+        tokens = []
+        for token in sent:
+            if token.is_space:
+                continue
+            # English possessives ("his father") are pronouns with dep poss, German ones ("sein Vater") are DET
+            article = any(child.pos_ == "DET" or child.dep_ == "poss" for child in token.children) or (
+                token.i > sent.start and token.nbor(-1).pos_ == "DET")
+            plural = SplitterSpacy._plural(token)
+            tokens.append((token.idx - shift, token.idx - shift + len(token.text), token.pos_, article, plural))
+        return tokens

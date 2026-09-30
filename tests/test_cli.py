@@ -1,0 +1,164 @@
+import tomllib
+
+import pytest
+
+from MAT.cli import main
+
+
+def test_run_help_stays_short(capsys):
+    with pytest.raises(SystemExit):
+        main(["run", "-h"])
+    out = capsys.readouterr().out
+    assert "--transcriber" in out
+    # backend options are not flags, they are listed by `MAT backends show`
+    assert "beam-size" not in out
+    # one flag per pipeline slot, which grew with entities, events and chapter summaries. Hundreds of lines would
+    # mean backend options leaked in again
+    assert len(out.splitlines()) < 100
+
+
+def test_bench_help_and_datasets(capsys):
+    with pytest.raises(SystemExit):
+        main(["bench", "run", "-h"])
+    out = capsys.readouterr().out
+    assert "--rerun" in out and "--cache" in out
+    assert main(["bench", "datasets"]) == 0
+    out = capsys.readouterr().out
+    for name in ("reference", "audio", "fleurs", "voxconverse", "ami", "bundestag"):
+        assert f"{name}: " in out
+    assert "pack-minutes" in out
+
+
+def test_bench_errors_exit_with_2(tmp_path, capsys):
+    assert main(["bench", "download", "-c", str(tmp_path / "missing.toml")]) == 2
+    assert "doesn't exist" in capsys.readouterr().err
+    assert main(["bench", "download", "-c", str(tmp_path / "missing.toml"), "--limit", "-2"]) == 2
+    assert "--limit" in capsys.readouterr().err
+
+
+def test_backends_list(capsys):
+    assert main(["backends"]) == 0
+    out = capsys.readouterr().out
+    assert "transcriber" in out
+    assert "whisper" in out
+
+
+def test_backends_show(capsys):
+    assert main(["backends", "show", "whisper"]) == 0
+    out = capsys.readouterr().out
+    assert "beam-size" in out
+    assert "--set whisper." in out
+
+
+def test_backends_show_unknown(capsys):
+    assert main(["backends", "show", "nope"]) == 2
+    assert "Unknown backend" in capsys.readouterr().err
+
+
+def test_config_init_is_valid_toml(capsys):
+    assert main(["config", "init", "--summarizer", "none"]) == 0
+    data = tomllib.loads(capsys.readouterr().out)
+    assert data["podcast"]["summarizer"] == "none"
+    assert "whisper" in data
+    # the summarizer is off, so its section isn't in the file
+    assert "llm" not in data
+
+
+def test_config_init_stays_valid_toml_when_a_backend_is_missing(tmp_path, monkeypatch, capsys, caplog):
+    import logging
+    import sys
+    import textwrap
+    from MAT import registry
+
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "mat_fake_absent.py").write_text(textwrap.dedent("""
+        from MAT.registry import require
+        require("mat_definitely_missing", extra="demo")
+    """))
+    try:
+        registry.load_optional("mat_fake_absent", slot="diarizer", name="test-absent", extra="demo")
+        with caplog.at_level(logging.WARNING):
+            assert main(["config", "init", "--set", "podcast.diarizer=test-absent"]) == 0
+        # the warning is logged, stdout only has the TOML file
+        data = tomllib.loads(capsys.readouterr().out)
+        assert data["podcast"]["diarizer"] == "test-absent"
+        assert "test-absent isn't installed" in caplog.text
+    finally:
+        registry.unregister("diarizer", "test-absent")
+        sys.modules.pop("mat_fake_absent", None)
+
+
+def test_config_init_does_not_overwrite(tmp_path, capsys):
+    target = tmp_path / "mat.toml"
+    target.write_text("keep me")
+    assert main(["config", "init", "-o", str(target)]) == 2
+    assert target.read_text() == "keep me"
+
+
+def test_config_show_merges_file_and_set(tmp_path, capsys):
+    file = tmp_path / "mat.toml"
+    file.write_text("[whisper]\nbeam-size = 3\n")
+    assert main(["config", "show", "-c", str(file), "--set", "whisper.model=medium"]) == 0
+    data = tomllib.loads(capsys.readouterr().out)
+    assert data["whisper"]["beam-size"] == 3
+    assert data["whisper"]["model"] == "medium"
+
+
+def test_config_show_reports_typos(capsys):
+    assert main(["config", "show", "--set", "whisper.beam-sise=3"]) == 2
+    assert "beam-sise" in capsys.readouterr().err
+
+
+def test_the_cli_starts_without_torch():
+    """MAT --help used to take 2 s because a type hint imported torch."""
+    import subprocess
+    import sys
+
+    code = "import sys, MAT.cli; print('torch' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "False"
+
+
+def test_the_banner_names_both_versions():
+    import mat_format
+    import MAT
+    from MAT.banner import banner, versions
+
+    for blocks in (True, False):
+        lines = banner(blocks=blocks).splitlines()
+        # a closed frame: every line as wide as the first
+        assert len({len(line) for line in lines}) == 1
+        text = "\n".join(lines)
+        assert MAT.__version__ in text and mat_format.__version__ in text and "RedRem" in text
+    assert "█" in banner(blocks=True) and "|_|  |_/_/" in banner(blocks=False)
+    assert versions() == f"MAT {MAT.__version__}, result format {mat_format.__version__}"
+
+
+def test_block_letters_only_where_they_can_be_written(monkeypatch):
+    import io
+
+    from MAT.banner import supports_blocks
+
+    monkeypatch.delenv("MAT_BANNER", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    utf8 = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+    latin = io.TextIOWrapper(io.BytesIO(), encoding="latin-1")
+    assert supports_blocks(utf8) and not supports_blocks(latin)
+    monkeypatch.setenv("TERM", "dumb")
+    assert not supports_blocks(utf8)
+    monkeypatch.setenv("MAT_BANNER", "block")
+    assert supports_blocks(latin)
+
+
+def test_banner_none_prints_nothing(monkeypatch):
+    import io
+
+    from MAT.banner import print_banner
+
+    stream = io.StringIO()
+    monkeypatch.setenv("MAT_BANNER", "none")
+    print_banner(stream)
+    assert stream.getvalue() == ""
+    monkeypatch.setenv("MAT_BANNER", "ascii")
+    print_banner(stream)
+    assert "Media Analytics Toolset" in stream.getvalue()

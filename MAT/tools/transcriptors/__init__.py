@@ -10,11 +10,14 @@
 #  GNU General Public License for more details.
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, Tuple, Dict, List, Set
+from typing import Optional, List, Set, TYPE_CHECKING
 from dataclasses import dataclass
 
 from MAT.tools import ToolResult, ToolInput, Tool
 from MAT.utils.config import Config
+
+if TYPE_CHECKING:
+    from MAT.tools.diarizators import DiarizationResult
 
 
 @dataclass
@@ -56,12 +59,19 @@ class TranscriptionResult(ToolResult):
 
 
 class TranscriptionInput(ToolInput):
-    def __init__(self, input_file: str):
+    def __init__(self, input_file: str, vocabulary: Optional[List[str]] = None):
         self._input_file = input_file
+        self._vocabulary = list(vocabulary or [])
 
     @property
     def input_file(self) -> str:
         return self._input_file
+
+    @property
+    def vocabulary(self) -> List[str]:
+        """Names and words of the show that the model should expect (podcast.vocabulary). Backends that can't use
+        them say so and go on without."""
+        return self._vocabulary
 
 
 class TransciptionTool(Tool[TranscriptionInput, TranscriptionResult], ABC):
@@ -70,8 +80,31 @@ class TransciptionTool(Tool[TranscriptionInput, TranscriptionResult], ABC):
         pass
 
 
-from MAT.tools.transcriptors.whisper import TransciptorWhisper
+class TranscribeDiarizeResult(TranscriptionResult):
+    def __init__(self, diarization: "DiarizationResult" = None, **kwargs):
+        super().__init__(**kwargs)
+        self._diarization = diarization
 
-__all__ = ["TranscriptionResult", "TranscriptionInput", "TransciptionTool", "TransciptorWhisper", "WordTuple",
-           "WordTupleSpeaker"]
-__all__.extend(["__all__"])
+    @property
+    def diarization(self) -> Optional["DiarizationResult"]:
+        return self._diarization
+
+
+class TranscribeDiarizeTool(TransciptionTool, ABC):
+    """
+    A model that transcribes and diarizes in one pass. Registered in the transcriber slot, the podcast pipeline then
+    takes the diarization from it and doesn't run the diarizer.
+    """
+
+    @abstractmethod
+    def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscribeDiarizeResult]:
+        pass
+
+
+from MAT.registry import load_optional
+
+load_optional("MAT.tools.transcriptors.whisper", slot="transcriber", name="whisper", extra="whisper")
+load_optional("MAT.tools.transcriptors.parakeet", slot="transcriber", name="parakeet", extra="parakeet")
+
+__all__ = ["TranscriptionResult", "TranscriptionInput", "TransciptionTool", "TranscribeDiarizeResult",
+           "TranscribeDiarizeTool", "WordTuple", "WordTupleSpeaker"]

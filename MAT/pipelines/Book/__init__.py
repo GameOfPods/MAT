@@ -8,13 +8,17 @@
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-from dataclasses import dataclass
-from typing import Dict, Iterable, Callable, List, Tuple, Optional
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, Callable, List, Tuple, Optional
 import logging
 
-from MAT import SplitterSpacy, SplitterInput
-from MAT.pipelines import PipelineResult, Pipeline, PipelineStepResult, T_out, PipelineStepInput
-from MAT.utils.config import ConfigElement
+from pydantic import Field
+
+from MAT.pipelines import PipelineResult, Pipeline, PipelineStepResult, PipelineStepInput, Slot
+from MAT.tools.ner import NERInput
+from MAT.tools.text_splitter import SplitterInput
+from MAT.utils.config import Options
 
 
 @dataclass
@@ -24,7 +28,10 @@ class Chapter:
     heading_beautified: Optional[str] = None
     sentences: Optional[List[str]] = None
     sentence_words: Optional[List[Dict[str, int]]] = None
+    # per sentence (start, end, part of speech, article, plural), see SplitterResult.tokens. Not in the result
+    sentence_tokens: Optional[List[List[Tuple[int, int, str, bool, bool]]]] = None
     ner: Optional[List[Dict[str, List[Tuple[str, int, int]]]]] = None
+    summary: Optional[str] = None
 
     def get_beautiful_heading(self) -> str:
         return self.heading_beautified if self.heading_beautified is not None else self.heading
@@ -46,54 +53,68 @@ class BookOutput(PipelineResult):
     title: str
     language: Optional[str]
     chapter_data: List[Chapter]
+    models: Dict[str, Any] = field(default_factory=dict)
+    # {"name", "mentions", "variants", "chapters"} per character, see MAT/utils/characters.py
+    characters: List[Dict[str, Any]] = field(default_factory=list)
+
+
+class BookOptions(Options):
+    splitter: str = Field("spacy", description="Splits chapters into sentences and counts lemmas.")
+    ner: str = Field("gliner", description='Named entities per sentence. "none" skips it.')
+    character_labels: List[str] = Field(["PERSON"], description="NER labels that count as characters for the "
+                                                                "character list.")
+    min_mentions: int = Field(2, ge=1, description="Characters mentioned less often stay off the character list.")
+    full_name_mentions: int = Field(3, ge=1, description="How often a longer name has to be written before the short "
+                                                         "names in it join it (Stannis -> Stannis Baratheon). Guards "
+                                                         "against NER spans with two people in them. Lower it for "
+                                                         "short texts.")
+    character_judge: str = Field("none", description='Decides with an LLM which names are one character, from '
+                                                      'sentences that say so ("X, den alle Y nannten"), English '
+                                                      'nicknames and ambiguous short names like a family name. '
+                                                      '"llm-characters" turns it on, settings in [llm-characters].')
+    chapter_summarizer: str = Field("none", description='Summary of every chapter, with the [llm] settings and '
+                                                        'prompts written for chapters (no spoilers from later '
+                                                        'chapters). "llm" turns it on.')
+    chapter_names: List[str] = Field(default_factory=list, description="Headings that always count as chapters.")
 
 
 class BookPipeline(Pipeline):
-    import re
+    section = "book"
+    description = "Chapters, sentences, lemma counts and named entities for EPUB books."
+    Options = BookOptions
+    slots = {"splitter": Slot(), "ner": Slot(optional=True),
+             "character_judge": Slot(optional=True, kind="characters"),
+             "chapter_summarizer": Slot(optional=True, kind="summarizer")}
+    required_steps = {"parse_book", "validate_chapters"}
     _LOGGER = logging.getLogger(__name__)
     _SPECIAL_CHAPTERS = {"prologue", "introduction", "epilogue", "prolog", "epilog"}
     _CHAPTER_NUMBER_REGEX = {re.compile(r"chapter \d+$"), re.compile(r"kapitel \d+$")}
 
     @classmethod
     def accept(cls, f: str) -> bool:
+        return cls.why_not(f) is None
+
+    @classmethod
+    def why_not(cls, f: str) -> Optional[str]:
         try:
             from ebooklib import epub
             epub.read_epub(f, options={"ignore_ncx": True})
-            return True
-        except:
-            return False
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        return {
-            "chapter-names": ConfigElement(
-                default_value=tuple(),
-                argparse_kwargs={
-                    "help": "Chapter names to use for this book",
-                    "nargs": "*",
-                }
-            )
-        }
+            return None
+        except Exception as e:
+            return f"not an EPUB ({e.__class__.__name__})"
 
     def _get_steps(self) -> Iterable[Callable[[PipelineStepInput], PipelineStepResult]]:
-        from MAT.utils import get_hash_pipeline
         from ebooklib import epub, ITEM_DOCUMENT, ITEM_NAVIGATION
+
         def parse_book(step_input: PipelineStepInput) -> PipelineStepResult:
             book: epub.EpubBook = epub.read_epub(step_input.file, options={"ignore_ncx": True})
-            return PipelineStepResult(
-                name="Read Book",
-                data=book
-            )
+            return PipelineStepResult(name="Read Book", data=book)
 
         def validate_chapters(step_input: PipelineStepInput) -> PipelineStepResult:
             from bs4 import BeautifulSoup
-            import re
             from collections import Counter
-            try:
-                book: epub.EpubBook = step_input.previous_results["Read Book"].data
-                if book is None:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            book: epub.EpubBook = step_input.data("Read Book")
+            if book is None:
                 return PipelineStepResult(name="Chapters", data=None)
             nav = list(book.get_items_of_type(ITEM_NAVIGATION))[0].get_content().decode()
             items = sorted((x for x in book.get_items_of_type(ITEM_DOCUMENT) if x.get_name() in nav),
@@ -108,7 +129,7 @@ class BookPipeline(Pipeline):
                     continue
                 chapters.append((headings[0].strip(), story))
             heading_c = Counter(x[0] for x in chapters)
-            book_valid_chapters = step_input.config.get_config(self).get("chapter-names", list())
+            book_valid_chapters = step_input.config.options(self).chapter_names
             valid_chapters = set(
                 k for k, v in heading_c.items() if self._chapter_valid(k, heading_c, book_valid_chapters))
             invalid_chapters = set(heading_c.keys()) - valid_chapters
@@ -121,34 +142,23 @@ class BookPipeline(Pipeline):
             return PipelineStepResult(name="Chapters", data=chapters)
 
         def beautify_chapters(step_input: PipelineStepInput) -> PipelineStepResult:
-            try:
-                chapters: List[Chapter] = step_input.previous_results["Chapters"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            from collections import Counter
+            from MAT.utils import toRoman
+            chapters: List[Chapter] = step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Chapters Beauty", data=None)
-            try:
-                from MAT.utils import toRoman
-                from collections import Counter
-                counter1 = Counter(x.heading for x in chapters)
-                counter2 = Counter()
-
-                for c in chapters:
-                    if counter1[c.heading] > 1:
-                        counter2[c.heading] += 1
-                        c.heading_beautified = f"{c.heading} {toRoman(counter2[c.heading])}"
-
-                return PipelineStepResult(name="Chapters Beauty", data=chapters)
-            except ImportError:
-                return PipelineStepResult(name="Chapters Beauty", data=chapters)
+            counter1 = Counter(x.heading for x in chapters)
+            counter2 = Counter()
+            for c in chapters:
+                if counter1[c.heading] > 1:
+                    counter2[c.heading] += 1
+                    c.heading_beautified = f"{c.heading} {toRoman(counter2[c.heading])}"
+            return PipelineStepResult(name="Chapters Beauty", data=chapters)
 
         def get_language(step_input: PipelineStepInput) -> PipelineStepResult:
             from langdetect import detect
-            try:
-                chapters: List[Chapter] = step_input.previous_results["Chapters"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Language", data=None)
             full_text = "\n".join("\n".join(x.content) for x in chapters)
             lang = detect(full_text)
@@ -157,52 +167,139 @@ class BookPipeline(Pipeline):
 
         def splitting_task(step_input: PipelineStepInput) -> PipelineStepResult:
             import tqdm
-            try:
-                _prev_res = step_input.previous_results
-                chapters: List[Chapter] = _prev_res.get("Chapters Beauty", _prev_res["Chapters"]).data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Chapters Beauty") or step_input.data("Chapters")
+            if not chapters:
                 return PipelineStepResult(name="Word Counter", data=None)
-            from MAT import SplitterSpacy, SplitterInput, SplitterResult
-
-            splitter = SplitterSpacy()
+            splitter = self.backend("splitter", step_input.config)
+            language = step_input.data("Language")
             for c in tqdm.tqdm(chapters, leave=False, desc="Working on chapters", unit="chapter"):
-                splitted = splitter.process(origin_data=SplitterInput("\n".join(c.content)), config=step_input.config)
+                splitted = splitter.process(origin_data=SplitterInput("\n".join(c.content), language=language),
+                                            config=step_input.config)
                 c.sentences = list(splitted.sentences) if splitted.sentences is not None else None
                 c.sentence_words = list(splitted.words) if splitted.words is not None else None
+                c.sentence_tokens = list(splitted.tokens) if getattr(splitted, "tokens", None) is not None else None
             return PipelineStepResult(name="Word Counter", data=chapters)
 
         def ner_task(step_input: PipelineStepInput) -> PipelineStepResult:
-            from tqdm import tqdm
-            try:
-                _prev_res = step_input.previous_results
-                chapters: List[Chapter] = _prev_res["Word Counter"].data
-                if chapters is None or len(chapters) <= 0:
-                    raise AttributeError()
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
+            chapters: List[Chapter] = step_input.data("Word Counter")
+            if not chapters:
                 return PipelineStepResult(name="NER", data=None)
-
-            from MAT.tools.ner.ner_gliner import NERGliner, NERInput
-            ner_gliner = NERGliner()
-            self.__class__._LOGGER.info(f"Using {ner_gliner.__class__.__name__} for {len(chapters)} chapters")
-            for c in tqdm(chapters, leave=False, desc="NER on chapters", unit="chapter"):
-                if c.sentences is None or len(c.sentences) <= 0:
-                    continue
-                res = ner_gliner.process(origin_data=NERInput(*c.sentences), config=step_input.config)
-                c.ner = list(res.ner)
-
+            ner = self.backend("ner", step_input.config)
+            if ner is None:
+                return PipelineStepResult(name="NER", data=chapters)
+            # all sentences of the book in one call, so the model loads once and not once per chapter
+            sentences = [sentence for c in chapters for sentence in (c.sentences or [])]
+            self.__class__._LOGGER.info(f"Using {ner.backend_name} on {len(sentences)} sentences of "
+                                        f"{len(chapters)} chapters")
+            found = list(ner.process(origin_data=NERInput(*sentences), config=step_input.config).ner)
+            for c in chapters:
+                if c.sentences:
+                    c.ner, found = found[:len(c.sentences)], found[len(c.sentences):]
             return PipelineStepResult(name="NER", data=chapters)
 
-        return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task]
+        def character_task(step_input: PipelineStepInput) -> PipelineStepResult:
+            from collections import Counter
+
+            from MAT.utils.characters import Mention, build, clean, cluster, key, read
+
+            chapters: List[Chapter] = step_input.data("NER")
+            if not chapters:
+                return PipelineStepResult(name="Characters", data=None)
+            options = step_input.config.options(self)
+            wanted = {label.casefold() for label in options.character_labels}
+            mentions = []
+            # how often the same words came back as a place or an organization, "Casterlystein" is both
+            elsewhere = Counter()
+            for c in chapters:
+                for i, sentence in enumerate(c.ner or []):
+                    words = c.sentence_tokens[i] if c.sentence_tokens and i < len(c.sentence_tokens) else None
+                    for label, found in sentence.items():
+                        if label.casefold() not in wanted:
+                            if label.casefold() in ("location", "organization"):
+                                elsewhere.update(key(clean(text)) for text, _, _ in found if clean(text))
+                            continue
+                        for text, start, end in found:
+                            name, proper, article, plural = read(text, start, end, words)
+                            mentions.append(Mention(chapter=c.get_beautiful_heading(), name=name, proper=proper,
+                                                    article=article, plural=plural,
+                                                    sentence=c.sentences[i] if c.sentences and i < len(c.sentences)
+                                                    else ""))
+            clusters = cluster(mentions, min_full=options.full_name_mentions, elsewhere=elsewhere)
+            if clusters.not_names:
+                self.__class__._LOGGER.info("Not names, left out of the characters: " + ", ".join(
+                    f"{name} ({count})" for name, count in clusters.not_names.most_common(10)))
+            joins, resolved = self._judge_characters(clusters, step_input)
+            characters = build(clusters, min_mentions=options.min_mentions, joins=joins, resolved=resolved)
+            self.__class__._LOGGER.info(f"{len(characters)} characters, most mentioned: "
+                                        + ", ".join(f"{c['name']} ({c['mentions']})" for c in characters[:8]))
+            return PipelineStepResult(name="Characters", data=characters)
+
+        def summary_task(step_input: PipelineStepInput) -> PipelineStepResult:
+            from MAT.tools.summary import SummaryInput
+
+            chapters: List[Chapter] = step_input.data("Chapters Beauty") or step_input.data("Chapters")
+            if not chapters:
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            summarizer = self.backend("chapter_summarizer", step_input.config)
+            if summarizer is None:
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            book = step_input.data("Read Book")
+            texts = [f"{c.get_beautiful_heading()}\n\n" + "\n\n".join(c.content) for c in chapters]
+            self.__class__._LOGGER.info(f"Summarizing {len(texts)} chapters")
+            # like the podcast summary: a failing LLM must not cost the rest of the results
+            try:
+                result = summarizer.process(
+                    origin_data=SummaryInput(*texts, kind="chapter", language=step_input.data("Language"),
+                                             additional_metadata={"book": getattr(book, "title", "") or ""}),
+                    config=step_input.config)
+            except Exception as e:
+                self.__class__._LOGGER.exception("Chapter summaries failed, writing the book without them",
+                                                 exc_info=e)
+                return PipelineStepResult(name="Chapter summaries", data=None)
+            for chapter, summary in zip(chapters, list(result.text) if result is not None else []):
+                chapter.summary = summary or None
+            return PipelineStepResult(name="Chapter summaries", data=chapters)
+
+        return [parse_book, validate_chapters, beautify_chapters, get_language, splitting_task, ner_task,
+                character_task, summary_task]
+
+    def _judge_characters(self, clusters, step_input: PipelineStepInput):
+        """Asks the character judge about the candidates, returns what it confirmed: (joins, resolved)."""
+        from MAT.tools.characters import CharacterJudgeInput, MentionQuestion, PairQuestion
+        from MAT.utils.characters import candidates
+
+        judge = self.backend("character_judge", step_input.config)
+        if judge is None:
+            return [], {}
+        language = step_input.data("Language")
+        pairs, mentions = candidates(clusters, language=language)
+        if not pairs and not mentions:
+            self.__class__._LOGGER.info("No name pairs or ambiguous names to ask about")
+            return [], {}
+        self.__class__._LOGGER.info(f"Asking {judge.backend_name} about {len(pairs)} name pairs and "
+                                    f"{len(mentions)} ambiguous names")
+        questions = [PairQuestion(id=i, a=clusters.display(p.a), b=clusters.display(p.b), sentences_a=p.sentences_a,
+                                  sentences_b=p.sentences_b, together=p.together) for i, p in enumerate(pairs)]
+        options = {i: {clusters.display(o): o for o in m.options} for i, m in enumerate(mentions)}
+        mention_questions = [MentionQuestion(id=i, name=m.name, sentence=m.sentence, options=list(options[i]))
+                             for i, m in enumerate(mentions)]
+        try:
+            result = judge.process(CharacterJudgeInput(questions, mention_questions, language=language),
+                                   step_input.config)
+        except Exception as e:
+            # the list without the judge is still right, just less merged
+            self.__class__._LOGGER.exception("Judging the characters failed, keeping the list as the rules made it",
+                                             exc_info=e)
+            return [], {}
+        joins = [(pairs[i].a, pairs[i].b, evidence) for i, evidence in result.same.items()]
+        resolved = {mentions[i].index: options[i][name] for i, name in result.mentions.items() if name in options[i]}
+        return joins, resolved
 
     def _finalize_result(self, step_results: Dict[str, PipelineStepResult]) -> BookOutput:
 
         def _try_get(k: str):
-            try:
-                return step_results[k].data
-            except (IndexError, KeyError, ValueError, TypeError, AttributeError):
-                return None
+            result = step_results.get(k)
+            return None if result is None else result.data
 
         book = _try_get("Read Book")
         chapters = _try_get("Chapters")
@@ -212,6 +309,8 @@ class BookPipeline(Pipeline):
             title=book.title if book is not None else "No title",
             language=language if language is not None else "",
             chapter_data=chapters if chapters is not None else [],
+            models=dict(self.models),
+            characters=_try_get("Characters") or [],
         )
 
     @classmethod

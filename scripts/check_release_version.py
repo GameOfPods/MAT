@@ -1,0 +1,52 @@
+"""
+Checks that a release tag matches the MAT version in pyproject.toml.
+
+The tag has to be "v" plus the version, for example v0.2.0 for version = "0.2.0".
+Used by .github/workflows/release-schemas.yml, works without installing MAT.
+
+    python scripts/check_release_version.py v0.2.0
+"""
+import argparse
+import os
+import sys
+from pathlib import Path
+from typing import Optional, Sequence
+
+VERSION_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
+
+
+def read_version(path: Path = VERSION_FILE) -> str:
+    import tomllib
+
+    version = tomllib.loads(path.read_text(encoding="utf-8")).get("project", {}).get("version")
+    if not version:
+        raise ValueError(f"No [project] version in {path}")
+    return version
+
+
+def check(tag: str, version: str) -> Optional[str]:
+    """None if the tag fits the version, otherwise the error message."""
+    expected = f"v{version}"
+    if tag == expected:
+        return None
+    return (f'Release tag "{tag}" doesn\'t match the MAT version {version}. '
+            f'Tag the release as "{expected}" or change the version in pyproject.toml and tag again.')
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("tag", help="Release tag, for example v0.2.0")
+    args = parser.parse_args(argv)
+
+    version = read_version()
+    error = check(args.tag, version)
+    if error is not None:
+        # ::error:: shows up as an annotation on the workflow run
+        print(f"::error::{error}" if os.environ.get("GITHUB_ACTIONS") else error, file=sys.stderr)
+        return 1
+    print(f"Release tag {args.tag} matches MAT {version}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

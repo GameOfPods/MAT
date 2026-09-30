@@ -9,71 +9,74 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 import logging
-from typing import Dict, Optional, List
+import os
+from typing import Optional, List
 
-from MAT.tools.transcriptors import TranscriptionInput, TransciptionTool, TranscriptionResult, WordTuple
-from MAT.utils.config import ConfigElement, Config
+from pydantic import Field
+
+from MAT.registry import register, require
+
+require("faster_whisper", "whisperx", "ctranslate2", extra="whisper")
+
+from MAT.tools.transcriptors import TranscriptionInput, TransciptionTool, TranscriptionResult, WordTuple  # noqa: E402
+from MAT.utils.config import Config, Options  # noqa: E402
 
 
+class WhisperOptions(Options):
+    model: str = Field("large-v3-turbo", description="Whisper model name (large-v3-turbo, large-v3, medium, ...) "
+                                                     "or a folder with a CTranslate2 model.")
+    device: str = Field("auto", description='"auto" uses the GPU if there is one, or set "cpu" / "cuda".')
+    compute_type: str = Field("auto", description='CTranslate2 compute type. "auto" picks the fastest one the device '
+                                                  'supports (int8_float32 on CPU and GTX 10xx cards).')
+    cpu_count: int = Field(default_factory=lambda: os.cpu_count() or 1, ge=1, description="CPU threads to use.")
+    beam_size: int = Field(5, ge=1, description="Beam size for decoding.")
+
+
+@register("transcriber", "whisper", description="faster-whisper, words aligned with whisperx")
 class TransciptorWhisper(TransciptionTool):
+    Options = WhisperOptions
+    packages = ("faster-whisper", "whisperx", "ctranslate2")
+    memory_hint = "a smaller model (--set whisper.model=medium) or --set whisper.compute-type=int8"
     _LOGGER = logging.getLogger(__name__)
-
-    @classmethod
-    def config_name(cls) -> str:
-        return "Whisper"
-
-    @classmethod
-    def config_keys(cls) -> Dict[str, ConfigElement]:
-        import torch
-        from os import cpu_count
-        return {
-            "device": ConfigElement(
-                default_value="cuda" if torch.cuda.is_available() else "cpu",
-                argparse_kwargs={
-                    "help": "Device to run the model on. Default: %(default)s",
-                    "type": str,
-                }
-            ),
-            "model": ConfigElement(
-                default_value="large-v2",
-                argparse_kwargs={
-                    "help": "Model to use for whisper model. Default: %(default)s", "type": str,
-                }
-            ),
-            "cpu-count": ConfigElement(
-                default_value=cpu_count(),
-                argparse_kwargs={
-                    "help": "Amount of cpu cores to use. Default: %(default)s", "type": int,
-                }
-            ),
-            "compute-type": ConfigElement(
-                default_value="int8",
-                argparse_kwargs={
-                    "help": "Compute type. Default: %(default)s", "type": str,
-                }
-            ),
-            "beam-size": ConfigElement(
-                default_value=5,
-                argparse_kwargs={
-                    "help": "Beam size for Whisper transcription. Default: %(default)s", "type": int,
-                }
-            )
-        }
 
     def process(self, origin_data: TranscriptionInput, config: Config) -> Optional[TranscriptionResult]:
         import sys
         from time import perf_counter
         from datetime import timedelta
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel, decode_audio
         import whisperx
         from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF, DEFAULT_ALIGN_MODELS_TORCH
         import tqdm
         import math
 
-        cfg = config.get_config(key=self)
-        model = WhisperModel(cfg["model"], device=cfg["device"], compute_type=cfg["compute-type"],
-                             cpu_threads=cfg["cpu-count"])
-        segments, info = model.transcribe(origin_data.input_file, beam_size=cfg["beam-size"], vad_filter=True, )
+        from MAT.utils.device import ct2_compute_type, resolve_device
+        from MAT.utils.quiet import quiet_whisperx
+
+        quiet_whisperx()
+        options = config.options(self)
+        device = resolve_device(options.device)
+        compute_type = ct2_compute_type(device=device, requested=options.compute_type)
+        self._LOGGER.info(f"Loading whisper {options.model} on {device} with compute type {compute_type}")
+        model = WhisperModel(options.model, device=device, compute_type=compute_type, cpu_threads=options.cpu_count)
+        # decode once, faster-whisper and the whisperx alignment both work on 16 kHz mono float arrays
+        audio = decode_audio(origin_data.input_file)
+
+        # Detect the language first. Only when whisperx has no alignment model for it we ask whisper itself for word
+        # timestamps, they cost extra time and the whisperx alignment is more precise.
+        language, language_probability, _ = model.detect_language(audio=audio, vad_filter=True)
+        has_align_model = language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys())
+        self._LOGGER.info(f"Detected language {language} ({language_probability:.0%}). "
+                          f"{'Aligning words with whisperx' if has_align_model else 'No whisperx alignment model, using whisper word timestamps'}")
+
+        # the show's names go in front of every 30 s window, whisper keeps at most about 220 tokens of them
+        hotwords = ", ".join(origin_data.vocabulary) or None
+        if hotwords:
+            self._LOGGER.info(f"Expecting {len(origin_data.vocabulary)} words from the vocabulary")
+            if len(hotwords) > 600:
+                self._LOGGER.warning(f"The vocabulary has {len(hotwords)} characters, whisper only reads about the "
+                                     f"first 600. Keep it to the names it gets wrong.")
+        segments, info = model.transcribe(audio, language=language, beam_size=options.beam_size, vad_filter=True,
+                                          word_timestamps=not has_align_model, hotwords=hotwords)
 
         segment_lengths = []
         segments_as_dict = []
@@ -85,7 +88,11 @@ class TransciptorWhisper(TransciptionTool):
                 avg_length = sum(segment_lengths) / len(segment_lengths)
                 pb.total = math.ceil(info.duration / avg_length)
                 pb.set_description(f"Transcribing {avg_length:.1f}s segments")
-                segments_as_dict.append(segment.__dict__)
+                # Segment is a dataclass in newer faster-whisper versions and a NamedTuple in older ones
+                try:
+                    segments_as_dict.append(segment.__dict__)
+                except AttributeError:
+                    segments_as_dict.append(segment._asdict())
         t2 = perf_counter()
 
         sys.stdout.flush()
@@ -95,14 +102,19 @@ class TransciptorWhisper(TransciptionTool):
                           f"that total to {timedelta(seconds=sum(segment_lengths))} of audio. "
                           f"Audio file has a length of {timedelta(seconds=info.duration)}")
 
-        if info.language in set().union(DEFAULT_ALIGN_MODELS_TORCH.keys(), DEFAULT_ALIGN_MODELS_HF.keys()):
-            align_model, meta = whisperx.load_align_model(language_code=info.language, device=cfg["device"])
+        if len(segments_as_dict) == 0:
+            self._LOGGER.warning(f"No speech found in {origin_data.input_file}")
+            return TranscriptionResult(word_timings=[], language=info.language, duration=info.duration,
+                                       duration_after_vad=info.duration_after_vad)
+
+        if has_align_model:
+            align_model, meta = whisperx.load_align_model(language_code=info.language, device=device)
             aligned = whisperx.align(
                 transcript=segments_as_dict,
                 model=align_model,
                 align_model_metadata=meta,
-                audio=origin_data.input_file,
-                device=cfg["device"],
+                audio=audio,
+                device=device,
                 print_progress=False,
             )
             word_timestamps = TransciptorWhisper._fix_broken_times(
@@ -116,13 +128,29 @@ class TransciptorWhisper(TransciptionTool):
             )
 
         else:
-            word_timestamps = []
-            for s in segments_as_dict:
-                for w in s["words"]:
-                    word_timestamps.append(WordTuple(start=w[0], end=w[1], word=w[2]))
+            word_timestamps = TransciptorWhisper._words_from_segments(segments=segments_as_dict)
 
         return TranscriptionResult(word_timings=word_timestamps, language=info.language, duration=info.duration,
                                    duration_after_vad=info.duration_after_vad)
+
+    @staticmethod
+    def _words_from_segments(segments: List[dict]) -> List[WordTuple]:
+        # Used when whisperx has no alignment model, whisper is asked for word timestamps then.
+        # If a segment still has no words it becomes one entry with the segment timings.
+        ret = []
+        for s in segments:
+            words = s.get("words") or []
+            if len(words) == 0:
+                ret.append(WordTuple(start=s.get("start"), end=s.get("end"), word=(s.get("text") or "").strip()))
+                continue
+            for w in words:
+                if isinstance(w, dict):
+                    ret.append(WordTuple(start=w.get("start"), end=w.get("end"), word=w.get("word")))
+                elif hasattr(w, "start"):
+                    ret.append(WordTuple(start=w.start, end=w.end, word=w.word))
+                else:
+                    ret.append(WordTuple(start=w[0], end=w[1], word=w[2]))
+        return ret
 
     @staticmethod
     def _merge_words(words: List[WordTuple], fin: float, idx: int = 0) -> Optional[float]:
