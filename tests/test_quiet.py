@@ -73,3 +73,17 @@ def test_quiet_whisperx_sends_its_records_through_our_logging(monkeypatch, capsy
     assert all(isinstance(h, logging.NullHandler) for h in logger.handlers) and logger.handlers
     logging.getLogger("whisperx.asr").error("from whisperx")
     assert "from whisperx" not in capsys.readouterr().out
+
+
+def test_the_torchaudio_backend_warning_from_skops_is_hidden():
+    import warnings
+
+    from MAT.utils.quiet import quiet_dependencies
+
+    # skops touches torchaudio.backend.* while wtpsplit loads the sentence model, every run printed this
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("default")
+        quiet_dependencies()
+        warnings.warn("Torchaudio's I/O functions now support per-call backend dispatch. Importing backend "
+                      "implementation directly is no longer guaranteed to work.", UserWarning)
+    assert caught == []
