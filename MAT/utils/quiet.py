@@ -56,6 +56,9 @@ WARNINGS = [
     ("audioop", DeprecationWarning),
     # pyannote turns TF32 off on every GPU run and says so. Pascal cards have no TF32 anyway
     ("TensorFloat-32 \\(TF32\\) has been disabled", UserWarning),
+    # skops (wtpsplit loads the SaT model with it) looks through every loaded module and touches torchaudio's old
+    # backend modules, which warn on any access. Nothing uses them
+    ("Torchaudio's I/O functions now support per-call backend dispatch", UserWarning),
 ]
 
 
