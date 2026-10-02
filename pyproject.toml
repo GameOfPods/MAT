@@ -1,7 +1,7 @@
 [project]
 name = "MAT"
 # the one place for MAT's version: MAT.__version__, `MAT --version` and the release check read it from here
-version = "0.3.0"
+version = "0.3.1"
 description = "Media Analytics Toolset"
 readme = "README.md"
 license = "GPL-3.0"
