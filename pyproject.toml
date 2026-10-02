@@ -55,7 +55,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # One extra per backend. A backend whose extra is missing is skipped, `MAT backends` shows which.
-whisper = ["faster-whisper>=1.2", "whisperx>=3.8"]
+# PyAV 19 removed the metadata_errors argument of av.open, faster-whisper 1.2.1 still passes it ("open() got an
+# unexpected keyword argument 'metadata_errors'"). Drop the cap once faster-whisper has a fix.
+whisper = ["faster-whisper>=1.2", "whisperx>=3.8", "av<19"]
 # pyannote links the speakers between the audio pieces Sortformer sees
 sortformer = ["nemo-toolkit[asr]>=3", "pyannote-audio>=4"]
 # identifier (pyannote) and diarizer (pyannote-diarization, community-1)

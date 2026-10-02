@@ -25,3 +25,20 @@ def test_fix_broken_times_fills_missing_start_and_end():
     fixed = TransciptorWhisper._fix_broken_times(words, init=0.1, fin=2.0)
     assert all(w.start is not None and w.end is not None for w in fixed)
     assert fixed[0].start == 0.1
+
+
+def test_faster_whisper_can_decode_with_the_installed_pyav(tmp_path):
+    """PyAV 19 dropped an argument faster-whisper 1.2.1 passes to av.open, and every transcription failed on the GPU
+    box with "open() got an unexpected keyword argument 'metadata_errors'". pyproject.toml caps av for that."""
+    import wave
+
+    import numpy as np
+    from faster_whisper import decode_audio
+
+    path = tmp_path / "silence.wav"
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(16000)
+        f.writeframes(np.zeros(16000, dtype=np.int16).tobytes())
+    assert len(decode_audio(str(path))) == 16000
