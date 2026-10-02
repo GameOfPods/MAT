@@ -1961,6 +1961,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "av" },
     { name = "de-core-news-md" },
     { name = "en-core-web-md" },
     { name = "faster-whisper" },
@@ -2025,6 +2026,7 @@ spacy = [
     { name = "spacy-download" },
 ]
 whisper = [
+    { name = "av" },
     { name = "faster-whisper" },
     { name = "whisperx" },
 ]
@@ -2054,6 +2056,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", marker = "extra == 'whisper'", specifier = "<19" },
     { name = "beautifulsoup4" },
     { name = "de-core-news-md", marker = "extra == 'spacy'", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_md-3.8.0/de_core_news_md-3.8.0-py3-none-any.whl" },
     { name = "ebooklib" },
