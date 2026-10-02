@@ -70,13 +70,17 @@ class PodcastOutput(PipelineResult):
 
 def _rename_speakers(renames: Dict[str, str], diarization: DiarizationResult,
                      word_speaker: List[WordTupleSpeaker], squished: List[WordTupleSpeaker]):
-    """Gives speakers new names everywhere: in the diarization, in the words and in the transcript lines."""
+    """Gives speakers new names everywhere: in the diarization, in the words and in the transcript lines. Two
+    speakers that get the same name (the library knows both clusters as one voice) become one, with the segments of
+    both. A dict keyed by the new name kept only one of them, and the words of the other had no segments (#4)."""
     def rename(words: List[WordTupleSpeaker]) -> List[WordTupleSpeaker]:
         return [WordTupleSpeaker(word=w.word, speaker={renames.get(s, s) for s in w.speaker}) for w in words]
 
     renamed_squished = rename(squished)
-    renamed_diarization = DiarizationResult({renames.get(s, s): diarization.get_diarization(speaker=s)
-                                             for s in diarization.speaker})
+    merged: Dict[str, List[Tuple[float, float]]] = {}
+    for speaker in sorted(diarization.speaker):
+        merged.setdefault(renames.get(speaker, speaker), []).extend(diarization.get_diarization(speaker=speaker))
+    renamed_diarization = DiarizationResult({name: sorted(segments) for name, segments in merged.items()})
     return (renamed_diarization, rename(word_speaker), renamed_squished,
             "\n".join(word_speaker_to_transcript(word_speaker=renamed_squished)))
 
