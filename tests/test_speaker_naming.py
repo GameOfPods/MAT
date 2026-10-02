@@ -296,3 +296,22 @@ def test_evidence_that_names_someone_else(speaker, name, evidence, wrong):
     answer = json.dumps({"speakers": [{"id": speaker, "name": name, "confidence": "high", "evidence": evidence}]})
     names = SpeakerNamingLLM._parse(answer, known=["sprecher_0", "sprecher_1", "sprecher_2"], lines=HAMILTON)
     assert (names == []) == wrong
+
+
+def test_two_clusters_with_one_name_keep_the_segments_of_both():
+    """Issue #4: the library knew a 0.1 s cluster and a 1,580 s cluster as the same host. The renamed diarization
+    kept only one of them, so speakers[] had 0.1 s for a host whose words covered half the episode."""
+    from MAT.pipelines.Podcast import _rename_speakers
+
+    diarization = DiarizationResult({"sprecher_0": [(30.0, 30.1)], "sprecher_1": [(0.0, 5.0), (12.0, 20.0)],
+                                     "max": [(5.0, 12.0)]})
+    words = [_words("sprecher_1", "hallo zusammen", 0.0), _words("sprecher_0", "ja", 30.0)]
+    renamed, word_speaker, squished, transcript = _rename_speakers(
+        {"sprecher_0": "alex", "sprecher_1": "alex"}, diarization, words, words)
+    assert renamed.speaker == {"alex", "max"}
+    assert renamed.get_diarization("alex") == [(0.0, 5.0), (12.0, 20.0), (30.0, 30.1)]
+    assert renamed.get_diarization("max") == [(5.0, 12.0)]
+    assert {s for w in word_speaker for s in w.speaker} == {"alex"}
+    # a name that is already there (a gold clip matched it) gets the segments added, not replaced
+    renamed, *_ = _rename_speakers({"sprecher_1": "max"}, diarization, words, words)
+    assert renamed.get_diarization("max") == [(0.0, 5.0), (5.0, 12.0), (12.0, 20.0)]
